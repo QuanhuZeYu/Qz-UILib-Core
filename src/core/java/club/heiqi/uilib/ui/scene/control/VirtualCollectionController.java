@@ -50,6 +50,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private final Function<ReadableSignal<T>, SceneNode> declaration;
     private final ReadableSignal<SceneVirtualList.Options> options;
     private final ReadableSignal<?> measurementCondition;
+    private final ReadableSignal<SceneControlMetrics> controlMetrics;
     private Object measuredCondition;
     private final VirtualHeightIndex<K> heights = new VirtualHeightIndex<>();
     private final Map<K, T> values = new HashMap<>();
@@ -82,9 +83,10 @@ final class VirtualCollectionController<T, K> implements SceneControl {
 
     VirtualCollectionController(ScenePageContext page, ReadableSignal<List<T>> source, Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<SceneVirtualList.Options> options,
-            ReadableSignal<?> measurementCondition) {
+            ReadableSignal<?> measurementCondition, ReadableSignal<SceneControlMetrics> controlMetrics) {
         this.page = page; runtime = page.runtime(); this.source = source; this.key = key;
         this.declaration = declaration; this.options = options; this.measurementCondition = measurementCondition;
+        this.controlMetrics = Objects.requireNonNull(controlMetrics, "集合角色度量");
         viewRevision = page.domain().signal(0L); logicalRevision = page.domain().signal(0L);
     }
 
@@ -132,12 +134,13 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         List<SceneNode> retainedFocus = runtime.focusRouter().retainedFocus().get();
         SceneNode pressed = runtime.pointerRouter().pressedTarget().get();
         SceneVirtualList.Options policy = Objects.requireNonNull(options.get(), "集合选项");
-        int nextEstimate = policy.estimate > 0 ? policy.estimate
-                : Math.max(1, Math.round(page.theme().get().textStyle.logicalEm * 3));
+        SceneControlMetrics currentMetrics = controlMetrics.get();
+        int nextEstimate = policy.estimate > 0 ? policy.estimate : currentMetrics.rowHeightEstimate;
         long nextMetrics = runtime.metricsRevision().get();
         List<T> current = Objects.requireNonNull(source.get(), "集合数据");
         boolean changed = current != published;
-        Object nextCondition = measurementCondition.get();
+        // 显式估算不代表实际行高；密度改变内距时也必须结束屏外旧高度，沿原锚点重新准备。
+        Object nextCondition = Arrays.asList(measurementCondition.get(), currentMetrics.layoutKey());
         boolean conditionChanged = !Objects.equals(measuredCondition, nextCondition);
         boolean reset = nextMetrics != metrics || estimate != nextEstimate || measuredWidth != width || conditionChanged;
         if (changed) {

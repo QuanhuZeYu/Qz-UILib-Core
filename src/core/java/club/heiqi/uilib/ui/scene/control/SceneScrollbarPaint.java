@@ -14,15 +14,15 @@ final class SceneScrollbarPaint {
         if (!geometry.scrollable()) return;
         int color = color(options, theme, active);
         int alpha = Math.round((color >>> 24) * (active ? 1f : opacity));
-        rounded(target, geometry.thumb, geometry.clip, (color & 0x00ffffff) | alpha << 24);
+        rounded(target, geometry.thumb, geometry.clip, (color & 0x00ffffff) | alpha << 24, theme.metrics(SceneControlMetrics.Kind.SCROLLBAR).radius);
     }
     private static int color(SceneScrollbar.Options options, SceneTheme theme, boolean active) {
         if (active) return options.activeColor == null ? theme.focus : options.activeColor;
         return options.thumbColor == null ? (theme.textStyle.color & 0x00ffffff) | 0x80000000 : options.thumbColor;
     }
-    private static void rounded(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
+    private static void rounded(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color, int requestedRadius) {
         if ((color >>> 24) == 0 || box.width == 0 || box.height == 0) return;
-        int radius = Math.min(3, Math.min(box.width, box.height) / 2);
+        int radius = Math.min(requestedRadius, Math.min(box.width, box.height) / 2);
         target.add(PaintCommand.rect(new LayoutBox(box.x, box.y + radius, box.width, box.height - radius * 2), clip, color));
         for (int y = 0; y < radius; y++) {
             double dy = radius - y - .5;

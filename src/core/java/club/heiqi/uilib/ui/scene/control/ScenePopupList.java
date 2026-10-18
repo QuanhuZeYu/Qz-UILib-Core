@@ -49,6 +49,8 @@ final class ScenePopupList<T, K> {
     private final ReadableSignal<K> initial;
     private final Consumer<T> confirm;
     private final ReadableSignal<SceneTheme> theme;
+    private final ReadableSignal<SceneControlMetrics> metrics;
+    private final ReadableSignal<Object> layout;
     private final Signal<Object> opening;
     private final boolean menu;
     private boolean backwardOpening;
@@ -68,12 +70,16 @@ final class ScenePopupList<T, K> {
             Predicate<T> enabled, ReadableSignal<K> initial, ReadableSignal<String> title, Consumer<T> confirm, ReadableSignal<SceneTheme> theme, boolean menu) {
         this.page = page; this.source = source; this.key = key; this.label = label; this.enabled = enabled;
         this.initial = initial; this.confirm = confirm; this.theme = theme; this.menu = menu; opening = page.domain().signal(null);
+        metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.POPUP));
+        layout = page.domain().computed(owner, () -> metrics.get().layoutKey());
         available = page.domain().computed(owner, () -> {
             List<T> choices = new ArrayList<>(); for (T item : source.get()) if (enabled.test(item)) choices.add(item);
             return Collections.unmodifiableList(choices);
         });
         button = SceneButton.createWithTrailingIcon(page, title, theme, this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
                 () -> SceneIconButton.Symbol.CHEVRON_DOWN);
+        button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
+                .defaultPadding(value.padding).defaultGap(value.iconGap)));
         // SELECT的名称归外层字段标签，内部按钮只表达打开动作，不把选中显示当成字段名称。
         button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.BUTTON)
                 .name(menu ? title.get() : "打开选项").expanded(opening.get() != null).build()));
@@ -89,7 +95,7 @@ final class ScenePopupList<T, K> {
     private void open() { open(false); }
     private void open(boolean backward) { if (opening.get() == null) { backwardOpening = backward; closedTypeahead.reset(); opening.set(new Object()); } }
     private void close(Object token) { if (opening.get() == token) opening.set(null); }
-    private int rowHeight() { return Math.max(1, Math.round(theme.get().textStyle.logicalEm * 1.4f) + theme.get().padding * 2); }
+    private int rowHeight() { return metrics.get().rowHeightEstimate; }
     private T current(K identity) {
         for (T item : source.get()) if (Objects.equals(key.apply(item), identity)) return item;
         return null;
@@ -186,11 +192,13 @@ final class ScenePopupList<T, K> {
         final SceneNode root, empty;
         Popup(Object token) {
             this.token = token; popup = this;
-            rows = SceneVirtualList.create(page, source, key, item -> {
+            rows = SceneVirtualList.measured(page, source, key, item -> {
                 K identity = key.apply(item.get());
                 SceneNode action = menu ? SceneButton.create(page, () -> label.apply(item.get()), theme, () -> choose(identity))
                         : SceneButton.createWithTrailingIcon(page, () -> label.apply(item.get()), theme, () -> choose(identity),
                                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE, () -> Objects.equals(initial.get(), identity) ? SceneIconButton.Symbol.CHECK : null);
+                action.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
+                        .defaultPadding(value.padding).defaultGap(value.iconGap)));
                 action.bind(NodeBinding.value(() -> enabled.test(item.get()), SceneNode::enabled));
                 action.bind(NodeBinding.semantics(() -> rowSemantics(identity, item)));
                 action.bind(NodeBinding.hoverWithin(0, (self, hovered) -> {
@@ -198,13 +206,13 @@ final class ScenePopupList<T, K> {
                         page.runtime().focusRouter().pointTo(page.runtime().captureMount(self));
                 }));
                 identities.put(action, identity); action.own(() -> identities.remove(action)); return action;
-            }, () -> new SceneVirtualList.Options().estimatedRowHeight(rowHeight()).overscan(1));
+            }, () -> new SceneVirtualList.Options().estimatedRowHeight(rowHeight()).overscan(1), () -> null, metrics);
             rows.semanticRoles(null, null);
             empty = SceneLabel.create(page, () -> "暂无可选项", theme).size(Size.fill(1), Size.natural());
             empty.bind(NodeBinding.value(() -> source.get().isEmpty(), SceneNode::visible));
             root = new SceneNode().size(Size.natural(), Size.natural()).modal(true).clip(false).control(this)
                     .onEscape(() -> { close(token); return true; }).add(rows.node()).add(empty);
-            root.bind(NodeBinding.value(theme, (self, value) -> self.padding(value.padding)));
+            root.bind(NodeBinding.value(() -> metrics.get().padding, SceneNode::defaultPadding));
             root.bind((runtime, self, scope) -> {
                 MountHandle sourceMount = runtime.captureMount(button); SceneNode pageRoot = button;
                 while (pageRoot.parent() != null) pageRoot = pageRoot.parent();
@@ -247,12 +255,14 @@ final class ScenePopupList<T, K> {
             if (opening.get() != token || live == null || !enabled.test(live)) return;
             close(token); confirm.accept(live);
         }
-        @Override public SceneLayer.Policy layerPolicy(SceneNode n) { return new SceneLayer.Policy(theme.get().gap, SceneLayer.Participation.INTERACTIVE); }
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Arrays.asList(theme, source, page.viewportHeight()); }
-        @Override public List<ReadableSignal<?>> arrangementDependencies(SceneNode n) { return Collections.singletonList(theme); }
+        @Override public SceneLayer.Policy layerPolicy(SceneNode n) { return new SceneLayer.Policy(metrics.get().gap, SceneLayer.Participation.INTERACTIVE); }
+        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) {
+            return Arrays.<ReadableSignal<?>>asList(layout, () -> source.get().size(), page.viewportHeight());
+        }
+        @Override public List<ReadableSignal<?>> arrangementDependencies(SceneNode n) { return Collections.singletonList(layout); }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode n) { return Collections.singletonList(theme); }
         @Override public MeasuredSize measure(SceneNode n, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
-            int width = Math.min(limits.availableWidth, Math.max(1, Math.round(theme.get().textStyle.logicalEm * 18)));
+            int width = Math.min(limits.availableWidth, metrics.get().popupWidth);
             // 自然高控件收到无界正文约束；本弹层必须显式借用当批页面高度限制自己的列表容量。
             int viewportBody = Math.max(0, page.viewportHeight().get() - n.padding() * 2);
             int height = Math.min(Math.min(limits.availableHeight, viewportBody), rowHeight() * Math.max(1, Math.min(8, source.get().size())));
@@ -267,9 +277,10 @@ final class ScenePopupList<T, K> {
         }
         @Override public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {
             SceneGeometryView.Entry entry = geometry.get(n); SceneTheme value = theme.get();
-            ScenePaintShapes.rounded(paint, entry.box, entry.clip, value.disabled, Math.max(1, value.padding));
+            int radius = metrics.get().radius;
+            ScenePaintShapes.rounded(paint, entry.box, entry.clip, value.disabled, radius);
             ScenePaintShapes.rounded(paint, new LayoutBox(entry.box.x + 1, entry.box.y + 1, Math.max(0, entry.box.width - 2), Math.max(0, entry.box.height - 2)),
-                    entry.clip, value.panel, Math.max(1, value.padding - 1));
+                    entry.clip, value.panel, Math.max(1, radius - 1));
         }
         @Override public Object pointerTarget(SceneNode n, SceneGeometryView geometry, int x, int y) {
             SceneGeometryView.Entry entry = geometry.get(n);

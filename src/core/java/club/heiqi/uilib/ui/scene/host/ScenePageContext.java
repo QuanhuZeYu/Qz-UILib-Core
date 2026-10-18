@@ -6,6 +6,8 @@ import club.heiqi.uilib.ui.scene.localization.LocalizationSource;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneDensity;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
@@ -23,6 +25,8 @@ public final class ScenePageContext {
     private LocalizationBinding localization;
     private final ReadableSignal<ThemeMode> themeMode;
     private final ReadableSignal<SceneTheme> theme;
+    private final Signal<ReadableSignal<SceneDensity>> densitySource;
+    private final ReadableSignal<SceneDensity> density;
 
     ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime,
             ThemeConfiguration themes) {
@@ -37,13 +41,20 @@ public final class ScenePageContext {
         this.runtime = runtime;
         themeMode = themes == null ? domain.signal(ThemeMode.LIGHT)
                 : themes.bind(domain, scope);
-        theme = domain.computed(scope, () -> themeMode.get().sceneTheme());
+        densitySource = domain.signal(() -> SceneDensity.COMFORTABLE);
+        density = domain.computed(scope, () -> Objects.requireNonNull(densitySource.get().get(), "页面密度"));
+        theme = domain.computed(scope, () -> themeMode.get().sceneTheme().withDensity(density.get()));
         runtime.scrollbarTheme(theme);
     }
 
     /** 应用配置的页面域投影；局部配色可由此派生，不抢占全局主题权威。 */
     public ReadableSignal<ThemeMode> themeMode() { return themeMode; }
     public ReadableSignal<SceneTheme> theme() { return theme; }
+    public ReadableSignal<SceneDensity> density() { return density; }
+    /** 页面默认主题与自动条共用此可追踪来源，订阅归原页面Owner。 */
+    public void density(ReadableSignal<SceneDensity> source) {
+        domain.checkWrite(); densitySource.set(Objects.requireNonNull(source, "密度来源"));
+    }
 
     public ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy() { return runtime.motionPolicy(); }
     public void motionPolicy(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> source) { runtime.motionPolicy(source); }

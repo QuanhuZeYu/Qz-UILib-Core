@@ -146,6 +146,7 @@ public final class SceneNode {
     }
 
     private int padding, gap, scrollOffset, background;
+    private boolean authorStyle, authorPadding, authorGap;
     private int scrollStep = 20;
     private club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion;
     public club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion() { return feedbackMotion; }
@@ -353,28 +354,53 @@ public final class SceneNode {
     public SceneNode style(TextStyle style) {
         writable();
         Objects.requireNonNull(style, "style");
-        TextStyle previous = this.style;
-        if (previous.equals(style)) return this;
-        this.style = style;
-        if (runtime != null && previous.sameLayout(style))
-            runtime.invalidatePaint();
-        else changed();
+        authorStyle = true;
+        applyStyle(style);
         return this;
+    }
+
+    /** 控件主题的低优先默认；同值的公共setter也明确拥有该属性。 */
+    public SceneNode defaultStyle(TextStyle value) {
+        writable(); Objects.requireNonNull(value, "默认字体");
+        if (!authorStyle) applyStyle(value);
+        return this;
+    }
+
+    private void applyStyle(TextStyle value) {
+        TextStyle previous = style;
+        if (previous.equals(value)) return;
+        style = value;
+        if (runtime != null && previous.sameLayout(value)) runtime.invalidatePaint();
+        else changed();
     }
 
     public SceneNode padding(int value) {
         writable();
         if (value < 0) throw new IllegalArgumentException("内边距不能为负");
-        padding = value;
-        changed();
+        authorPadding = true;
+        if (padding != value) { padding = value; changed(); }
+        return this;
+    }
+
+    public SceneNode defaultPadding(int value) {
+        writable();
+        if (value < 0) throw new IllegalArgumentException("内边距不能为负");
+        if (!authorPadding && padding != value) { padding = value; changed(); }
         return this;
     }
 
     public SceneNode gap(int value) {
         writable();
         if (value < 0) throw new IllegalArgumentException("间距不能为负");
-        gap = value;
-        changed();
+        authorGap = true;
+        if (gap != value) { gap = value; changed(); }
+        return this;
+    }
+
+    public SceneNode defaultGap(int value) {
+        writable();
+        if (value < 0) throw new IllegalArgumentException("间距不能为负");
+        if (!authorGap && gap != value) { gap = value; changed(); }
         return this;
     }
 

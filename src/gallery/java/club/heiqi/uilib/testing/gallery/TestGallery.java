@@ -41,7 +41,8 @@ public final class TestGallery implements ScenePage {
         RESOURCE_TREE("项目资源","展开目录、浏览资源与编辑名称"),
         PREFERENCES("通知偏好","开关与单选条件组成的偏好表单"),
         PROJECT_DETAILS("项目详情","标签切换、独立草稿与保存反馈"),
-        VECTOR_PRESENTATION("路径与形状","环形进度、扇区动作、旋转与形状编辑视口");
+        VECTOR_PRESENTATION("路径与形状","环形进度、扇区动作、旋转与形状编辑视口"),
+        DENSITY("尺寸与密度","紧凑与舒适排布、局部尺寸和同一份编辑内容");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
         String reference(){
@@ -51,6 +52,7 @@ public final class TestGallery implements ScenePage {
                 case PREFERENCES:return "参考：项目通知与偏好表单";
                 case PROJECT_DETAILS:return "参考：项目详情与标签导航";
                 case VECTOR_PRESENTATION:return "参考：React Konva / 形状、裁剪与变换";
+                case DENSITY:return "参考：MUI Density / React Spectrum";
                 case MEDIA:return "参考：HTML video / 媒体控制";
                 case TOOLTIP:return "参考：shadcn Base / Tooltip";
                 case MAILBOX:return "参考：Gmail";
@@ -80,7 +82,9 @@ public final class TestGallery implements ScenePage {
         context.domain().effect(context.scope(),() -> {global.get();preview.set(null);});
         ReadableSignal<ThemeMode> mode=context.domain().computed(context.scope(),() -> preview.get()==null?global.get():preview.get());
         ReadableSignal<Boolean> dark=context.domain().computed(context.scope(),() -> mode.get().isDark());
-        ReadableSignal<SceneTheme> theme=context.domain().computed(context.scope(),() -> GalleryStyle.theme(dark.get()));
+        Signal<club.heiqi.uilib.ui.scene.control.SceneDensity> density=context.domain().signal(club.heiqi.uilib.ui.scene.control.SceneDensity.COMFORTABLE);
+        context.density(density);
+        ReadableSignal<SceneTheme> theme=context.domain().computed(context.scope(),() -> GalleryStyle.theme(dark.get()).withDensity(density.get()));
         MediaPage media=new MediaPage(context,environment,theme);
         motionPage=new MotionPage(context,theme,() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));
         context.motionPolicy(() -> selected.get()==Page.MOTION?motionPage.policy().get():club.heiqi.uilib.ui.scene.motion.MotionPolicy.NORMAL);
@@ -112,6 +116,7 @@ public final class TestGallery implements ScenePage {
                 case PREFERENCES:page=PreferencesPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case PROJECT_DETAILS:page=ProjectDetailsPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case VECTOR_PRESENTATION:page=VectorPresentationPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case DENSITY:page=DensityPage.create(context,theme,density,() -> navigate.accept(Page.HOME));break;
                 case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
                         () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
                 default:throw new AssertionError(id);
@@ -138,7 +143,7 @@ public final class TestGallery implements ScenePage {
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).padding(28).gap(24).scrollable(true);
         root.add(GalleryStyle.header(context,theme,"探索场景","从日常应用到细节交互，选择一个场景开始体验。",null));
         root.add(group(context,theme,navigate,"应用体验","完整的工作流程，共同的界面语言。",Page.MAILBOX,Page.SETTINGS,Page.MEDIA,Page.DATA_TABLE,Page.RESOURCE_TREE,Page.PREFERENCES,Page.PROJECT_DETAILS));
-        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.MOTION,Page.TOOLTIP,Page.VECTOR_PRESENTATION));
+        root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.MOTION,Page.TOOLTIP,Page.VECTOR_PRESENTATION,Page.DENSITY));
         return root;
     }
     private static SceneNode group(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate,String title,String description,Page... entries){

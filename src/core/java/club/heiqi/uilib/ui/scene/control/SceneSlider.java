@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.Arrays;
@@ -61,6 +62,11 @@ public final class SceneSlider {
         Objects.requireNonNull(page).domain().checkWrite();
         Control control=new Control(page,Objects.requireNonNull(onChange),Objects.requireNonNull(onCommit),Objects.requireNonNull(theme));
         SceneNode node=new SceneNode().control(control).size(Size.fill(1),Size.natural()).focusable(true).clickFocus(true);
+        control.node = node;
+        node.bind(NodeBinding.value(theme, (self, value) -> {
+            self.defaultStyle(value.metrics(SceneControlMetrics.Kind.SLIDER).textStyle);
+            control.sizing.set(value.metrics(SceneControlMetrics.Kind.SLIDER, self.style()).layoutKey());
+        }));
         node.bind(SceneControlBindings.declaration(model,(target,next)->control.configure(target,next)));
         node.bind(SceneControlBindings.declaration(()->{
             control.runtime.motionPolicy().get();control.runtime.interactionRevision().get();
@@ -82,6 +88,8 @@ public final class SceneSlider {
         final Signal<Model> actual;
         final DoubleConsumer changed, committed;
         final ReadableSignal<SceneTheme> theme;
+        final Signal<Object> sizing;
+        SceneNode node;
         final Gesture gesture;
         final Elastic elastic;
         Model model = new Model(0, 1, 1, 0, false);
@@ -94,6 +102,7 @@ public final class SceneSlider {
             this.changed = changed;
             this.committed = committed;
             this.theme = theme;
+            sizing = page.domain().signal(theme.get().metrics(SceneControlMetrics.Kind.SLIDER).layoutKey());
         }
 
         void configure(SceneNode node, Model next) {
@@ -154,11 +163,11 @@ public final class SceneSlider {
             return true;
         }
 
-        public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(theme); }
+        public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(sizing); }
         public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, gesture.preview, actual, elastic.offset); }
         public MeasuredSize measure(SceneNode node, Constraints c, SceneTextMeasurer text) {
-            return new MeasuredSize(Math.round(theme.get().textStyle.logicalEm * 10),
-                    Math.max(28, Math.round(theme.get().textStyle.logicalEm * 2)));
+            SceneControlMetrics metrics = theme.get().metrics(SceneControlMetrics.Kind.SLIDER, node.style());
+            return new MeasuredSize(metrics.sliderWidth, metrics.sliderHeight);
         }
         public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node, LayoutBox box,
                 club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
@@ -256,7 +265,7 @@ public final class SceneSlider {
         }
 
         private Track track(LayoutBox box) {
-            return Track.create(box, theme.get().textStyle.logicalEm, model.elastic,
+            return Track.create(box, theme.get().metrics(SceneControlMetrics.Kind.SLIDER, node.style()), model.elastic,
                     elastic.offset.get(), elastic.edge, elastic.engagement(gesture.dragging));
         }
 
@@ -489,9 +498,10 @@ public final class SceneSlider {
             this.radius = radius;
         }
 
-        static Track create(LayoutBox box, float em, ElasticOptions options, double offset, int edge, double engagement) {
-            int inset = Math.min(Math.max(5, Math.round(em * .45f)), box.width / 2);
-            int thickness = Math.max(3, Math.round(em * .3f)), radius = Math.max(5, Math.round(em * .4f));
+        static Track create(LayoutBox box, SceneControlMetrics metrics, ElasticOptions options, double offset, int edge, double engagement) {
+            float em = metrics.textStyle.logicalEm;
+            int inset = Math.min(metrics.sliderInset, box.width / 2);
+            int thickness = metrics.sliderThickness, radius = metrics.sliderThumbRadius;
             if (options != null) {
                 inset = Math.min(Math.max(radius + 6, box.width / 10), box.width / 2);
                 double resting = clamp(em * .85, 12, 16), active = clamp(em * 1.2, 18, 22);

@@ -62,6 +62,7 @@ public final class SceneDataTable<T, K, C> {
     private SceneDataTable(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
             ReadableSignal<List<Column<T, C>>> columnSource, ReadableSignal<Options> options, ReadableSignal<SceneTheme> theme) {
         Owner owner = page.scope().child();
+        ReadableSignal<SceneControlMetrics> metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.TABLE));
         ReadableSignal<List<Column<T, C>>> columns = page.domain().computed(owner, () -> {
             List<Column<T, C>> result = new ArrayList<>(Objects.requireNonNull(columnSource.get(), "数据表列"));
             Set<C> keys = new HashSet<>();
@@ -96,7 +97,7 @@ public final class SceneDataTable<T, K, C> {
         header.bind(NodeBinding.value(theme, (self, next) -> self.background(next.button)));
         rows = SceneVirtualList.measured(page, () -> columns.get().isEmpty() ? Collections.emptyList() : items.get(), key,
                 value -> line(columns, columnPositions, options, column -> column.cell.apply(value),
-                        () -> rowPosition(key.apply(value.get())), dataCount, headers), () -> options.get().rows, measure);
+                        () -> rowPosition(key.apply(value.get())), dataCount, headers), () -> options.get().rows, measure, metrics);
         rows.semanticRoles(null, null);
         SceneNode content = new SceneNode().size(Size.fill(1), Size.fill(1)).add(header).add(rows.node());
         content.bind(NodeBinding.value(minimum, (self, next) -> self.size(Size.fill(1).bounds(next, Integer.MAX_VALUE), Size.fill(1))));

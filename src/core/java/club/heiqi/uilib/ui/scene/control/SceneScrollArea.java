@@ -79,7 +79,10 @@ public final class SceneScrollArea {
             horizontal.bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options.get().motion));
             vertical.bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options.get().motion));
             SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true);
-            root.bind(SceneControlBindings.declaration(options, (node, next) -> configure(next, horizontal, vertical)));
+            root.bind(SceneControlBindings.declaration(() -> {
+                Options value = Objects.requireNonNull(options.get(), "scroll area options");
+                Options next = new Options(value); next.bars = value.bars.resolve(theme.get()); return next;
+            }, (node, next) -> configure(next, horizontal, vertical)));
             SceneNode xBar = bar(context, root, horizontal, SceneNode.Axis.ROW, options, theme);
             SceneNode yBar = bar(context, root, vertical, SceneNode.Axis.COLUMN, options, theme);
             root.control(new Frame(horizontal, xBar, yBar, axes, thickness)).add(horizontal).add(xBar).add(yBar);

@@ -30,12 +30,14 @@ public final class SceneScrollbar {
     public static final class Options {
         boolean autoHide = true, clickOnTrack = true, forceVisible;
         int thickness = 11, minimumThumb = 25, inset = 2;
+        private boolean explicitDimensions;
         long hideDelayMillis = 675, fadeMillis = 200;
         Integer trackColor, thumbColor, activeColor;
         public Options() {}
         private Options(Options from) {
             autoHide = from.autoHide; clickOnTrack = from.clickOnTrack; forceVisible = from.forceVisible;
             thickness = from.thickness; minimumThumb = from.minimumThumb; inset = from.inset;
+            explicitDimensions = from.explicitDimensions;
             hideDelayMillis = from.hideDelayMillis; fadeMillis = from.fadeMillis;
             trackColor = from.trackColor; thumbColor = from.thumbColor; activeColor = from.activeColor;
         }
@@ -45,7 +47,14 @@ public final class SceneScrollbar {
         public Options dimensions(int thickness, int minimumThumb, int inset) {
             if (inset < 0 || minimumThumb <= 0 || (long) thickness <= (long) inset * 2)
                 throw new IllegalArgumentException("滚动条宽度、最小滑块及内缩无效");
-            Options next = new Options(this); next.thickness = thickness; next.minimumThumb = minimumThumb; next.inset = inset; return next;
+            Options next = new Options(this); next.thickness = thickness; next.minimumThumb = minimumThumb; next.inset = inset; next.explicitDimensions = true; return next;
+        }
+        Options resolve(SceneTheme theme) {
+            if (explicitDimensions) return this;
+            SceneControlMetrics metrics = theme.metrics(SceneControlMetrics.Kind.SCROLLBAR);
+            Options next = new Options(this);
+            next.thickness = metrics.scrollbarThickness; next.minimumThumb = metrics.scrollbarMinimumThumb; next.inset = metrics.scrollbarInset;
+            return next;
         }
         public Options timing(long hideDelayMillis, long fadeMillis) {
             if (hideDelayMillis < 0 || fadeMillis < 0 || hideDelayMillis > Long.MAX_VALUE / 4_000_000L || fadeMillis > Long.MAX_VALUE / 4_000_000L)
@@ -123,7 +132,8 @@ public final class SceneScrollbar {
                 return new BindingActivation() { public void refresh() {} public void close() {} };
             });
             node.bind(NodeBinding.hoverWithin(0, (self, inside) -> visibility.hover(inside)));
-            node.bind(SceneControlBindings.declaration(source, (self, value) -> configure(Objects.requireNonNull(value, "scroll options"))));
+            node.bind(SceneControlBindings.declaration(() -> Objects.requireNonNull(source.get(), "scroll options").resolve(theme.get()),
+                    (self, value) -> configure(value)));
             if (!automatic) node.bind(NodeBinding.value(hasRange, SceneNode::focusable));
             return node;
         }

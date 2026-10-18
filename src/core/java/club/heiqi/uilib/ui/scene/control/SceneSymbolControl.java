@@ -34,12 +34,8 @@ abstract class SceneSymbolControl implements SceneControl {
                 .focusable(true).clickFocus(true).onClick(action);
         node.bind(NodeBinding.value(() -> Objects.requireNonNull(name.get(), "控件名称"), SceneNode::text));
         node.bind(NodeBinding.value(control.theme, (n,t) -> {
-            n.style(t.textStyle);
-            int padding=Math.max(4,t.padding/2);
-            if(n.padding()!=padding)n.padding(padding);
-            // 只读名称的间距也是尺寸依赖；颜色变化不能借重复padding写入失效度量。
-            int gap=control.showLabel?t.gap:0;
-            if(n.gap()!=gap)n.gap(gap);
+            SceneControlMetrics metrics = t.metrics(SceneControlMetrics.Kind.SYMBOL);
+            n.defaultStyle(metrics.textStyle).defaultPadding(metrics.padding).defaultGap(control.showLabel ? metrics.iconGap : 0);
         }));
         control.motion.install(node, () -> control.theme.get().feedbackMotion, self -> SceneControlMotion.target(self, control.theme.get()));
         return node;
@@ -47,7 +43,7 @@ abstract class SceneSymbolControl implements SceneControl {
     static SceneNode graphic(ScenePageContext page, SceneSymbolControl control) {
         Objects.requireNonNull(page).domain().checkWrite();
         return new SceneNode().control(control).size(Size.natural(),Size.natural())
-                .bind(NodeBinding.value(control.theme,(n,t) -> n.style(t.textStyle)));
+                .bind(NodeBinding.value(control.theme,(n,t) -> n.defaultStyle(t.metrics(SceneControlMetrics.Kind.SYMBOL).textStyle)));
     }
     /** 装饰不额外朗读；正式符号按钮沿完整名称和原click动作。 */
     @Override public SceneSemantics semantics(SceneNode node) {
@@ -57,7 +53,7 @@ abstract class SceneSymbolControl implements SceneControl {
         else result.actions(SceneSemantics.Action.ACTIVATE);
         return result.build();
     }
-    int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
+    int symbolSize(SceneNode node) { return theme.get().metrics(SceneControlMetrics.Kind.SYMBOL, node.style()).iconSize; }
     int symbolWidth(SceneNode node) { return symbolSize(node); }
     private int labelOffset(SceneNode node) { return symbolWidth(node) + node.gap(); }
     @Override public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
@@ -85,7 +81,7 @@ abstract class SceneSymbolControl implements SceneControl {
         int side = Math.min(symbolSize(node),Math.min(inner.width,inner.height));
         int markWidth = Math.min(inner.width, Math.max(0, Math.round((float)side * symbolWidth(node) / symbolSize(node))));
         LayoutBox mark = new LayoutBox(inner.x+(showLabel?0:(inner.width-markWidth)/2),inner.y + (inner.height-side)/2,markWidth,side);
-        symbol(mark,target,e.clip,enabled ? style.textStyle.color : style.disabledText);
+        symbol(mark,target,e.clip,enabled ? node.style().color : style.disabledText);
         if (showLabel) {
             LayoutBox label = new LayoutBox(inner.x+labelOffset(node),inner.y,Math.max(0,inner.width-labelOffset(node)),inner.height);
             target.add(PaintCommand.text(label,e.clip,e.text.withStyle(e.text.style.withColor(enabled ? node.style().color : style.disabledText))));

@@ -67,8 +67,10 @@ final class SceneTextControl implements SceneControl {
                 NodeBinding.value(
                         theme,
                         (target, value) -> {
-                            target.style(value.textStyle);
-                            if (button && target.padding()!=value.padding) target.padding(value.padding);
+                            SceneTextControl control = (SceneTextControl) target.control();
+                            SceneControlMetrics metrics = value.metrics(control.kind());
+                            target.defaultStyle(metrics.textStyle);
+                            if (button) target.defaultPadding(metrics.padding).defaultGap(metrics.iconGap);
                         }));
         if (button) {
             SceneTextControl control = (SceneTextControl) node.control();
@@ -88,7 +90,7 @@ final class SceneTextControl implements SceneControl {
 
     static SceneNode createModern(ReadableSignal<String> text,ReadableSignal<SceneAppearance.Palette> colors,
             SceneAppearance.Role role,ReadableSignal<SceneIconButton.Symbol> icon){
-        SceneNode node=create(text,()->colors.get().theme(1,
+        SceneNode node=create(text,()->colors.get().defaultTheme(1,
                 role==SceneAppearance.Role.PRIMARY?colors.get().onPrimary:colors.get().text,10),
                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE,true,icon);
         ((SceneTextControl)node.control()).modernSurface=new SceneAppearance.Surface(colors,role,node,()->false);
@@ -104,10 +106,12 @@ final class SceneTextControl implements SceneControl {
         return result.build();
     }
 
-    private int iconSize(SceneNode node) { return leadingIcon==null?0:Math.max(1,Math.round(node.style().logicalEm*1.2f)); }
-    private int iconSpace(SceneNode node) { return leadingIcon==null?0:iconSize(node)+theme.get().gap; }
+    private SceneControlMetrics.Kind kind() { return !button ? SceneControlMetrics.Kind.LABEL
+            : modernSurface == null ? SceneControlMetrics.Kind.BUTTON : SceneControlMetrics.Kind.MODERN_BUTTON; }
+    private int iconSize(SceneNode node) { return leadingIcon == null ? 0 : theme.get().metrics(kind(), node.style()).iconSize; }
+    private int iconSpace(SceneNode node) { return leadingIcon == null ? 0 : iconSize(node) + node.gap(); }
     @Override public java.util.List<ReadableSignal<?>> measureDependencies(SceneNode node) {
-        return leadingIcon==null?Collections.emptyList():Collections.singletonList(theme);
+        return Collections.emptyList();
     }
     @Override public java.util.List<ReadableSignal<?>> paintDependencies(SceneNode node) {
         return leadingIcon==null?Collections.singletonList(theme):java.util.Arrays.asList(theme,leadingIcon);

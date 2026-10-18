@@ -36,7 +36,7 @@ public final class SceneRadioGroup<K> {
         SceneChoiceNavigation<Option<K>, K> navigation = new SceneChoiceNavigation<>(page, options, option -> option.key,
                 option -> option.enabled.get(), nodes, selected, change, true);
         node = new SceneNode().size(Size.fill(1), Size.natural()).control(navigation);
-        node.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
+        node.bind(NodeBinding.value(() -> theme.get().metrics(SceneControlMetrics.Kind.SYMBOL).gap, SceneNode::defaultGap));
         node.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.RADIO_GROUP)
                 .count(options.get().size()).actions().build()));
         node.bind(NodeBinding.repeat(options, option -> option.key, current -> {

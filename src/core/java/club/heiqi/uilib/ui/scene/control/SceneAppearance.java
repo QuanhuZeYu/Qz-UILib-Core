@@ -31,11 +31,13 @@ public class SceneAppearance {
         public final boolean dark;
         public final int canvas,selected,accent,error;
         public final club.heiqi.uilib.ui.scene.text.TextStyle textStyle;
+        private final club.heiqi.uilib.ui.scene.text.TextStyle typography;
         public final int background,muted,surface,border,text,primary,onPrimary,hover;
         public Palette(boolean dark){this(dark?SceneTheme.dark():SceneTheme.light());}
         public Palette(SceneTheme source) {
             this.source=source;
             textStyle=club.heiqi.uilib.ui.scene.text.font.UiFontSources.style(source.textStyle);
+            typography=club.heiqi.uilib.ui.scene.text.font.UiFontSources.style(source.baseTextStyle());
             int color=source.panel;
             dark=((color>>>16&255)*299+(color>>>8&255)*587+(color&255)*114)<128000;
             canvas=dark?DARK_CANVAS:LIGHT_CANVAS;
@@ -51,11 +53,15 @@ public class SceneAppearance {
             hover=dark?0xff27272a:0xfff4f4f5;
         }
         public SceneTheme editorTheme() {
-            return new SceneTheme(textStyle.withColor(text),0,0,0x409494a3,0,text,0,muted,primary,onPrimary,11,8).withMotion(source.feedbackMotion, source.spatialMotion);
+            return source.appearance(typography.withColor(text),0,0,0x409494a3,0,text,0,muted,primary,onPrimary,11,8,true);
         }
         public SceneTheme theme(float scale,int color,int padding) {
-            return new SceneTheme(textStyle.withEm(textStyle.logicalEm*scale).withColor(color),
-                    0,0,0,0,0,0,muted,primary,onPrimary,padding,8).withMotion(source.feedbackMotion, source.spatialMotion);
+            return mappedTheme(scale,color,padding,false);
+        }
+        SceneTheme defaultTheme(float scale,int color,int padding) { return mappedTheme(scale,color,padding,true); }
+        private SceneTheme mappedTheme(float scale,int color,int padding,boolean inheritPadding) {
+            return source.appearance(typography.withEm(typography.logicalEm*scale).withColor(color),
+                    0,0,0,0,0,0,muted,primary,onPrimary,padding,8,inheritPadding);
         }
     }
     protected final ScenePageContext page;
@@ -94,7 +100,7 @@ public class SceneAppearance {
     }
     public static SceneTheme theme(boolean dark){
         Palette p=new Palette(dark);
-        return new SceneTheme(p.textStyle.withEm(15).withColor(p.text),p.background,p.surface,p.hover,p.selected,p.accent,
+        return SceneTheme.defaults(p.textStyle.withEm(15).withColor(p.text),p.background,p.surface,p.hover,p.selected,p.accent,
                 p.surface,p.muted,p.primary,p.onPrimary,CONTROL_PADDING,GAP);
     }
     public static SceneNode button(ScenePageContext page,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,Runnable action,Role role){
@@ -170,9 +176,10 @@ public class SceneAppearance {
             int edge=focused?p.muted:role==Role.OUTLINE||role==Role.FIELD||role==Role.PANEL||role==Role.CARD?p.border:fill;
             if(role==Role.PANEL){
                 for(int spread=6;spread>=2;spread-=2)ScenePaintShapes.rounded(paint,
-                        new LayoutBox(e.box.x-spread,e.box.y-spread/2,e.box.width+spread*2,e.box.height+spread*2),e.clip,0x08000000,12+spread);
+                        new LayoutBox(e.box.x-spread,e.box.y-spread/2,e.box.width+spread*2,e.box.height+spread*2),e.clip,0x08000000,p.source.metrics(SceneControlMetrics.Kind.PANEL).radius+spread);
             }
-            int radius=role==Role.PANEL||role==Role.CARD?CARD_RADIUS:CONTROL_RADIUS;
+            int radius=p.source.metrics(role==Role.PANEL ? SceneControlMetrics.Kind.PANEL
+                    : role==Role.CARD ? SceneControlMetrics.Kind.CARD : SceneControlMetrics.Kind.MODERN_BUTTON).radius;
             ScenePaintShapes.rounded(paint,e.box,e.clip,edge,radius);
             ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,radius-1);
         }

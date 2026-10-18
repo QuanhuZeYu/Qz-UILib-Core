@@ -46,6 +46,7 @@ public final class SceneTabs<K> {
     private SceneTabs(ScenePageContext page, ReadableSignal<List<Tab<K>>> source, ReadableSignal<K> selected,
             Consumer<K> change, ReadableSignal<SceneTheme> theme) {
         Owner owner = page.scope().child();
+        ReadableSignal<SceneControlMetrics> metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.TABS));
         ReadableSignal<List<Tab<K>>> tabs = page.domain().computed(owner, () -> {
             List<Tab<K>> result = new ArrayList<>(Objects.requireNonNull(source.get(), "标签来源")); Set<K> keys = new HashSet<>();
             for (Tab<K> tab : result) if (!keys.add(Objects.requireNonNull(tab, "标签声明").key)) throw new IllegalArgumentException("标签键重复: " + tab.key);
@@ -55,11 +56,13 @@ public final class SceneTabs<K> {
         SceneChoiceNavigation<Tab<K>, K> navigation = new SceneChoiceNavigation<>(page, tabs, tab -> tab.key,
                 tab -> tab.enabled.get(), targets, selected, change, false);
         SceneNode labels = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(), Size.natural());
-        labels.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
+        labels.bind(NodeBinding.value(() -> metrics.get().gap, SceneNode::defaultGap));
         labels.bind(NodeBinding.repeat(tabs, tab -> tab.key, current -> {
             K key = current.get().key;
             SceneNode button = SceneButton.create(page, () -> current.get().title.get(), theme, () -> navigation.select(key), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                     .size(Size.natural(), Size.natural());
+            button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
+                    .defaultPadding(value.padding).defaultGap(value.iconGap)));
             button.bind(NodeBinding.value(() -> current.get().enabled.get(), SceneNode::enabled));
             button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TAB)
                     .name(current.get().title.get()).selected(Objects.equals(selected.get(), key))
@@ -97,8 +100,8 @@ public final class SceneTabs<K> {
             page.runtime().interactionRevision().get();
             return !active.get().isEmpty() && !hasFocusableChild(panel);
         }, (self, focusable) -> { if (self.focusable() != focusable) self.focusable(focusable); }));
-        node = new SceneNode().size(Size.fill(1), Size.fill(1)).gap(8).own(owner).add(bar).add(panel);
-        node.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
+        node = new SceneNode().size(Size.fill(1), Size.fill(1)).own(owner).add(bar).add(panel);
+        node.bind(NodeBinding.value(() -> metrics.get().gap, SceneNode::defaultGap));
     }
     public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
             Consumer<K> change, ReadableSignal<SceneTheme> theme) {

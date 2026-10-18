@@ -31,8 +31,9 @@ public final class SceneVirtualList<T, K> {
     private final SceneScrollViewport viewport;
 
     private SceneVirtualList(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
-            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition) {
-        controller = new VirtualCollectionController<>(page, items, key, declaration, options, measurementCondition);
+            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition,
+            ReadableSignal<SceneControlMetrics> metrics) {
+        controller = new VirtualCollectionController<>(page, items, key, declaration, options, measurementCondition, metrics);
         node = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true).scrollable(true).control(controller);
         controller.attach(node);
         viewport = SceneScrollViewport.of(page, node, SceneNode.Axis.COLUMN);
@@ -47,13 +48,22 @@ public final class SceneVirtualList<T, K> {
             Function<T, K> key, Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options) {
         Objects.requireNonNull(page, "page").domain().checkWrite();
         return new SceneVirtualList<>(page, Objects.requireNonNull(items, "items"), Objects.requireNonNull(key, "key"),
-                Objects.requireNonNull(declaration, "declaration"), Objects.requireNonNull(options, "options"), () -> null);
+                Objects.requireNonNull(declaration, "declaration"), Objects.requireNonNull(options, "options"), () -> null,
+                () -> page.theme().get().metrics(SceneControlMetrics.Kind.VIRTUAL));
     }
 
     /** 复合数据视图的列条件只结束旧高度事实；既有公开入口没有新增依赖前提。 */
     static <T, K> SceneVirtualList<T, K> measured(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition) {
-        return new SceneVirtualList<>(page, items, key, declaration, options, measurementCondition);
+        return measured(page, items, key, declaration, options, measurementCondition,
+                () -> page.theme().get().metrics(SceneControlMetrics.Kind.VIRTUAL));
+    }
+
+    /** 所属复合控件提供当前角色；估算和失效复用原高度索引，不改写业务行的主题。 */
+    static <T, K> SceneVirtualList<T, K> measured(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
+            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition,
+            ReadableSignal<SceneControlMetrics> metrics) {
+        return new SceneVirtualList<>(page, items, key, declaration, options, measurementCondition, metrics);
     }
 
     /** 所属数据视图声明自己的语义角色；普通公开集合仍使用LIST和LIST_ITEM。 */

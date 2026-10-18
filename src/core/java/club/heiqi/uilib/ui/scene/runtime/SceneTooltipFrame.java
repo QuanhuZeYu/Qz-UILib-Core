@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.scene.runtime;
 
 import club.heiqi.uilib.ui.scene.control.SceneTooltip;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.control.SceneControlMetrics;
+import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
@@ -17,14 +19,14 @@ final class SceneTooltipFrame {
     final LayoutBox anchor,box,viewport;
     final SceneTooltip.Side side;
     final TextLayout body,shortcut;
-    final int color,padding,gap,arrow;
-    SceneTooltipFrame(LayoutBox anchor,LayoutBox box,LayoutBox viewport,SceneTooltip.Side side,TextLayout body,TextLayout shortcut,int color,int padding,int gap,int arrow){
-        this.anchor=anchor;this.box=box;this.viewport=viewport;this.side=side;this.body=body;this.shortcut=shortcut;this.color=color;this.padding=padding;this.gap=gap;this.arrow=arrow;
+    final int color,padding,gap,arrow,radius;
+    SceneTooltipFrame(LayoutBox anchor,LayoutBox box,LayoutBox viewport,SceneTooltip.Side side,TextLayout body,TextLayout shortcut,int color,int padding,int gap,int arrow,int radius){
+        this.anchor=anchor;this.box=box;this.viewport=viewport;this.side=side;this.body=body;this.shortcut=shortcut;this.color=color;this.padding=padding;this.gap=gap;this.arrow=arrow;this.radius=radius;
     }
-    boolean same(SceneTooltipFrame other){return other!=null&&same(box,other.box)&&same(anchor,other.anchor)&&same(viewport,other.viewport)&&side==other.side&&body==other.body&&shortcut==other.shortcut&&color==other.color&&padding==other.padding&&gap==other.gap&&arrow==other.arrow;}
+    boolean same(SceneTooltipFrame other){return other!=null&&same(box,other.box)&&same(anchor,other.anchor)&&same(viewport,other.viewport)&&side==other.side&&body==other.body&&shortcut==other.shortcut&&color==other.color&&padding==other.padding&&gap==other.gap&&arrow==other.arrow&&radius==other.radius;}
     private static boolean same(LayoutBox a,LayoutBox b){return a.x==b.x&&a.y==b.y&&a.width==b.width&&a.height==b.height;}
     void paint(PaintPlanBuilder target){
-        int radius=Math.min(club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS,Math.min(box.width,box.height)/2);
+        int radius=Math.min(this.radius,Math.min(box.width,box.height)/2);
         ScenePaintShapes.rounded(target,box,viewport,color,radius);
         paintArrow(target);
         int bodyHeight=body.height;
@@ -60,16 +62,28 @@ final class SceneTooltipFrame {
         private TextLayout body,shortcut;
         SceneTooltipFrame prepare(LayoutBox anchor,LayoutBox viewport,SceneTooltip.Hint hint,SceneTextMeasurer text,long revision){
             SceneTooltip.Options o=hint.options;SceneTheme theme=hint.theme;
-            TextStyle next=UiFontSources.style(theme.textStyle).withColor(theme.tooltipText);
-            int padding=Math.min(Math.max(4,Math.round(next.logicalEm*.4f)),Math.min(viewport.width,viewport.height)/2);
+            SceneControlMetrics sizing=theme.metrics(SceneControlMetrics.Kind.TOOLTIP);
+            TextStyle next=UiFontSources.style(sizing.textStyle).withColor(theme.tooltipText);
+            int padding=Math.min(sizing.padding,Math.min(viewport.width,viewport.height)/2);
             int available=Math.max(0,Math.min(viewport.width-padding*2,(int)Math.ceil(o.maxWidthEm*next.logicalEm)));
-            if(body==null||!hint.content.same(content)||!next.equals(style)||available!=width||metrics!=revision||direction!=o.direction){
+            if(body==null||!hint.content.same(content)||!next.sameLayout(style)||available!=width||metrics!=revision||direction!=o.direction){
                 content=hint.content;style=next;width=available;metrics=revision;direction=o.direction;
                 TextPolicy policy=new TextPolicy(direction,TextPolicy.Wrap.EMERGENCY,"und",0,0);
                 body=content.plainText==null?text.layout(content.text.resolve(style).text,available,policy):text.layout(content.plainText,style,available,policy);
                 shortcut=content.shortcut.isEmpty()?null:text.layout(content.shortcut,style.withEm(style.logicalEm*.9f),available,policy);
+            } else if (!next.equals(style)) {
+                if (content.plainText != null) body = body.withStyle(next);
+                else {
+                    AttributedText resolved = content.text.resolve(next).text;
+                    AttributedText previous = content.text.resolve(style).text;
+                    body = resolved.positionKey().equals(previous.positionKey())
+                            ? body.withColors(resolved.baseStyle, offset -> resolved.styleAt(offset).color)
+                            : text.layout(resolved, available, new TextPolicy(direction,TextPolicy.Wrap.EMERGENCY,"und",0,0));
+                }
+                if (shortcut != null) shortcut = shortcut.withStyle(next.withEm(next.logicalEm*.9f));
+                style = next;
             }
-            int gap=shortcut==null?0:Math.max(2,padding/2);
+            int gap=shortcut==null?0:sizing.gap;
             int w=Math.min(viewport.width,Math.max(body.width,shortcut==null?0:shortcut.width)+padding*2);
             int h=Math.min(viewport.height,body.height+(shortcut==null?0:shortcut.height+gap)+padding*2);
             int arrow=o.arrow?Math.max(2,Math.min(12,Math.round(next.logicalEm*.25f))):0;
@@ -80,7 +94,7 @@ final class SceneTooltipFrame {
                 if(fits(alternate,w,h,viewport)||room(anchor,viewport,opposite)>room(anchor,viewport,actual)){actual=opposite;point=alternate;}
             }
             LayoutBox box=new LayoutBox(clamp(point[0],viewport.x,viewport.x+viewport.width-w),clamp(point[1],viewport.y,viewport.y+viewport.height-h),w,h);
-            return new SceneTooltipFrame(anchor,box,viewport,actual,body,shortcut,theme.tooltip,padding,gap,arrow);
+            return new SceneTooltipFrame(anchor,box,viewport,actual,body,shortcut,theme.tooltip,padding,gap,arrow,sizing.radius);
         }
         private static boolean fits(long[] p,int w,int h,LayoutBox v){return p[0]>=v.x&&p[1]>=v.y&&p[0]+w<=(long)v.x+v.width&&p[1]+h<=(long)v.y+v.height;}
         private static long room(LayoutBox a,LayoutBox v,SceneTooltip.Side side){switch(side){case TOP:return (long)a.y-v.y;case BOTTOM:return (long)v.y+v.height-a.y-a.height;case LEFT:return (long)a.x-v.x;default:return (long)v.x+v.width-a.x-a.width;}}

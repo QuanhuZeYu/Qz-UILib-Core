@@ -20,8 +20,8 @@ final class SceneEditBindings {
                 (target, value) -> target.text(SceneEditCommands.display(value))));
         // 字体/字号由正式节点样式分类；配色只影响绘制，同值padding不能扩大为重新测量。
         node.bind(NodeBinding.value(theme, (target, value) -> {
-            target.style(value.textStyle);
-            if(target.padding()!=value.padding)target.padding(value.padding);
+            SceneControlMetrics metrics = value.metrics(SceneControlMetrics.Kind.FIELD);
+            target.defaultStyle(metrics.textStyle).defaultPadding(metrics.padding);
         }));
         node.bind(NodeBinding.value(readOnly, (target, locked) -> {
             if (locked) target.runtime().invalidateComposition(target);

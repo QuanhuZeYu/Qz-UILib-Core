@@ -119,7 +119,7 @@ final class GalleryStyle {
     private static final class Frame implements SceneControl {
         private final ReadableSignal<SceneTheme> theme;
         Frame(ReadableSignal<SceneTheme> theme) { this.theme = theme; }
-        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(theme); }
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Collections.singletonList(theme); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
             MeasuredSize size = children.measureChild(children.flowChildren().get(0), new Constraints(Math.max(0, limits.availableWidth - 2), Math.max(0, limits.availableHeight - 2)));
@@ -139,10 +139,11 @@ final class GalleryStyle {
             SceneGeometryView.Entry entry = geometry.get(node);
             LayoutBox box = entry.box;
             int border = new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(theme.get()).border;
-            ScenePaintShapes.rounded(paint, box, entry.clip, border, club.heiqi.uilib.ui.scene.control.SceneAppearance.CARD_RADIUS);
+            int radius = theme.get().metrics(club.heiqi.uilib.ui.scene.control.SceneControlMetrics.Kind.CARD).radius;
+            ScenePaintShapes.rounded(paint, box, entry.clip, border, radius);
             // 动态填色归同一圆角表面；正文整盒背景会在随后绘制时盖掉边框圆弧。
             int fill = (node.background() >>> 24) == 0 ? theme.get().panel : node.background();
-            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, fill, club.heiqi.uilib.ui.scene.control.SceneAppearance.CARD_RADIUS-1);
+            ScenePaintShapes.rounded(paint, new LayoutBox(box.x + 1, box.y + 1, Math.max(0, box.width - 2), Math.max(0, box.height - 2)), entry.clip, fill, Math.max(0, radius-1));
         }
     }
 }

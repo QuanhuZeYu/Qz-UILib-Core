@@ -74,6 +74,7 @@ public final class SceneTreeView<T, K> {
     private final Consumer<Expansion<K>> expansion;
     private final ReadableSignal<Options> options;
     private final ReadableSignal<SceneTheme> theme;
+    private final ReadableSignal<SceneControlMetrics> metrics;
     private final Function<ReadableSignal<Entry<T, K>>, SceneNode> factory;
     private final SceneVirtualList<Entry<T, K>, K> rows;
     private final SceneNode node;
@@ -87,11 +88,12 @@ public final class SceneTreeView<T, K> {
         this.textValue = textValue; this.disabledKeys = disabledKeys;
         this.page = page; this.expanded = expanded; this.expansion = expansion; this.factory = factory; this.options = options; this.theme = theme;
         Owner owner = page.scope().child();
+        metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.TREE));
         structure = page.domain().computed(owner, () -> new TreeIndex<>(source.get(), key, parent));
         visible = page.domain().computed(owner, () -> structure.get().project(expanded.get()));
         ReadableSignal<List<Object>> measure = page.domain().computed(owner,
-                () -> Arrays.asList(indent(), theme.get().gap, theme.get().textStyle.logicalEm));
-        rows = SceneVirtualList.measured(page, visible, entry -> entry.key, this::row, () -> options.get().rows, measure);
+                () -> Arrays.asList(indent(), metrics.get().gap, metrics.get().textStyle.logicalEm));
+        rows = SceneVirtualList.measured(page, visible, entry -> entry.key, this::row, () -> options.get().rows, measure, metrics);
         rows.semanticRoles(null, null);
         node = new SceneNode().size(Size.fill(1), Size.fill(1)).control(new TreeControl()).add(rows.node()).own(owner);
         node.bind(NodeBinding.value(() -> page.runtime().focusRouter().focused().get(), (self, focused) -> {
@@ -99,7 +101,7 @@ public final class SceneTreeView<T, K> {
         }));
     }
 
-    private int indent() { return options.get().indent < 0 ? Math.max(1, Math.round(theme.get().textStyle.logicalEm * 1.25f)) : options.get().indent; }
+    private int indent() { return options.get().indent < 0 ? metrics.get().treeIndent : options.get().indent; }
     private SceneNode row(ReadableSignal<Entry<T, K>> entry) {
         K key = entry.get().key;
         SceneNode content = Objects.requireNonNull(factory.apply(entry), "树行工厂产物");
@@ -131,9 +133,9 @@ public final class SceneTreeView<T, K> {
         marker.bind(NodeBinding.value(() -> entry.get().branch, SceneNode::visible));
         marker.bind(NodeBinding.semantics(() -> SceneSemantics.builder().excluded(true).build()));
         SceneNode slot = new SceneNode().size(Size.fixed(24), Size.natural()).add(marker);
-        slot.bind(NodeBinding.value(() -> Math.max(1, Math.round(theme.get().textStyle.logicalEm * 2)),
+        slot.bind(NodeBinding.value(() -> metrics.get().treeMarkerSlot,
                 (self, width) -> self.size(Size.fixed(width), Size.natural())));
-        row.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
+        row.bind(NodeBinding.value(() -> metrics.get().gap, SceneNode::defaultGap));
         return row.control(new RowControl(key, entry)).add(space).add(slot).add(content);
     }
 
