@@ -123,45 +123,45 @@ public final class PerformanceGallery implements ScenePage {
             editor = new SceneEditState(context.domain(), text.toString(), SceneEditState.Mode.MULTI_LINE);
             return SceneTextArea.create(context, editor, theme, () -> false, r -> editor.accept(r, r.text)).size(Size.fill(1), Size.fill(1));
         }
-        SceneNode viewport = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(5);
-        viewport.bind(NodeBinding.value(width, (n,w) -> n.size(w, Size.fill(1))));
-        if (load == Load.RESIZE) viewport.add(new SceneNode().size(Size.fixed(0), Size.fixed(0)).control(new club.heiqi.uilib.ui.scene.control.SceneControl() {
-            @Override public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node, club.heiqi.uilib.ui.scene.layout.Constraints limits, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text) {
-                return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(0, 0);
-            }
-            @Override public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node, club.heiqi.uilib.ui.scene.layout.LayoutBox allocated, club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
-                return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(Collections.emptyList());
-            }
-            @Override public void paint(SceneNode node, club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry,
-                    club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder paint) {
-                // 测试侧只观测正式分配宽度；不把几何读回业务声明或修改布局。
-                int actual = geometry.get(viewport).box.width;
-                currentTargetWidth = actual;
-            }
-        }));
-        if (load == Load.DOCUMENT) {
-            // 预留外层滚轮命中留白，自动驱动不会在嵌套表格水平视口上停止纵向负载。
-            viewport.padding(12);
-            StringBuilder markdown = new StringBuilder("# 压测交接记录\n\n");
-            for (int i = 0; i < count; i++) {
-                markdown.append("## 批次 ").append(i).append("\n\n工坊 **材料核对** Café é العربية אבג。保持真实字体整形与换行。\n\n");
-                if (i % 10 == 0) markdown.append("| 项目 | 数量 |\n| --- | ---: |\n| 铜锭 | 64 |\n| 产出 | 32 |\n\n$\\frac{a+b}{c}$\n\n");
-            }
-            DocumentContent document = club.heiqi.uilib.ui.scene.text.MarkdownDocument.parse(markdown.toString());
-            contentLength = markdown.length();
-            viewport.add(SceneDocument.create(context, () -> document, theme, null, link -> {}));
-        } else {
+        if (load != Load.DOCUMENT) {
             contentLength = 0;
+            List<Integer> keys = new ArrayList<>();
             for (int i = 0; i < count; i++) {
-                final int index = i;
                 String initial = "条目 " + i + " / 材料核对 Café · 数量 32 · 工坊记录";
-                Signal<String> value = context.domain().signal(initial); rows.add(value); contentLength += initial.length();
-                SceneNode row = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(8);
-                row.add(GalleryStyle.label(context, value, theme, 15, false).size(Size.fill(1), Size.natural()));
-                row.add(GalleryStyle.button(context, () -> "核对 " + index, theme, () -> value.set("已核对 " + index)));
-                viewport.add(row);
+                rows.add(context.domain().signal(initial)); keys.add(i); contentLength += initial.length();
             }
+            SceneNode viewport = club.heiqi.uilib.ui.scene.control.SceneVirtualList.create(context, () -> keys,
+                    index -> index, item -> {
+                        int index = item.get(); Signal<String> value = rows.get(index);
+                        SceneNode row = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).gap(8);
+                        row.add(GalleryStyle.label(context, value, theme, 15, false).size(Size.fill(1), Size.natural()));
+                        row.add(GalleryStyle.button(context, () -> "核对 " + index, theme, () -> value.set("已核对 " + index)));
+                        return row;
+                    }).node().gap(5);
+            viewport.bind(NodeBinding.value(width, (node, size) -> node.size(size, Size.fill(1))));
+            if (load == Load.RESIZE) viewport.bind((runtime, node, owner) -> {
+                owner.own(runtime.observeGeometry(node, geometry -> {
+                    if (geometry != null) currentTargetWidth = geometry.get(node).box.width;
+                }));
+                return new club.heiqi.uilib.ui.scene.runtime.BindingActivation() {
+                    public void refresh() { }
+                    public void close() { }
+                };
+            });
+            return viewport;
         }
+        SceneNode viewport = new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(5);
+        viewport.bind(NodeBinding.value(width, (node, size) -> node.size(size, Size.fill(1))));
+        // 预留外层滚轮命中留白，自动驱动不会在嵌套表格水平视口上停止纵向负载。
+        viewport.padding(12);
+        StringBuilder markdown = new StringBuilder("# 压测交接记录\n\n");
+        for (int i = 0; i < count; i++) {
+            markdown.append("## 批次 ").append(i).append("\n\n工坊 **材料核对** Café é العربية אבג。保持真实字体整形与换行。\n\n");
+            if (i % 10 == 0) markdown.append("| 项目 | 数量 |\n| --- | ---: |\n| 铜锭 | 64 |\n| 产出 | 32 |\n\n$\\frac{a+b}{c}$\n\n");
+        }
+        DocumentContent document = club.heiqi.uilib.ui.scene.text.MarkdownDocument.parse(markdown.toString());
+        contentLength = markdown.length();
+        viewport.add(SceneDocument.create(context, () -> document, theme, null, link -> {}));
         return viewport;
     }
     /** 计时仅涵盖所声明的宿主边界；路径核对、统计和文件写入在边界外。 */

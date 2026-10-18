@@ -23,6 +23,8 @@ public final class SceneFocusRouter {
     private final SceneRuntime runtime;
     private final Signal<SceneNode> value;
     private final ReadableSignal<SceneNode> view;
+    private final Signal<List<SceneNode>> retained;
+    private final ReadableSignal<List<SceneNode>> retainedView;
     private final Signal<Boolean> keyboardCue;
     private final List<Range> ranges = new ArrayList<>();
     private MountHandle owner, pendingReveal;
@@ -35,10 +37,15 @@ public final class SceneFocusRouter {
     }
     private final java.util.ArrayDeque<FocusLoss> pendingFocusLosses = new java.util.ArrayDeque<>();
     private boolean closed, rangesDirty = true;
+    private SceneLogicalNavigation navigation;
+    private Range navigationRange;
+    private boolean navigationReveal;
 
     SceneFocusRouter(SceneRuntime runtime) {
         this.runtime = runtime;
         value = runtime.domain().signal(null);
+        retained = runtime.domain().signal(java.util.Collections.emptyList());
+        retainedView = retained::get;
         keyboardCue=runtime.domain().signal(true);
         view = value::get; // 只读包装保留依赖追踪，不暴露可强转的写端。
         ranges.add(new Range(null));
@@ -48,6 +55,38 @@ public final class SceneFocusRouter {
     public ReadableSignal<SceneNode> focused() {
         runtime.domain().checkAccess();
         return view;
+    }
+
+    /** 一次实际输入范围的只读有效性联系；内容继续显示不延长已结束的模态代际。 */
+    public final class RangeHandle {
+        private final Range range;
+        private RangeHandle(Range range) { this.range = range; }
+        public boolean active() {
+            runtime.domain().checkAccess();
+            return !closed && ranges.contains(range) && (range.modal == null || alive(range));
+        }
+    }
+
+    /** 捕获当前范围，不选择焦点；异步呈现意图可据此拒绝已结束范围的旧请求。 */
+    public RangeHandle captureRange() {
+        runtime.domain().checkWrite();
+        revalidate();
+        return new RangeHandle(top());
+    }
+
+    /** 当前owner及被覆盖范围的合法恢复记录；供按需视图有限保留，不是另一份焦点权威。 */
+    public ReadableSignal<List<SceneNode>> retainedFocus() {
+        runtime.domain().checkAccess(); return retainedView;
+    }
+
+    private void publishRetained() {
+        List<SceneNode> next = new ArrayList<>();
+        if (!closed) {
+            if (local(owner)) next.add(owner.node());
+            for (Range range : ranges)
+                if (local(range.saved) && !next.contains(range.saved.node())) next.add(range.saved.node());
+        }
+        if (!retained.get().equals(next)) retained.set(java.util.Collections.unmodifiableList(next));
     }
 
     /** 逻辑焦点只有一个；显示线索由最近的有效输入方式派生，文字编辑始终保留。 */
@@ -87,30 +126,43 @@ public final class SceneFocusRouter {
         keyboardInput();
         if (closed) return false;
         revalidate();
-        Range range = top();
-        List<SceneNode> candidates = new ArrayList<>();
-        if (range.modal != null) collect(range.modal.node(), candidates);
-        else for (SceneNode root : runtime.roots()) collect(root, candidates);
+        SceneNode from = owner == null ? null : owner.node();
         cancelPending();
-        if (candidates.isEmpty()) {
-            setOwner(null);
-            return false;
-        }
-        int current = owner == null ? -1 : candidates.indexOf(owner.node());
-        int next =
-                current < 0
-                        ? (backward ? candidates.size() - 1 : 0)
-                        : (current + (backward ? candidates.size() - 1 : 1)) % candidates.size();
-        setOwner(runtime.captureMount(candidates.get(next)));
-        pendingReveal = owner; // 单项导航也产生一次意图；普通请求与范围进入不产生。
-        return true;
+        beginNavigation(from, backward, true);
+        prepareNavigation();
+        return navigation != null || owner != null;
     }
 
-    // 仅本次命令遍历声明树；从唯一当前范围开始，跳过失活子树，不缓存导航表或用几何排序。
-    private void collect(SceneNode node, List<SceneNode> candidates) {
-        if (!runtime.locallyInteractive(node)) return;
-        if (node.focusable() && runtime.interactive(node)) candidates.add(node);
-        for (SceneNode child : node.children()) collect(child, candidates);
+    private void beginNavigation(SceneNode from, boolean backward, boolean reveal) {
+        cancelNavigation();
+        navigationRange = top();
+        List<SceneNode> roots = navigationRange.modal == null ? runtime.roots()
+                : java.util.Collections.singletonList(navigationRange.modal.node());
+        navigation = new SceneLogicalNavigation(runtime, roots, from, backward);
+        navigationReveal = reveal;
+    }
+
+    private void prepareNavigation() {
+        SceneLogicalNavigation pending = navigation;
+        if (pending == null) return;
+        if (navigationRange != top()) { cancelNavigation(); return; }
+        club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Result result = pending.prepare();
+        if (pending != navigation) return;
+        if (result.status == club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Result.Status.WAITING) return;
+        if (result.status == club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Result.Status.CANCELLED) {
+            cancelNavigation(); return;
+        }
+        boolean reveal = navigationReveal;
+        MountHandle next = result.target == null ? null : candidate(top(), result.target);
+        cancelNavigation();
+        setOwner(next);
+        if (reveal) pendingReveal = owner;
+    }
+
+    private void cancelNavigation() {
+        SceneLogicalNavigation pending = navigation;
+        navigation = null; navigationRange = null; navigationReveal = false;
+        if (pending != null) pending.close();
     }
 
     /** 激活唯一当前焦点，不补选或改变owner；标准键盘按钮复用同一业务click路径。 */
@@ -135,6 +187,7 @@ public final class SceneFocusRouter {
     }
 
     private void cancelPending() {
+        cancelNavigation();
         Range range = top();
         range.pending = false;
         range.saved = null;
@@ -151,6 +204,7 @@ public final class SceneFocusRouter {
             runtime.invalidateComposition(before);
         }
         owner = target;
+        publishRetained();
         value.set(after);
         notifyControls();
         if (before != after) runtime.invalidatePaint();
@@ -235,6 +289,7 @@ public final class SceneFocusRouter {
         }
         if (owner != null && (!local(owner) || !runtime.interactive(owner.node()))) setOwner(null);
         runtime.revalidateComposition();
+        publishRetained();
     }
 
     private boolean alive(Range range) {
@@ -276,6 +331,7 @@ public final class SceneFocusRouter {
         // 只删除被覆盖记录不会改变前台范围，不能重选其焦点或覆盖主动clear。
         // modal属性关闭后目标可能仍是非模态可交互节点，但真正返回仍释放旧owner。
         if (top() != previousTop) {
+            cancelNavigation();
             top().pending = true;
             top().returning = !entering;
             if (owner != null) setOwner(null);
@@ -292,6 +348,7 @@ public final class SceneFocusRouter {
         if (closed) return;
         revalidate();
         Range range = top();
+        if (navigation != null) { prepareNavigation(); return; }
         if (!range.pending || runtime.roots().isEmpty()) return;
         range.pending = false;
         SceneNode policy = range.modal == null ? pagePolicy() : range.modal.node();
@@ -305,17 +362,14 @@ public final class SceneFocusRouter {
                 && contains(range, range.saved.node())
                 && runtime.interactive(range.saved.node())) next = range.saved;
         if (next == null && policy != null) next = candidate(range, policy.initialFocus());
-        if (next == null) {
-            if (range.modal != null) next = first(range, range.modal.node());
-            else
-                for (SceneNode root : runtime.roots()) {
-                    next = first(range, root);
-                    if (next != null) break;
-                }
-        }
         range.saved = null;
         range.returning = false;
-        setOwner(next);
+        if (next != null) setOwner(next);
+        else {
+            // 默认首目标也按完整逻辑顺序准备；范围进入/返回保持不显露。
+            beginNavigation(null, false, false);
+            prepareNavigation();
+        }
     }
 
     private SceneNode pagePolicy() {
@@ -333,21 +387,11 @@ public final class SceneFocusRouter {
                 : null;
     }
 
-    private MountHandle first(Range range, SceneNode node) {
-        if (!runtime.locallyInteractive(node)) return null;
-        MountHandle found = candidate(range, node);
-        if (found != null) return found;
-        for (SceneNode child : node.children()) {
-            found = first(range, child);
-            if (found != null) return found;
-        }
-        return null;
-    }
-
     void close() {
         runtime.domain().checkWrite();
         if (closed) return;
         closed = true;
+        cancelNavigation();
         try {
             setOwner(null);
         } finally {

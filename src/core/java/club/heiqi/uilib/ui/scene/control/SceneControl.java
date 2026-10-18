@@ -16,6 +16,8 @@ import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
+    /** 按需复合内容的逻辑遍历；null保留普通声明树前序，不建立第二焦点。 */
+    default club.heiqi.uilib.ui.scene.input.SceneFocusTraversal focusTraversal(SceneNode node) { return null; }
     /** null 表示普通流；所属层策略不得返回 null。 */
     default SceneLayer.Policy layerPolicy(SceneNode node) { return null; }
 
@@ -203,6 +205,10 @@ public interface SceneControl {
 
     /** 专用内容像素移动；返回实际位移，runtime统一按变化失效共同几何。 */
     default int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) { return 0; }
+
+    /** 绝对像素请求在原所有者生效后的通知；估算内容可保留本次末端显露意图。
+     * 默认无操作，不改普通像素移动含义，不获取新的输入或位置所有权。 */
+    default void scrollPositionRequested(SceneNode node, SceneNode.Axis axis, int requested, SceneScrollViewport.Snapshot previous) {}
 
     /** 代理滚动控件明确其实际视口，用于显式释放运动；输入所有权仍留原消费者。 */
     default SceneNode scrollMotionViewport(SceneNode node) { return node; }

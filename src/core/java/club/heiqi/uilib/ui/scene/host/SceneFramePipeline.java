@@ -421,8 +421,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
-        runtime.preparePresentation(frameNanos);
         long nextMetrics = host.metricsRevision();
+        runtime.prepareMetricsRevision(nextMetrics);
+        runtime.preparePresentation(frameNanos);
         SceneGeometry geometry = prepareGeometry(frameNanos, w, h, nextMetrics);
         if (activeInput != null && prepareActiveInput(geometry, frameNanos, activeInput, advanceInput))
             return prepare(frameNanos, activeInput, false);

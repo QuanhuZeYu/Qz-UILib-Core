@@ -34,10 +34,20 @@ public final class ChildPlacements {
     }
 
     private final List<Entry> entries;
+    private final MeasuredSize contentSize;
 
     public ChildPlacements(List<Entry> entries) {
-        this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
+        this(entries, null);
     }
+
+    /** 相对本容器原点的纯内容范围，含声明内距；按需集合用它表达尚未实例化的尾部。
+     * 实际子盒仍参与包络，不能用较小声明截断已有内容。旧构造继续只从子盒求范围。 */
+    public ChildPlacements(List<Entry> entries, MeasuredSize contentSize) {
+        this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
+        this.contentSize = contentSize;
+    }
+
+    public MeasuredSize contentSize() { return contentSize; }
 
     public List<Entry> entries() {
         return entries;

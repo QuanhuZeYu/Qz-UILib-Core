@@ -36,7 +36,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 /** editing spec 1.1.2：正式页面、状态和路由回归；不冒称宿主原生键盘或真实字体验收。 */
 public final class MultilineEditingScenario extends TestApplication {
     /** 只提供无native的字体边界事实；没有光标、选区、历史或编辑算法。真实字体另在GPU应用验收。 */
-    private static final class PlainHost implements SceneHost, SceneTextMeasurer {
+    static final class PlainHost implements SceneHost, SceneTextMeasurer {
         int width = 360, height = 280;
 
         public int width() {

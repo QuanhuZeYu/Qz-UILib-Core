@@ -43,6 +43,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 视图位置属于挂载激活；声明scrollOffset仅在其值改变时作为显式跳转目标。 */
     private static final class ScrollPosition {
         int declaration, value, maximum;
+        long intentRevision;
     }
 
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
@@ -117,6 +118,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private final club.heiqi.uilib.ui.reactive.Signal<Integer> viewportWidth, viewportHeight;
+    private final club.heiqi.uilib.ui.reactive.Signal<Long> metricsGeneration;
     private final Owner owner;
     private final Map<SceneNode, Mount> mounts = new IdentityHashMap<>();
     private final List<SceneNode> roots = new ArrayList<>();
@@ -146,6 +148,7 @@ public final class SceneRuntime implements AutoCloseable {
         motionPolicy = domain.signal(club.heiqi.uilib.ui.scene.motion.MotionPolicy.NORMAL);
         viewportWidth = domain.signal(0);
         viewportHeight = domain.signal(0);
+        metricsGeneration = domain.signal(0L);
         owner = domain.owner();
         pointerRouter = new ScenePointerRouter(this);
         focusRouter = new SceneFocusRouter(this);
@@ -156,6 +159,12 @@ public final class SceneRuntime implements AutoCloseable {
     /** 宿主根可用空间的响应事实，不表示任意子节点的最终分配盒。 */
     public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportWidth() { return viewportWidth; }
     public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportHeight() { return viewportHeight; }
+    /** 当前度量资源事实；缓存和按需内容可追踪，不触发平台初始化。 */
+    public ReadableSignal<Long> metricsRevision() { return metricsGeneration::get; }
+    public void prepareMetricsRevision(long revision) {
+        command();
+        if (metricsGeneration.get() != revision) metricsGeneration.set(revision);
+    }
 
     /** 仅由宿主帧管线发布；声明结算前更新，不从只读布局回写。 */
     public void prepareViewport(int width, int height) {
@@ -1126,6 +1135,24 @@ public final class SceneRuntime implements AutoCloseable {
                 : position.value;
     }
 
+    /** 显式位置意图的代际；布局限制本身不递增，用于按需内容判断是否仍可落实锚定。 */
+    public long scrollIntentRevision(SceneNode node) {
+        domain.checkAccess();
+        ScrollPosition position = scrolling.get(node);
+        return position == null ? 0 : position.intentRevision;
+    }
+
+    /** 呈现扩展落实同一位置所有者的几何校正；新输入意图已生效时拒绝旧校正。
+     * 不获取输入或焦点，不要求后台内容停止呈现，不产生额外滚动意图。 */
+    public boolean correctScrollPosition(SceneNode node, long expectedIntent, int pixels) {
+        domain.checkWrite(); checkAlive();
+        ScrollPosition position = scrolling.get(node);
+        if (position == null || !mounts.containsKey(node) || position.intentRevision != expectedIntent) return false;
+        int next = Math.max(0, Math.min(position.maximum, pixels));
+        if (next != position.value) { position.value = next; invalidateArrangement(); }
+        return true;
+    }
+
     /** 从最终几何发布边界；内容/窗口变小会立即丢弃越界偏移，不积攒不可见滚动债务。 */
     public void prepareScrollPositions(
             club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry) {
@@ -1134,6 +1161,7 @@ public final class SceneRuntime implements AutoCloseable {
             if (!entry.node.scrollable() || !mounts.containsKey(entry.node)) continue;
             ScrollPosition position =
                     scrolling.computeIfAbsent(entry.node, ignored -> new ScrollPosition());
+            if (position.declaration != entry.node.scrollOffset()) position.intentRevision++;
             position.declaration = entry.node.scrollOffset();
             position.value = entry.scrollOffset;
             position.maximum = entry.scrollMaximum;
@@ -1181,6 +1209,17 @@ public final class SceneRuntime implements AutoCloseable {
                 entry.scrollOffset, entry.scrollMaximum, axis == SceneNode.Axis.ROW ? entry.box.width : entry.box.height);
     }
 
+    /** 挂载扩展观察同批有效几何；只发布呈现意图，实际树更新仍在声明结算中完成。
+     * 无本批几何时提供null；禁用/模态覆盖不停止内容呈现，输入资格仍由路由核验。 */
+    public AutoCloseable observeGeometry(SceneNode node, java.util.function.Consumer<SceneGeometryView> changed) {
+        domain.checkWrite(); checkAlive();
+        java.util.function.Function<SceneGeometryView, SceneGeometryView> read = geometry ->
+                geometry != null && geometry.get(node) != null ? geometry : null;
+        AutoCloseable observation = scrollObservers.observe(inputGeometryReady ? read.apply(inputGeometry) : null,
+                read, (left, right) -> left == right, Objects.requireNonNull(changed, "changed"));
+        return () -> { domain.checkWrite(); observation.close(); };
+    }
+
     public AutoCloseable observeScroll(SceneScrollViewport viewport,
             java.util.function.Consumer<SceneScrollViewport.Snapshot> changed) {
         domain.checkWrite(); checkAlive();
@@ -1196,7 +1235,13 @@ public final class SceneRuntime implements AutoCloseable {
         if (view == null) return 0;
         boolean specialized = node.control() != null && node.control().scrollViewport(node, axis, inputGeometry) != null;
         int current = specialized ? view.offset : scrollOffset(node);
-        return scrollByPixels(node, axis, Math.max(0, Math.min(view.maximum, offset)) - current);
+        int applied = scrollByPixels(node, axis, Math.max(0, Math.min(view.maximum, offset)) - current);
+        if (node.control() != null && interactive(node)) {
+            boolean previous = routing; routing = true;
+            try { node.control().scrollPositionRequested(node, axis, offset, view); }
+            finally { routing = previous; }
+        }
+        return applied;
     }
 
     /** 同一像素移动入口适配专用视口；变化只失效一次，不调用业务wheel动作。 */
@@ -1228,7 +1273,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (position == null) return 0;
         int next = (int) Math.max(0L, Math.min(position.maximum, (long) position.value + pixels));
         int applied = next - position.value;
-        if (applied != 0) { position.value = next; invalidateArrangement(); }
+        if (applied != 0) { position.value = next; position.intentRevision++; invalidateArrangement(); }
         return applied;
     }
 
@@ -1246,6 +1291,7 @@ public final class SceneRuntime implements AutoCloseable {
         int next = (int) Math.max(0L, Math.min(entry.scrollMaximum, (long) entry.scrollOffset + delta));
         if (next == position.value) return false;
         position.value = next;
+        position.intentRevision++;
         invalidateArrangement();
         return true;
     }
@@ -1305,6 +1351,7 @@ public final class SceneRuntime implements AutoCloseable {
                                                         - (long) delta * node.scrollStep()));
                 if (next != position.value) {
                     position.value = next;
+                    position.intentRevision++;
                     invalidateArrangement();
                     consumed = true;
                 }

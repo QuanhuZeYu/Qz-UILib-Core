@@ -131,11 +131,12 @@ def scenarios = [
     themeConfigurationScenario:'ThemeConfigurationScenario', settingsConfigurationScenario:'SettingsConfigurationScenario',
     yamlObjectScenario:'YamlObjectScenario', fontConfigurationScenario:'FontConfigurationScenario', coreFontEngineScenario:'CoreFontEngineScenario',
     hoverProjectionScenario:'HoverProjectionScenario', performanceSamplesScenario:'PerformanceSamplesScenario', typedParagraphScenario:'TypedParagraphScenario',
-    mathCatalogScenario:'MathCatalogScenario', mathMacroScenario:'MathMacroScenario'
+    mathCatalogScenario:'MathCatalogScenario', mathMacroScenario:'MathMacroScenario', virtualCollectionScenario:'VirtualCollectionScenario'
 ]
 def coreChecks = scenarios.collect { name, entry -> application(name, 'club.heiqi.uilib.ui.scene.integration.' + entry) }
 coreChecks += application('documentArrangementScenario', 'club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario')
 coreChecks += application('filePickerScenario', 'club.heiqi.uilib.ui.scene.control.FilePickerScenario')
+coreChecks += application('virtualCollectionIndexScenario', 'club.heiqi.uilib.ui.scene.control.VirtualCollectionIndexScenario')
 coreChecks += application('testApplicationScenario', 'club.heiqi.uilib.testing.TestApplicationScenario')
 coreChecks += application('mathStructureScenario', 'club.heiqi.uilib.ui.scene.text.math.MathStructureScenario')
 tasks.register('coreStateScenario') { group = 'verification'; dependsOn 'coreLoopScenario' }

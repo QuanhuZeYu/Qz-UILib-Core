@@ -403,8 +403,11 @@ public final class SceneLayoutEngine {
         TextLayout lines=presentedText(node,box);
         int entryIndex=entries.size();
         entries.add(new SceneGeometryView.Entry(node,box,clip,lines));
-        List<ChildPlacements.Entry> placements=childArrangement(node,box).entries();
+        ChildPlacements arrangement=childArrangement(node,box);
+        List<ChildPlacements.Entry> placements=arrangement.entries();
         long extent=validateArrangement(node,placements);
+        if(arrangement.contentSize()!=null)extent=Math.max(extent,node.axis()==SceneNode.Axis.ROW
+                ?arrangement.contentSize().width:arrangement.contentSize().height);
         int maximum=scrollMaximum(node,box,placements,extent);
         int scroll=node.scrollable()?Math.min(scrollOffsets.applyAsInt(node),maximum):0;
         entries.set(entryIndex,new SceneGeometryView.Entry(node,box,clip,lines,scroll,maximum));

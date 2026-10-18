@@ -24,10 +24,9 @@ final class MailWorkspace {
         listPane.add(MailCategories.create(p,theme,palette,model,wide));
         SceneNode list=new SceneNode().size(Size.fill(1),Size.fill(1));
         list.bind(NodeBinding.repeat(() -> Collections.singletonList(paged?model.pageIndex.get()+":"+model.pageSize.get():"ordinary"),key -> key,ignored -> {
-            SceneNode viewport=new SceneNode().size(Size.fill(1),Size.fill(1)).scrollable(true).clip(true);
             MessageRow.TimeWidths timeWidths=new MessageRow.TimeWidths(paged?model.pageItems:model.results);
-            viewport.bind(NodeBinding.repeat(paged?model.pageItems:model.results,item -> item.id,value -> MessageRow.create(p,value,model,theme,palette,compact,timeWidths)));
-            return viewport;
+            return club.heiqi.uilib.ui.scene.control.SceneVirtualList.create(p, paged?model.pageItems:model.results,
+                    item -> item.id, value -> MessageRow.create(p,value,model,theme,palette,compact,timeWidths)).node();
         }));listPane.add(list);
         listPane.add(MailStyle.label(p,() -> "没有匹配的邮件，试试其他关键词。",theme,1f,true)
                 .bind(NodeBinding.value(() -> model.results.get().isEmpty(),SceneNode::visible)));
