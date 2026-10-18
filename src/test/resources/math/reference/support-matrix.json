@@ -418860,7 +418860,7 @@
     "rule": "只按原身份case/context/source、实际typed/font、对应强native布局族与正式Scene→GL raw记录分层升级；图像亲读独立记录实际run/page范围，未亲读页不写visualPASS；展开/alias/登记不单独证明支持。",
     "runtime": {
       "run": "v15",
-      "archiveRoot": "D:/Code/MC/Qz工作站/_evidence/uilib-math-complete-20261010T151510Z",
+      "archiveRoot": "D:/Code/MC/Qz工作站/projects/Qz-UILib-Core/build",
       "rawRoot": "math-complete/coverage-v15",
       "log": "math-complete/initial-integrated-full-v15.log",
       "platform": "vendor=ATI Technologies Inc. renderer=AMD Radeon(TM) 610M version=3.3.0 Core Profile Context 25.10.32.08.260211",
