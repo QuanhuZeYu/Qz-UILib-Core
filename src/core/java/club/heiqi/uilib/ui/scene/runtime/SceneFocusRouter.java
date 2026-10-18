@@ -65,6 +65,8 @@ public final class SceneFocusRouter {
             runtime.domain().checkAccess();
             return !closed && ranges.contains(range) && (range.modal == null || alive(range));
         }
+        /** 原范围仍为唯一当前范围；被内层覆盖的active范围不能继续消费旧KEY。 */
+        public boolean current() { runtime.domain().checkAccess(); return active() && top() == range; }
     }
 
     /** 捕获当前范围，不选择焦点；异步呈现意图可据此拒绝已结束范围的旧请求。 */

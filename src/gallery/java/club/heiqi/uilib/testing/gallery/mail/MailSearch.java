@@ -1,5 +1,7 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
+import club.heiqi.uilib.ui.scene.control.SceneCommand;
+
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.scene.control.SceneIconButton;
@@ -14,7 +16,12 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 /** 搜索表面只包正式单行字段；输入、组字、选区和提交不在案例中另实现。 */
 final class MailSearch {
     private MailSearch() {}
-    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme,
+    static final class View {
+        final SceneNode node;
+        final SceneCommand focus;
+        View(SceneNode node, SceneCommand focus) { this.node=node;this.focus=focus; }
+    }
+    static View create(ScenePageContext p, ReadableSignal<SceneTheme> theme,
             ReadableSignal<MailPalette> palette, MailboxModel model) {
         SceneEditState query=new SceneEditState(p.domain(),model.query.get());
         Owner scope=p.domain().owner();String[] lastQuery={model.query.get()};
@@ -43,6 +50,9 @@ final class MailSearch {
         SceneNode clear=SceneIconButton.create(p,SceneIconButton.Symbol.CLOSE,() -> "清空搜索",theme,
                 () -> {query.reset("");model.setQuery("");});
         clear.bind(NodeBinding.value(() -> !query.text().get().isEmpty(),SceneNode::visible));search.add(clear);
-        return search;
+        SceneCommand focus=SceneCommand.of(
+                () -> field.runtime()==p.runtime()&&field.focusable()&&p.runtime().interactive(field),
+                () -> p.runtime().focusRouter().request(p.runtime().captureMount(field)));
+        return new View(search,focus);
     }
 }

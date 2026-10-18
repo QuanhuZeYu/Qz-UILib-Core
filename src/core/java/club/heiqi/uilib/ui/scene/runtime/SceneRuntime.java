@@ -1,5 +1,10 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
+import club.heiqi.uilib.ui.scene.input.SceneKeyInterpreter;
+import club.heiqi.uilib.ui.scene.input.SceneShortcut;
+
 import club.heiqi.uilib.ui.scene.control.SceneScrollResult;
 import club.heiqi.uilib.ui.scene.control.SceneScrollViewport;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
@@ -47,6 +52,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
+    private final SceneShortcuts shortcuts = new SceneShortcuts(this);
     private final SceneScrollObservers scrollObservers = new SceneScrollObservers();
     private final SceneScrollDecorations scrollDecorations;
     private final SceneTooltipCoordinator tooltips;
@@ -964,6 +970,33 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     /** 普通编辑按当前焦点；真实组字只投向 BEGIN 建立的仍有效联系。 */
+    public AutoCloseable bindShortcuts(SceneNode anchor, SceneShortcut.Scope scope,
+            SceneShortcut... entries) {
+        domain.checkWrite(); checkAlive();
+        return shortcuts.bind(anchor, scope, entries);
+    }
+
+    /** KEY首段只走既有编辑/ESC链；应用命令等待本事件Effect成功结算。 */
+    public enum KeyResult { IGNORED, EDITED, RESERVED }
+
+    public KeyResult dispatchKeyEdit(SceneKeyEvent event) {
+        domain.checkWrite(); command();
+        if (event.key == SceneKey.ESCAPE)
+            return event.repeat || dispatchEscape() ? KeyResult.RESERVED : KeyResult.IGNORED;
+        if (event.applicationChord() && composition.reservesShortcut()) return KeyResult.RESERVED;
+        SceneEditEvent edit = SceneKeyInterpreter.edit(event);
+        return edit != null && dispatchEdit(edit) ? KeyResult.EDITED : KeyResult.IGNORED;
+    }
+
+    /** 调用者已准备Effect后的当前范围；命令动作受同一routing写入保护。 */
+    public boolean dispatchKeyCommand(SceneKeyEvent event) {
+        domain.checkWrite(); command();
+        if (composition.reservesShortcut()) return true;
+        boolean previous = routing; routing = true;
+        try { return shortcuts.dispatch(event); }
+        finally { routing = previous; }
+    }
+
     public boolean dispatchEdit(SceneEditEvent event) {
         domain.checkWrite();
         command();

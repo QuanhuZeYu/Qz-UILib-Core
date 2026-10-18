@@ -1,5 +1,9 @@
 package club.heiqi.uilib.ui.settings;
 
+import club.heiqi.uilib.ui.scene.control.SceneCommand;
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneShortcut;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -59,6 +63,7 @@ public final class SettingsPage implements ScenePage {
     private final class View {
         final ScenePageContext ctx;
         final SettingsModel model;
+        final SceneCommand save;
         final Signal<Boolean> fileSource,fontPicking;
         final Signal<Section> section;
         final Signal<Dialog> dialog;
@@ -71,6 +76,7 @@ public final class SettingsPage implements ScenePage {
         final String defaultSample="每一种语言，都值得被认真呈现。\nGood typography makes a difference.";
         View(ScenePageContext ctx) {
             this.ctx=ctx;model=new SettingsModel(configuration,ctx.scope());
+            save=SceneCommand.of(() -> !model.dirty().get()&&model.unsaved().get(), model::save);
             fileSource=ctx.domain().signal(false);fontPicking=ctx.domain().signal(false);
             compact=ctx.domain().computed(ctx.scope(),() -> ctx.viewportWidth().get()<SettingsLayout.COMPACT_WIDTH);
             navigationOpen=ctx.domain().signal(false);
@@ -138,7 +144,9 @@ public final class SettingsPage implements ScenePage {
             SceneNode overlay=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
             overlay.bind(NodeBinding.children(() -> dialog.get()==Dialog.NONE?Collections.emptyList():Collections.singletonList(dialog.get()==Dialog.FONTS?fonts:dialog.get()==Dialog.ADD?add:dialog.get()==Dialog.RELOAD?reload:close)));
             SceneNode root=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
-            root.add(shell).add(overlay).onEscape(() -> {closeRequested();return true;});
+            root.add(shell).add(overlay).onEscape(() -> {closeRequested();return true;})
+                    .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
+                            SceneShortcut.primary(SceneKey.S, save)));
             return root;
         }
         SceneNode pageHeading() {
@@ -308,7 +316,7 @@ public final class SettingsPage implements ScenePage {
             status.add(text(() -> model.dirty().get()?"应用全部分类的更改后，才能保存到文件。":model.unsaved().get()?"当前运行使用新的配置；保存后用于下次启动。":"可以继续编辑；应用与保存分别执行。",12,true));
             status.add(error(model.error()));
             SceneNode controls=actions(enabledButton(() -> "放弃编辑",model::discard,false,true,model.dirty()),
-                    enabledButton("保存到文件",model::save,() -> !model.dirty().get()&&model.unsaved().get()),
+                    enabledButton("保存到文件",save::tryExecute,save.executable()),
                     enabledButton(() -> "应用全部更改",model::apply,true,false,model.dirty()));
             return SettingsStyle.column(14).add(SettingsStyle.line(palette))
                     .add(SettingsStyle.column(0).control(new SettingsLayout.Footer()).add(status).add(controls));

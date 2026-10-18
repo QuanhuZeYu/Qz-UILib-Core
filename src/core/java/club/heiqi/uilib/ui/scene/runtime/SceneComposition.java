@@ -66,6 +66,14 @@ final class SceneComposition {
         if (link.state.inputBaseline() == link.baseline) link.state.composition("", false);
     }
 
+    /** UPDATE(false)结束preedit呈现后，真实联系仍保留应用快捷键，直到COMMIT/CANCEL。 */
+    boolean reservesShortcut() {
+        revalidate();
+        if (active != null) return true;
+        SceneNode focused = runtime.focusRouter().focused().get();
+        return accepts(focused) && ((SceneCompositionTarget) focused.control()).compositionState().snapshot().get().composing;
+    }
+
     /** 最终事件即使控件回调失败也结束原联系，不清理后来建立的来源。 */
     void finish(SceneEditEvent event) {
         if (active != null && active.source == event.compositionSource

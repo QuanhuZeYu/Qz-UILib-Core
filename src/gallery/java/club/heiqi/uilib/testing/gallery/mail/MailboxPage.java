@@ -1,5 +1,8 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
+import club.heiqi.uilib.ui.scene.input.SceneKey;
+import club.heiqi.uilib.ui.scene.input.SceneShortcut;
+
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
@@ -39,7 +42,10 @@ public final class MailboxPage {
         MailViewState view=new MailViewState(p,base,mode,model.reading,onBack!=null);
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).own(view);
         root.bind(NodeBinding.value(view.palette,(n,colors) -> n.background(colors.canvas)));
-        root.add(MailChrome.header(p,view,mode,MailSearch.create(p,view.theme,view.palette,model),onBack,onThemePreview));
+        MailSearch.View search=MailSearch.create(p,view.theme,view.palette,model);
+        root.bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
+                SceneShortcut.primary(SceneKey.F,search.focus)));
+        root.add(MailChrome.header(p,view,mode,search.node,onBack,onThemePreview));
         root.add(MailBody.create(view,MailChrome.navigation(p,view,model),MailWorkspace.create(p,view,model,paged)));
         // 稳定反馈槽由声明表达，不因收取/归档推动列表视口。
         SceneNode feedback=MailStyle.surface(view.theme,() -> 0,0,false).axis(SceneNode.Axis.ROW)

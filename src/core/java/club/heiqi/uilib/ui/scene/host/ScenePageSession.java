@@ -90,6 +90,14 @@ public final class ScenePageSession implements AutoCloseable {
         dispatch(() -> pipeline().navigation(event));
     }
 
+    public void key(club.heiqi.uilib.ui.scene.input.SceneKeyEvent event) { key(event, null); }
+
+    /** 中性键和文本共用采集顺序；宿主继续动作不能越过页面结束或输入失败。 */
+    public void key(club.heiqi.uilib.ui.scene.input.SceneKeyEvent event, Runnable fallback) {
+        Objects.requireNonNull(event, "event");
+        dispatch(() -> pipeline().key(event, fallback == null ? null : () -> { if (!ended) fallback.run(); }));
+    }
+
     public void edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
         Objects.requireNonNull(event, "event");
         dispatch(() -> pipeline().edit(event, null));

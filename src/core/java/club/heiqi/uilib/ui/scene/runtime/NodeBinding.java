@@ -1,5 +1,7 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.input.SceneShortcut;
+
 import java.util.function.BiConsumer;
 import java.util.List;
 import java.util.function.Function;
@@ -125,6 +127,23 @@ public interface NodeBinding {
             ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTooltip.Options> options,
             ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTheme> theme){
         return new TooltipBinding(content,options,theme);
+    }
+
+    /** 挂载拥有的应用快捷键；PAGE/MODAL角色固定，属性变化不会提升模态绑定。 */
+    static NodeBinding shortcuts(SceneShortcut.Scope scope,
+            SceneShortcut... entries) {
+        SceneShortcut[] copy = entries.clone();
+        return (runtime, node, owner) -> {
+            AutoCloseable registration = runtime.bindShortcuts(node, scope, copy);
+            return new BindingActivation() {
+                public void refresh() { }
+                public void close() {
+                    try { registration.close(); }
+                    catch (RuntimeException | Error failure) { throw failure; }
+                    catch (Exception failure) { throw new IllegalStateException("快捷键绑定释放失败", failure); }
+                }
+            };
+        };
     }
 
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
