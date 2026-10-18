@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -68,7 +69,9 @@ public final class ResourceTreePage {
                         source.set(next); feedback.set("名称已更新：" + name);
                     }
                 }).size(Size.fixed(220).bounds(100, 260), Size.natural());
-                field.bind(NodeBinding.value(editing, SceneNode::visible)); row.add(field);
+                field.bind(NodeBinding.value(editing, SceneNode::visible));
+                field.bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("重命名：" + entry.get().value.name).build()));
+                row.add(field);
             }
             return row;
         }, () -> new SceneTreeView.Options(), theme);
@@ -83,6 +86,7 @@ public final class ResourceTreePage {
             if (!next.remove("folder-1")) next.add("folder-1"); disabled.set(Collections.unmodifiableSet(next));
         }));
         tools.add(GalleryStyle.button(page, () -> "反转同级顺序", theme, () -> { List<Resource> next = new ArrayList<>(source.get()); Collections.reverse(next); source.set(next); }));
+        tree.node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("项目资源").build()));
         root.add(tools).add(GalleryStyle.frame(tree.node(), theme).size(Size.fill(1), Size.fill(1)));
         root.add(GalleryStyle.label(page, feedback, theme, 14, true));
         return root;

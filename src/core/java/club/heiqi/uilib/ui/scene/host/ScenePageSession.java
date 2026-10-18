@@ -16,6 +16,7 @@ public final class ScenePageSession implements AutoCloseable {
     private volatile SceneRuntime runtime;
     private volatile SceneFramePipeline pipeline;
     private Owner scope;
+    private final java.util.Set<SceneSemanticCompletion> semanticRequests = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     private ScenePageSession(ReactiveDomain domain) {
         this.domain = domain;
@@ -39,6 +40,7 @@ public final class ScenePageSession implements AutoCloseable {
                 },
                 failure -> {
                     session.ended = true;
+                    session.finishSemanticRequests(failure);
                     session.release();
                 });
         return session;
@@ -73,6 +75,36 @@ public final class ScenePageSession implements AutoCloseable {
                         if (!ended) action.run();
                     });
         else action.run();
+    }
+
+    /** 排入原输入序列；完成表示当前目标动作已处理，不代表业务提交已接受。 */
+    public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result> semantic(
+            club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request) { return enqueueSemantic(request,null); }
+    public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result> semantic(
+            club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request,
+            java.util.function.BiConsumer<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result,Throwable> completion) {
+        return enqueueSemantic(request,Objects.requireNonNull(completion,"完成通知"));
+    }
+    private java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result> enqueueSemantic(
+            club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request,
+            java.util.function.BiConsumer<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result,Throwable> callback) {
+        domain.checkDispatch(); Objects.requireNonNull(request,"语义请求");
+        SceneSemanticCompletion result=new SceneSemanticCompletion(new java.util.concurrent.CompletableFuture<>(),callback);
+        semanticRequests.add(result);result.future.whenComplete((value,error)->semanticRequests.remove(result));
+        Runnable enqueue=()->{
+            if(ended)result.finish(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED,null);
+            else {semanticRequests.remove(result);pipeline().semantic(request,result);}
+        };
+        if(pipeline==null&&!ended)domain.enqueue(enqueue,failure->result.finish(null,failure));else enqueue.run();
+        return result.future;
+    }
+    private void finishSemanticRequests(Throwable failure) {
+        java.util.List<SceneSemanticCompletion> pending;
+        synchronized(semanticRequests){pending=new java.util.ArrayList<>(semanticRequests);}
+        Throwable first=failure;
+        for(SceneSemanticCompletion result:pending)try{result.finish(failure==null?club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED:null,failure);}
+        catch(RuntimeException|Error next){if(first==null)first=next;else if(first!=next)first.addSuppressed(next);}
+        if(failure==null){if(first instanceof Error)throw (Error)first;if(first instanceof RuntimeException)throw (RuntimeException)first;}
     }
 
     public void pointer(ScenePointerEvent event) {
@@ -147,10 +179,11 @@ public final class ScenePageSession implements AutoCloseable {
         ended = true;
         // 先立即关闭输入队列，清理树延到handler之后；即使handler/Effect失败也执行。
         Throwable failure = null;
+        try { finishSemanticRequests(null); } catch (RuntimeException | Error next) { failure = next; }
         try {
             if (pipeline != null) pipeline.close();
         } catch (RuntimeException | Error next) {
-            failure = next;
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
         }
         // 即使取消/Effect失败也尝试其余释放；保留最先失败，不在Error后留下页面资源。
         final Throwable first = failure;

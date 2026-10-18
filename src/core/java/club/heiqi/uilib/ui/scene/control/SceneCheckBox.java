@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.util.Collections;
@@ -27,6 +28,11 @@ public final class SceneCheckBox {
     private static final class Control extends SceneSymbolControl {
         private final ReadableSignal<State> state;
         Control(ReadableSignal<SceneTheme> theme, boolean showLabel, ReadableSignal<State> state) { super(theme,showLabel); this.state=state; }
+        @Override public SceneSemantics semantics(SceneNode node) {
+            State current = Objects.requireNonNull(state.get(), "复选状态");
+            return super.semantics(node).toBuilder().role(SceneSemantics.Role.CHECKBOX)
+                    .checked(current == State.CHECKED).mixed(current == State.MIXED).build();
+        }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return java.util.Arrays.asList(theme,state); }
         @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color) {
             SceneIconGlyph.paint(SceneIconButton.Symbol.CHECK_BOX,box,target,clip,color);

@@ -9,6 +9,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.Arrays;
 
 /** 通知偏好直接消费布尔及单选来源；拒绝策略和可用条件仍由表单决定。 */
@@ -29,9 +30,11 @@ public final class PreferencesPage {
         card.add(SceneSwitch.create(page, enabled, () -> "接收项目通知", theme, next -> {
             enabled.set(next); feedback.set(next ? "通知已开启，选择适合的频率。" : "通知已关闭，保留已有频率。");
         }));
-        card.add(GalleryStyle.label(page, () -> "通知频率", theme, 18, false));
-        card.add(GalleryStyle.label(page, () -> network.get() ? "网络连接正常，可选择实时通知。" : "当前离线，实时通知暂不可用。", theme, 14, true));
-        card.add(group.node());
+        SceneNode frequencyLabel = GalleryStyle.label(page, () -> "通知频率", theme, 18, false);
+        SceneNode networkStatus = GalleryStyle.label(page, () -> network.get() ? "网络连接正常，可选择实时通知。" : "当前离线，实时通知暂不可用。", theme, 14, true);
+        card.add(frequencyLabel).add(networkStatus);
+        card.add(group.node().bind(NodeBinding.semantics(() -> SceneSemantics.builder()
+                .labelledBy(frequencyLabel).describedBy(networkStatus).build())));
         card.add(SceneSwitch.create(page, automatic, () -> "自动保存偏好", theme, next -> {
             if (network.get()) { automatic.set(next); feedback.set("自动保存已" + (next ? "开启。" : "关闭。")); }
             else feedback.set("连接网络后可修改自动保存；当前偏好已保留。");

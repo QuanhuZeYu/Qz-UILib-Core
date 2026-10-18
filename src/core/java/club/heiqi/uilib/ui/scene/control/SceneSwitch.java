@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import java.util.Arrays;
@@ -31,6 +32,10 @@ public final class SceneSwitch {
         private final ReadableSignal<Boolean> checked;
         Control(ReadableSignal<SceneTheme> theme, boolean showLabel, ReadableSignal<Boolean> checked) {
             super(theme, showLabel); this.checked = checked;
+        }
+        @Override public SceneSemantics semantics(SceneNode node) {
+            return super.semantics(node).toBuilder().role(SceneSemantics.Role.SWITCH)
+                    .checked(Objects.requireNonNull(checked.get(), "开关状态")).build();
         }
         @Override int symbolWidth(SceneNode node) { return Math.round(symbolSize(node) * 1.8f); }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, checked); }

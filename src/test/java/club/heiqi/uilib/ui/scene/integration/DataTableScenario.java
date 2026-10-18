@@ -11,6 +11,10 @@ import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -27,6 +31,75 @@ public final class DataTableScenario extends TestApplication {
         scenario("排序与列隐藏保留业务草稿及同批新目标", this::sortingDraft);
         scenario("全单元格暂时隐藏后仍可按来源恢复", this::emptyCells);
         scenario("普通表格字段优先处理光标并在Tab离开时提交", this::editingPriority);
+        scenario("表格语义关联完整表头并发布有限行的逻辑坐标", this::semanticTable);
+    }
+
+    private void semanticTable() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.width = 420; host.height = 180;
+        SceneDataTable<Integer, Integer, String>[] table = new SceneDataTable[1]; Signal<List<Integer>>[] source = new Signal[1];
+        Signal<List<SceneDataTable.Column<Integer, String>>>[] columns = new Signal[1]; Signal<String>[] heading = new Signal[1];
+        Map<Integer, club.heiqi.uilib.ui.scene.edit.SceneEditState> drafts = new HashMap<>(); int[] created = {0};
+        SceneDataTable.Column<Integer, String>[] title = new SceneDataTable.Column[1], note = new SceneDataTable.Column[1];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            List<Integer> items = new ArrayList<>(); for (int i = 0; i < 1000; i++) items.add(i); source[0] = domain.signal(items);
+            heading[0] = domain.signal("完整备注标题，横向不足也不省略语义名称");
+            title[0] = new SceneDataTable.Column<>("title", () -> Size.fixed(180), () -> SceneLabel.create(page, () -> "任务名称", page.theme()),
+                    row -> { created[0]++; return SceneLabel.create(page, () -> "任务 " + row.get(), page.theme()); });
+            note[0] = new SceneDataTable.Column<>("note", () -> Size.fixed(260),
+                    () -> new SceneNode().size(Size.fill(1), Size.natural()).add(SceneLabel.create(page, heading[0], page.theme())), row -> {
+                created[0]++; int id = row.get();
+                club.heiqi.uilib.ui.scene.edit.SceneEditState draft = drafts.computeIfAbsent(id,
+                        ignored -> new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "备注 " + id));
+                return club.heiqi.uilib.ui.scene.control.SceneTextField.create(page, draft, page.theme(), () -> false, request -> {})
+                        .bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("编辑备注 " + row.get()).build()));
+            });
+            columns[0] = domain.signal(Arrays.asList(title[0], note[0]));
+            table[0] = SceneDataTable.create(page, source[0], row -> row, columns[0]);
+            page.mount(table[0].node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("任务数据表").build())));
+        }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot first = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry container = semanticNamed(first, SceneSemantics.Role.TABLE, "任务数据表");
+        require(container.values.count == 1000 && container.values.rowCount == 1001 && container.values.columnCount == 2, "表格把挂载行数当总数或遗漏表头行");
+        SceneSemanticSnapshot.Entry header = semanticNamed(first, SceneSemantics.Role.COLUMN_HEADER, headingValue(domain, heading[0]));
+        SceneSemanticSnapshot.Entry cell = semanticCell(first, 2, 2);
+        require(header.values.row == 1 && header.values.column == 2 && cell.labelledBy.contains(header.id)
+                && cell.values.name.equals(header.values.name), "单元格没有解析COLUMN_HEADER的完整标签关系");
+        require(created[0] < 80 && first.entries.stream().filter(entry -> entry.values.role == SceneSemantics.Role.CELL).count() < 80,
+                "语义为了千行数据预建全表单元格");
+        domain.execute(() -> table[0].rows().focus(999)); session.frame();
+        SceneSemanticSnapshot tail = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry lastCell = semanticCell(tail, 1001, 2);
+        SceneSemanticSnapshot.Entry field = semanticNamed(tail, SceneSemantics.Role.TEXT_FIELD, "编辑备注 999");
+        require(lastCell.id.equals(field.parent), "单元格覆盖了真实字段角色或逻辑父子关系");
+        domain.execute(() -> { columns[0].set(Arrays.asList(note[0], title[0])); heading[0].set("当前完整备注标题"); }); session.frame();
+        SceneSemanticSnapshot reordered = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry moved = reordered.get(lastCell.id);
+        require(moved != null && moved.values.column == 1 && moved.values.row == 1001 && moved.values.name.equals("当前完整备注标题"),
+                "列重排或标题来源更新未同步语义位置和关联名称");
+        domain.execute(() -> { List<Integer> next = new ArrayList<>(source[0].get()); java.util.Collections.reverse(next); source[0].set(next); }); session.frame();
+        SceneSemanticSnapshot movedRows = semanticSnapshot(domain, session);
+        require(movedRows.get(lastCell.id).values.row == 2 && tail.get(lastCell.id).values.row == 1001
+                && movedRows.get(field.id) != null, "稳定行重排重建字段或修改旧快照");
+        domain.execute(() -> columns[0].set(java.util.Collections.singletonList(title[0]))); session.frame();
+        require(semanticSnapshot(domain, session).get(field.id) == null, "隐藏列仍发布旧字段语义");
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> stale = session.semantic(SceneSemanticRequest.text(field.id, "迟到文本")); session.frame();
+        require(stale.getNow(null) == SceneSemanticRequest.Result.REJECTED, "旧字段ID修改了隐藏列或邻列");
+    }
+    private static String headingValue(ReactiveDomain domain, Signal<String> value) {
+        String[] result = new String[1]; domain.execute(() -> result[0] = value.get()); return result[0];
+    }
+    private static SceneSemanticSnapshot semanticSnapshot(ReactiveDomain domain, ScenePageSession session) {
+        SceneSemanticSnapshot[] result = new SceneSemanticSnapshot[1]; domain.execute(() -> result[0] = session.pipeline().current().semantics); return result[0];
+    }
+    private static SceneSemanticSnapshot.Entry semanticNamed(SceneSemanticSnapshot snapshot, SceneSemantics.Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries) if (entry.values.role == role && name.equals(entry.values.name)) return entry;
+        throw new AssertionError("缺少语义: " + role + " / " + name);
+    }
+    private static SceneSemanticSnapshot.Entry semanticCell(SceneSemanticSnapshot snapshot, int row, int column) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries) if (entry.values.role == SceneSemantics.Role.CELL
+                && Integer.valueOf(row).equals(entry.values.row) && Integer.valueOf(column).equals(entry.values.column)) return entry;
+        throw new AssertionError("缺少单元格语义: " + row + " / " + column);
     }
 
     private void editingPriority() {

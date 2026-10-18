@@ -5,8 +5,12 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneAppearance;
 import club.heiqi.uilib.ui.scene.control.SceneSlider;
+import club.heiqi.uilib.ui.scene.control.SceneScrollbar;
+import club.heiqi.uilib.ui.scene.control.SceneScrollViewport;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.host.SceneHost;
+import club.heiqi.uilib.ui.scene.runtime.ScenePresentation;
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -19,6 +23,12 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticId;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import java.util.Collections;
+import java.util.concurrent.CompletableFuture;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,6 +63,90 @@ public final class SliderScenario extends TestApplication {
         scenario("弹性取消、接管、声明撤销与卸载",this::elasticLifecycle);
         scenario("窗口变化更新弹性几何且外部值保持权威",this::elasticResize);
         scenario("回弹中的可见 thumb 原地重抓与连续拖动",this::elasticRegrab);
+        scenario("范围语义沿原量化提交与滚动端口且挂载观察有界",this::semanticRange);
+    }
+
+    private void semanticRange() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost text = new MultilineEditingScenario.PlainHost();
+        SceneSemanticSnapshot[] snapshot = {SceneSemanticSnapshot.EMPTY}; int[] notifications = {0}, optionReads = {0};
+        SceneHost host = new SceneHost() {
+            public int width() { return 320; }
+            public int height() { return 240; }
+            public long metricsRevision() { return text.metricsRevision(); }
+            public void replay(PaintPlan plan) { }
+            public void semanticsChanged(SceneSemanticSnapshot next) { snapshot[0] = next; notifications[0]++; }
+        };
+        Signal<SceneSlider.Model>[] model = new Signal[1];
+        Signal<SceneScrollbar.Options>[] options = new Signal[1]; Signal<Boolean>[] showBar = new Signal[1];
+        SceneScrollViewport[] viewport = new SceneScrollViewport[1];
+        List<Double> changes = new ArrayList<>(), commits = new ArrayList<>();
+        ScenePageSession session = ScenePageSession.open(domain, host, text, page -> {
+            page.runtime().motionPolicy(() -> MotionPolicy.OFF);
+            model[0] = domain.signal(new SceneSlider.Model(0, 10, 2, 0, true));
+            SceneNode slider = SceneSlider.create(page, model[0], changes::add, commits::add, page.theme())
+                    .size(Size.fill(1), Size.fixed(40))
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("等级").build()));
+            SceneNode content = new SceneNode().size(Size.fill(1), Size.fixed(100)).scrollable(true).scrollStep(13);
+            for (int i = 0; i < 20; i++) content.add(new SceneNode().size(Size.fill(1), Size.fixed(20)).text("正文"));
+            viewport[0] = SceneScrollViewport.of(page, content, SceneNode.Axis.COLUMN);
+            options[0] = domain.signal(new SceneScrollbar.Options().autoHide(false)); showBar[0] = domain.signal(true);
+            SceneNode barRegion = new SceneNode().size(Size.fixed(14), Size.fill(1));
+            barRegion.bind(NodeBinding.repeat(() -> showBar[0].get() ? Collections.singletonList("bar") : Collections.emptyList(), key -> key,
+                    current -> SceneScrollbar.create(page, viewport[0], () -> { optionReads[0]++; return options[0].get(); }, page.theme())
+                            .size(Size.fill(1), Size.fill(1))
+                            .bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("正文滚动").build()))));
+            SceneNode scrollRow = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.fixed(100)).add(content).add(barRegion);
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).gap(8).add(slider).add(scrollRow));
+        }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot.Entry slider = rangeEntry(snapshot[0], SceneSemantics.Role.SLIDER, "等级");
+        CompletableFuture<SceneSemanticRequest.Result> changed = session.semantic(SceneSemanticRequest.value(slider.id, 7)); session.frame();
+        // 独立期望：0..10每两单位为一步，7位于6与8中点；原Math.rint取偶数步4，结果8。
+        require(changed.join() == SceneSemanticRequest.Result.APPLIED && changes.equals(Collections.singletonList(8d))
+                && commits.equals(Collections.singletonList(8d)), "语义滑杆没有沿原量化并各发布一次改变/提交 changes=" + changes + " commits=" + commits);
+        domain.execute(() -> {
+            require(model[0].get().value == 0, "未被业务接受的滑杆动作改写了原来源");
+            model[0].set(new SceneSlider.Model(0, 10, 2, 2, true));
+        }); session.frame();
+        require(snapshot[0].get(slider.id).values.current == 2, "外部当前值未重新成为滑杆语义事实");
+        SceneSemanticSnapshot.Entry bar = rangeEntry(snapshot[0], SceneSemantics.Role.SCROLLBAR, "正文滚动");
+        CompletableFuture<SceneSemanticRequest.Result> moved = session.semantic(SceneSemanticRequest.value(bar.id, 47)); session.frame();
+        require(moved.join() == SceneSemanticRequest.Result.APPLIED, "语义滚动条绝对位置动作没有处理");
+        domain.execute(() -> {
+            SceneScrollViewport.Snapshot actual = viewport[0].snapshot(session.pipeline().current().geometry);
+            require(actual.offset == 47 && snapshot[0].get(bar.id).values.current == actual.offset
+                    && snapshot[0].get(bar.id).values.maximum == actual.maximum, "语义滚动位置与原视口不一致");
+        });
+        moved = session.semantic(SceneSemanticRequest.of(bar.id, SceneSemantics.Action.INCREMENT)); session.frame();
+        require(moved.join() == SceneSemanticRequest.Result.APPLIED, "语义滚动条递增没有处理");
+        domain.execute(() -> require(viewport[0].snapshot(session.pipeline().current().geometry).offset == 60
+                && snapshot[0].get(bar.id).values.current == 60, "滚动递增没有使用正文原13像素步长"));
+        SceneSemanticSnapshot idle = snapshot[0]; int updates = notifications[0], reads = optionReads[0];
+        ScenePresentation[] presentation = new ScenePresentation[1]; domain.execute(() -> presentation[0] = session.pipeline().current());
+        session.frame(); session.frame();
+        domain.execute(() -> require(snapshot[0] == idle && notifications[0] == updates && optionReads[0] == reads
+                && presentation[0].geometry == session.pipeline().current().geometry, "静止范围重复发布或重新求值观察"));
+        domain.execute(() -> showBar[0].set(false)); session.frame();
+        require(snapshot[0].get(bar.id) == null, "退出的独立滚动条语义身份未结束");
+        int detachedReads = optionReads[0]; domain.execute(() -> options[0].set(new SceneScrollbar.Options().autoHide(false))); session.frame();
+        require(optionReads[0] == detachedReads, "旧滚动条挂载退出后仍观察配置来源");
+        domain.execute(() -> showBar[0].set(true)); session.frame();
+        SceneSemanticSnapshot.Entry remounted = rangeEntry(snapshot[0], SceneSemantics.Role.SCROLLBAR, "正文滚动");
+        require(!bar.id.equals(remounted.id), "滚动条重建复用了旧语义身份");
+        int mountedReads = optionReads[0]; domain.execute(() -> options[0].set(new SceneScrollbar.Options().autoHide(false))); session.frame();
+        require(optionReads[0] == mountedReads + 1, "重挂后配置变更叠加旧观察");
+        SceneSemanticId closed = remounted.id; session.close();
+        require(snapshot[0].entries.isEmpty(), "关闭未结束范围语义");
+        int closedReads = optionReads[0], closedUpdates = notifications[0];
+        domain.execute(() -> { options[0].set(new SceneScrollbar.Options().autoHide(false)); model[0].set(new SceneSlider.Model(0, 10, 2, 4, true)); });
+        session.frame();
+        require(optionReads[0] == closedReads && notifications[0] == closedUpdates, "关闭后仍观察或发布范围状态");
+        require(session.semantic(SceneSemanticRequest.value(closed, 80)).join() == SceneSemanticRequest.Result.CLOSED,
+                "关闭后语义位置请求没有结束");
+    }
+    private static SceneSemanticSnapshot.Entry rangeEntry(SceneSemanticSnapshot snapshot, SceneSemantics.Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries)
+            if (entry.values.role == role && name.equals(entry.values.name)) return entry;
+        throw new AssertionError("缺少范围语义 " + role + " / " + name);
     }
 
     private void elasticEdges(){

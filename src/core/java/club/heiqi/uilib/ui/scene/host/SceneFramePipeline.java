@@ -31,7 +31,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final ScenePaintCollector paint;
     private final SceneTextMeasurer text;
 
-    private enum InputKind { POINTER, NAVIGATION, EDIT, KEY, FOCUS_LOST, ESCAPE }
+    private enum InputKind { POINTER, NAVIGATION, EDIT, KEY, FOCUS_LOST, ESCAPE, SEMANTIC }
 
     /** 后续动作在当前事件及其Effect结算后执行；对象本身不承担输入路由。 */
     private static final class FollowUp {
@@ -77,6 +77,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         SceneFocusRouter.RangeHandle directionRange;
         final FollowUp followUp;
         boolean consumed;
+        club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest semantic;
+        SceneSemanticCompletion semanticCompletion;
+        club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result semanticOutcome;
 
         private QueuedInput(InputKind kind, ScenePointerEvent pointer, SceneNavigationEvent navigation,
                             SceneEditEvent edit, FollowUp followUp, SceneKeyEvent key) {
@@ -117,11 +120,18 @@ public final class SceneFramePipeline implements AutoCloseable {
             return kind == InputKind.POINTER && pointer.kind == ScenePointerEvent.Kind.UP && pointer.button == 0;
         }
 
+        static QueuedInput semantic(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request,
+                SceneSemanticCompletion result) {
+            QueuedInput input = new QueuedInput(InputKind.SEMANTIC, null, null, null, null, null);
+            input.semantic = request; input.semanticCompletion = result; return input;
+        }
+
         boolean requiresTopLevelSettlement() {
-            return followUp != null || preparesPointerRelease();
+            return kind == InputKind.SEMANTIC || followUp != null || preparesPointerRelease();
         }
 
         void discard(ScenePointerRouter router) {
+            if (semanticCompletion != null) semanticCompletion.finish(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED, null);
             if (kind == InputKind.POINTER) router.discardAfterFailure(pointer);
         }
     }
@@ -214,6 +224,13 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
+    void semantic(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request, SceneSemanticCompletion result) {
+        synchronized (inputs) {
+            if (closed) { result.finish(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED, null); return; }
+            inputs.add(QueuedInput.semantic(Objects.requireNonNull(request), result));
+        }
+    }
+
     /** ESC与指针/导航同序；fallback仅在未消费、Effects成功且此管线仍有效时于域内执行。 */
     public void escape(Runnable fallback) {
         synchronized (inputs) {
@@ -247,14 +264,18 @@ public final class SceneFramePipeline implements AutoCloseable {
             QueuedInput event = batch.events.get(index);
             // 释放坐标先进入位置意图；独立顶层操作使其 Effect 在 UP 前结算，随后 route 正式重排。
             if (event.preparesPointerRelease())
-                submit(batch.independent, () -> preparePointerRelease(batch, event), failure -> failBatch(batch, index));
+                submit(batch.independent, () -> preparePointerRelease(batch, event), failure -> failBatch(batch, index, failure));
             // 路由失败仍须记录当前物理事件；后续动作失败时当前事件已结算。
-            submit(batch.independent, () -> route(batch, event), failure -> failBatch(batch, index));
+            submit(batch.independent, () -> route(batch, event), failure -> failBatch(batch, index, failure));
             if (event.followUp != null)
-                submit(batch.independent, () -> followUp(batch, event), failure -> failBatch(batch, index + 1));
+                submit(batch.independent, () -> followUp(batch, event), failure -> failBatch(batch, index + 1, failure));
+            if (event.semanticCompletion != null)
+                submit(batch.independent, () -> { if (!batch.failed) event.semanticCompletion.finish(event.semanticOutcome == null
+                        ? club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED : event.semanticOutcome, null); },
+                        failure -> failBatch(batch, index + 1, failure));
         }
         Runnable replay = () -> replay(batch);
-        submit(batch.independent, replay, failure -> failBatch(batch, batch.events.size()));
+        submit(batch.independent, replay, failure -> failBatch(batch, batch.events.size(), failure));
     }
 
     private InputBatch takeBatch() {
@@ -286,6 +307,11 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
         SceneGeometryView geometry = prepare(batch.frameNanos).geometry;
         switch (event.kind) {
+            case SEMANTIC:
+                event.semanticOutcome = runtime.dispatchSemantic(event.semantic, geometry)
+                        ? club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.APPLIED
+                        : club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.REJECTED;
+                break;
             case FOCUS_LOST:
                 clearKeySequences();
                 try { router.route(ScenePointerEvent.cancel(), geometry); }
@@ -418,8 +444,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         else runtime.focusRouter().navigate(event == SceneNavigationEvent.PREVIOUS);
     }
 
-    private void failBatch(InputBatch batch, int firstDiscard) {
+    private void failBatch(InputBatch batch, int firstDiscard, Throwable cause) {
         batch.failed = true;
+        for (QueuedInput input : batch.events) if (input.semanticCompletion != null) input.semanticCompletion.finish(null, cause);
         clearKeySequences();
         if (batch.independent) release(batch);
         ScenePointerRouter router = runtime.pointerRouter();
@@ -502,14 +529,16 @@ public final class SceneFramePipeline implements AutoCloseable {
                             clearKeySequences();
                             ScenePointerRouter router = runtime.pointerRouter();
                             // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
-                            try {
-                                for (QueuedInput event : pending) event.discard(router);
-                                router.discardAfterFailure(ScenePointerEvent.cancel());
-                            } finally {
-                                presentation = null;
-                                paint.clear();
-                                layout.clearCaches();
-                            }
+                            Throwable failure = null;
+                            for (QueuedInput event : pending) try { event.discard(router); }
+                            catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
+                            try { router.discardAfterFailure(ScenePointerEvent.cancel()); }
+                            catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
+                            try { host.semanticsChanged(runtime.clearSemantics()); }
+                            catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
+                            finally { presentation = null; paint.clear(); layout.clearCaches(); }
+                            if (failure instanceof Error) throw (Error) failure;
+                            if (failure instanceof RuntimeException) throw (RuntimeException) failure;
                         });
     }
 
@@ -616,10 +645,14 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private void publishPresentation(SceneGeometry geometry, int w, int h, long nextMetrics) {
-        if (!paintDirty(geometry, w, h, nextMetrics)) return;
-        PaintPlan plan = runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics));
-        runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
-        presentation = new ScenePresentation(++generation, geometry, plan);
+        club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semantic = runtime.semanticSnapshot(geometry);
+        boolean semanticChanged = presentation == null || presentation.semantics != semantic;
+        boolean changedPaint = paintDirty(geometry, w, h, nextMetrics);
+        if (!changedPaint && !semanticChanged) return;
+        PaintPlan plan = changedPaint ? runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics)) : presentation.paint;
+        if (changedPaint) runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
+        presentation = new ScenePresentation(++generation, geometry, plan, semantic);
+        if (semanticChanged) host.semanticsChanged(semantic);
         revision = runtime.revision();
         geometryRevision = runtime.geometryRevision();
         width = w;

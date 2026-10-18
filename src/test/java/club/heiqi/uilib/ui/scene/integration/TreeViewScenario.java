@@ -26,6 +26,10 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -52,12 +56,75 @@ public final class TreeViewScenario extends TestApplication {
         scenario("参考树主项方向首末与屏外名称跳转", this::referenceNavigation);
         scenario("复杂条目的Tab进入内部编辑后离树", this::complexItemTab);
         scenario("逻辑禁用键跳过首末方向与名称且即时结束焦点", this::disabledItems);
+        scenario("树语义保留逻辑层级并定向展开主项和字段", this::semanticTree);
     }
     private static SceneKeyEvent key(SceneKey key) { return new SceneKeyEvent(key, false, false, false, false, false, null); }
     private static void change(Signal<Set<Integer>> state, SceneTreeView.Expansion<Integer> request) {
         Set<Integer> next = new LinkedHashSet<>(state.get());
         if (request.expanded) next.add(request.key); else next.remove(request.key); state.set(Collections.unmodifiableSet(next));
     }
+    private void semanticTree() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.width = 500; host.height = 160;
+        ScenePageContext[] context = new ScenePageContext[1]; Signal<Set<Integer>>[] expanded = new Signal[1], disabled = new Signal[1];
+        SceneEditState[] draft = new SceneEditState[1]; Map<Integer, SceneNode> primary = new HashMap<>(); int[] created = {0}, activated = {-1};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; expanded[0] = domain.signal(Collections.emptySet()); disabled[0] = domain.signal(Collections.emptySet());
+            draft[0] = new SceneEditState(domain, "原名称"); List<Item> source = new ArrayList<>(); source.add(new Item(0, null));
+            for (int i = 1; i <= 1000; i++) source.add(new Item(i, 0)); source.add(new Item(1001, null));
+            SceneTreeView<Item, Integer> tree = SceneTreeView.create(page, () -> source, item -> item.id, item -> item.parent,
+                    expanded[0], request -> change(expanded[0], request), disabled[0], item -> item.id == 0 ? "完整项目目录" : "资源 " + item.id,
+                    entry -> {
+                        created[0]++; int id = entry.get().key;
+                        SceneNode content = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.fixed(32))
+                                .focusable(true).onClick(() -> activated[0] = id);
+                        content.add(club.heiqi.uilib.ui.scene.control.SceneLabel.create(page, () -> "资源 " + entry.get().key, page.theme()));
+                        if (id == 1) content.add(SceneTextField.create(page, draft[0], page.theme(), () -> false, request -> {})
+                                .size(Size.fill(1), Size.fixed(28)).bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("资源重命名").build())));
+                        primary.put(id, content); return content;
+                    }, () -> new SceneTreeView.Options().rows(new SceneVirtualList.Options().estimatedRowHeight(32).overscan(0)), page.theme());
+            page.mount(tree.node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("资源浏览器").build())));
+        }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot initial = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry root = semanticEntry(initial, SceneSemantics.Role.TREE_ITEM, "完整项目目录");
+        require(root.values.level == 1 && root.values.index == 1 && root.values.count == 2 && Boolean.FALSE.equals(root.values.expanded), "折叠根的层级或同级总数错误");
+        require(root.focused && root.actions.contains(SceneSemantics.Action.EXPAND), "TreeItem没有代表实际主焦点或展开动作");
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> opening = session.semantic(SceneSemanticRequest.of(root.id, SceneSemantics.Action.EXPAND)); session.frame();
+        domain.execute(() -> require(opening.getNow(null) == SceneSemanticRequest.Result.APPLIED && expanded[0].get().contains(0), "语义展开没有沿业务展开意图"));
+        SceneSemanticSnapshot opened = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry child = semanticEntry(opened, SceneSemantics.Role.TREE_ITEM, "资源 1");
+        require(child.values.level == 2 && child.values.index == 1 && child.values.count == 1000 && child.values.expanded == null, "叶子的同级位置或branch事实错误");
+        require(semanticEntry(opened, SceneSemantics.Role.TREE, "资源浏览器").values.count == 1002 && created[0] < 40,
+                "语义为了全量树条目创建了视图或把挂载数当逻辑总数");
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> focusing = session.semantic(SceneSemanticRequest.of(child.id, SceneSemantics.Action.FOCUS)); session.frame();
+        domain.execute(() -> require(focusing.getNow(null) == SceneSemanticRequest.Result.APPLIED
+                && context[0].runtime().focusRouter().focused().get() == primary.get(1), "TreeItem语义没有聚焦原实际主项"));
+        session.semantic(SceneSemanticRequest.of(child.id, SceneSemantics.Action.ACTIVATE)); session.frame();
+        require(activated[0] == 1, "TreeItem激活没有复用当前业务动作");
+        SceneSemanticSnapshot.Entry field = semanticEntry(semanticSnapshot(domain, session), SceneSemantics.Role.TEXT_FIELD, "资源重命名");
+        session.semantic(SceneSemanticRequest.text(field.id, "语义新名称")); session.frame();
+        domain.execute(() -> require(draft[0].snapshot().get().text.equals("语义新名称"), "字段子目标被树展开动作夺走"));
+        domain.execute(() -> disabled[0].set(Collections.singleton(1)));
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> blocked = session.semantic(SceneSemanticRequest.of(child.id, SceneSemantics.Action.FOCUS)); session.frame();
+        SceneSemanticSnapshot.Entry disabledChild = semanticEntry(semanticSnapshot(domain, session), SceneSemantics.Role.TREE_ITEM, "资源 1");
+        require(blocked.getNow(null) == SceneSemanticRequest.Result.REJECTED && !disabledChild.enabled && disabledChild.actions.isEmpty(), "禁用树项仍提供动作或丢失阅读事实");
+        session.semantic(SceneSemanticRequest.of(root.id, SceneSemantics.Action.COLLAPSE)); session.frame();
+        require(semanticSnapshot(domain, session).get(child.id) == null && Boolean.FALSE.equals(root.values.expanded), "折叠未移除旧后代或修改了旧快照");
+        domain.execute(() -> disabled[0].set(Collections.emptySet()));
+        session.semantic(SceneSemanticRequest.of(root.id, SceneSemantics.Action.EXPAND)); session.frame();
+        SceneSemanticSnapshot.Entry returned = semanticEntry(semanticSnapshot(domain, session), SceneSemantics.Role.TREE_ITEM, "资源 1");
+        require(!returned.id.equals(child.id), "再次展开复活了旧语义挂载ID");
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> stale = session.semantic(SceneSemanticRequest.of(child.id, SceneSemantics.Action.ACTIVATE)); session.frame();
+        require(stale.getNow(null) == SceneSemanticRequest.Result.REJECTED, "旧TreeItem ID转投新主项");
+    }
+    private static SceneSemanticSnapshot semanticSnapshot(ReactiveDomain domain, ScenePageSession session) {
+        SceneSemanticSnapshot[] result = new SceneSemanticSnapshot[1]; domain.execute(() -> result[0] = session.pipeline().current().semantics); return result[0];
+    }
+    private static SceneSemanticSnapshot.Entry semanticEntry(SceneSemanticSnapshot snapshot, SceneSemantics.Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries) if (entry.values.role == role && name.equals(entry.values.name)) return entry;
+        throw new AssertionError("缺少语义: " + role + " / " + name);
+    }
+
     private void disabledItems() {
         ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         ScenePageContext[] context = new ScenePageContext[1]; SceneTreeView<Item, Integer>[] tree = new SceneTreeView[1];

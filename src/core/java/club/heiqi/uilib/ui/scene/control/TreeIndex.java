@@ -15,6 +15,7 @@ import java.util.function.Function;
 final class TreeIndex<T, K> {
     static final class Item<T, K> {
         final T value; final K key, parent; final List<K> children = new ArrayList<>();
+        int position, siblingCount;
         Item(T value, K key, K parent) { this.value = value; this.key = key; this.parent = parent; }
     }
     final Map<K, Item<T, K>> items = new LinkedHashMap<>();
@@ -34,6 +35,9 @@ final class TreeIndex<T, K> {
                 ancestor.children.add(item.key);
             }
         }
+        // 每次结构来源只建立一次同级位置，有限行语义读取不重新扫描整个投影。
+        indexSiblings(roots);
+        for (Item<T, K> item : items.values()) indexSiblings(item.children);
         Set<K> checked = new HashSet<>();
         for (K identity : items.keySet()) {
             Set<K> path = new HashSet<>(); K cursor = identity;
@@ -42,6 +46,12 @@ final class TreeIndex<T, K> {
                 cursor = items.get(cursor).parent;
             }
             checked.addAll(path);
+        }
+    }
+
+    private void indexSiblings(List<K> siblings) {
+        for (int i = 0; i < siblings.size(); i++) {
+            Item<T, K> item = items.get(siblings.get(i)); item.position = i + 1; item.siblingCount = siblings.size();
         }
     }
 

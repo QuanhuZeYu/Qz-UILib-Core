@@ -13,6 +13,9 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -144,6 +147,56 @@ public final class VirtualCollectionScenario extends TestApplication {
         scenario("方向跨行后同批文字进入实际新草稿", this::directionalEditing);
         scenario("行内小动作显露后结束请求且不追随用户滚动", this::smallActionFocus);
         scenario("无合法焦点的显式行请求结束有限准备", this::noFocusableRequest);
+        scenario("列表语义总数与位置来自逻辑来源且局部角色优先", this::semanticCollection);
+    }
+
+    private void semanticCollection() {
+        ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host(); host.width = 400; host.height = 180;
+        Signal<List<Integer>>[] source = new Signal[1]; SceneVirtualList<Integer, Integer>[] list = new SceneVirtualList[1]; int[] created = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            List<Integer> values = new ArrayList<>(); for (int i = 0; i < 200; i++) values.add(i); source[0] = domain.signal(values);
+            list[0] = SceneVirtualList.create(page, source[0], value -> value, value -> {
+                created[0]++; int id = value.get();
+                if (id == 1) return club.heiqi.uilib.ui.scene.control.SceneTextField.create(page,
+                        new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "字段值"), page.theme(), () -> false, request -> {})
+                        .size(Size.fill(1), Size.fixed(28)).bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("列表字段").build()));
+                if (id == 3) return club.heiqi.uilib.ui.scene.control.SceneCheckBox.create(page,
+                        () -> club.heiqi.uilib.ui.scene.control.SceneCheckBox.State.CHECKED, () -> "列表复选", page.theme(), ignored -> {})
+                        .size(Size.fill(1), Size.fixed(28));
+                SceneNode row = club.heiqi.uilib.ui.scene.control.SceneLabel.create(page, () -> "条目 " + value.get(), page.theme())
+                        .size(Size.fill(1), Size.fixed(28)).focusable(true);
+                if (id == 2) row.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name("显式分组行").build()));
+                return row;
+            }, () -> new SceneVirtualList.Options().estimatedRowHeight(28).overscan(0));
+            page.mount(list[0].node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("业务条目").build())));
+        }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot first = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry container = semanticNamed(first, SceneSemantics.Role.LIST, "业务条目");
+        require(container.values.count == 200 && created[0] < 40, "列表语义全量创建行或把挂载数当总数");
+        SceneSemanticSnapshot.Entry editor = semanticNamed(first, SceneSemantics.Role.TEXT_FIELD, "列表字段");
+        require(editor.values.index == 2 && editor.values.count == 200 && editor.values.value.equals("字段值"), "行默认语义覆盖了字段角色和值");
+        require(semanticNamed(first, SceneSemantics.Role.GROUP, "显式分组行").values.index == 3, "后注册的行默认角色覆盖了显式语义");
+        SceneSemanticSnapshot.Entry checkbox = semanticNamed(first, SceneSemantics.Role.CHECKBOX, "列表复选");
+        require(checkbox.values.index == 4 && checkbox.values.count == 200 && Boolean.TRUE.equals(checkbox.values.checked),
+                "列表默认角色覆盖了复选行根的角色或真实状态");
+        domain.execute(() -> list[0].focus(199)); session.frame();
+        SceneSemanticSnapshot tail = semanticSnapshot(domain, session);
+        SceneSemanticSnapshot.Entry last = semanticNamed(tail, SceneSemantics.Role.LIST_ITEM, "条目 199");
+        require(last.values.index == 200 && last.values.count == 200 && created[0] < 60, "屏外目标语义位置错误或全量创建了中间行");
+        domain.execute(() -> { List<Integer> reverse = new ArrayList<>(source[0].get()); java.util.Collections.reverse(reverse); source[0].set(reverse); }); session.frame();
+        SceneSemanticSnapshot current = semanticSnapshot(domain, session);
+        require(current.get(last.id) != null && current.get(last.id).values.index == 1 && tail.get(last.id).values.index == 200,
+                "重排未更新同一挂载的逻辑位置或改动旧快照");
+        session.close();
+        java.util.concurrent.CompletableFuture<SceneSemanticRequest.Result> closed = session.semantic(SceneSemanticRequest.of(last.id, SceneSemantics.Action.FOCUS));
+        require(closed.getNow(null) == SceneSemanticRequest.Result.CLOSED, "关闭后旧列表ID请求没有结束");
+    }
+    private static SceneSemanticSnapshot semanticSnapshot(ReactiveDomain domain, ScenePageSession session) {
+        SceneSemanticSnapshot[] result = new SceneSemanticSnapshot[1]; domain.execute(() -> result[0] = session.pipeline().current().semantics); return result[0];
+    }
+    private static SceneSemanticSnapshot.Entry semanticNamed(SceneSemanticSnapshot snapshot, SceneSemantics.Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries) if (entry.values.role == role && name.equals(entry.values.name)) return entry;
+        throw new AssertionError("缺少语义: " + role + " / " + name);
     }
 
     private void directionalRows() {

@@ -16,6 +16,12 @@ import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
+    /** 只读语义随实际Signal依赖更新；null透传普通布局孩子。 */
+    default club.heiqi.uilib.ui.scene.semantics.SceneSemantics semantics(SceneNode node) { return null; }
+
+    /** 定向语义动作只交给已解析的当前控件；激活/焦点由原runtime统一处理。 */
+    default boolean semanticAction(SceneNode node, club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request) { return false; }
+
     /** 按需复合内容的逻辑遍历；null保留普通声明树前序，不建立第二焦点。 */
     default club.heiqi.uilib.ui.scene.input.SceneFocusTraversal focusTraversal(SceneNode node) { return null; }
     /** null 表示普通流；所属层策略不得返回 null。 */

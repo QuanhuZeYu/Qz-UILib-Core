@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -47,6 +48,14 @@ abstract class SceneSymbolControl implements SceneControl {
         Objects.requireNonNull(page).domain().checkWrite();
         return new SceneNode().control(control).size(Size.natural(),Size.natural())
                 .bind(NodeBinding.value(control.theme,(n,t) -> n.style(t.textStyle)));
+    }
+    /** 装饰不额外朗读；正式符号按钮沿完整名称和原click动作。 */
+    @Override public SceneSemantics semantics(SceneNode node) {
+        if (node.clickAction() == null) return SceneSemantics.builder(SceneSemantics.Role.IMAGE).excluded(true).actions().build();
+        SceneSemantics.Builder result = SceneSemantics.builder(SceneSemantics.Role.BUTTON).name(node.text());
+        if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE);
+        else result.actions(SceneSemantics.Action.ACTIVATE);
+        return result.build();
     }
     int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
     int symbolWidth(SceneNode node) { return symbolSize(node); }

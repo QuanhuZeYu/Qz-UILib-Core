@@ -56,6 +56,13 @@ public final class SceneVirtualList<T, K> {
         return new SceneVirtualList<>(page, items, key, declaration, options, measurementCondition);
     }
 
+    /** 所属数据视图声明自己的语义角色；普通公开集合仍使用LIST和LIST_ITEM。 */
+    void semanticRoles(club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role collection, club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role item) {
+        controller.semanticRoles(collection, item);
+    }
+    int logicalPosition(K key) { return controller.logicalPosition(key); }
+    int logicalCount() { return controller.logicalCount(); }
+
     public SceneNode node() { return node; }
     public SceneScrollViewport viewport() { return viewport; }
 

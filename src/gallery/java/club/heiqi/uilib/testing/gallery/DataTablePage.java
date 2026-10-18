@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -64,7 +65,8 @@ public final class DataTablePage {
                             notes.set(Collections.unmodifiableMap(next));
                             feedback.set("已记录备注：" + row.get().title + " · " + request.text);
                         }
-                    }, SceneTextField.SubmitPolicy.BLUR);
+                    }, SceneTextField.SubmitPolicy.BLUR).bind(NodeBinding.semantics(() ->
+                            SceneSemantics.builder().name("我的备注：" + row.get().title).build()));
                 });
         SceneDataTable.Column<Task, String> action = new SceneDataTable.Column<>("action", () -> Size.fixed(120),
                 () -> GalleryStyle.label(page, () -> "操作", theme, 14, true), row -> {
@@ -85,6 +87,7 @@ public final class DataTablePage {
         SceneNode tools = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
         tools.add(GalleryStyle.button(page, () -> notesShown.get() ? "隐藏备注列" : "显示备注列", theme, () -> notesShown.set(!notesShown.get())));
         tools.add(GalleryStyle.button(page, () -> wider.get() ? "收窄任务列" : "加宽任务列", theme, () -> wider.set(!wider.get())));
+        table.node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().name("团队任务").build()));
         root.add(tools).add(table.node());
         root.add(SceneLabel.create(page, feedback, theme).size(Size.fill(1), Size.natural()));
         return root;

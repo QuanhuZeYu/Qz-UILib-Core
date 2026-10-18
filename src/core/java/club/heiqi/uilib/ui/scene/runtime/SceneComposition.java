@@ -66,6 +66,12 @@ final class SceneComposition {
         if (link.state.inputBaseline() == link.baseline) link.state.composition("", false);
     }
 
+    boolean activeFor(SceneNode target) {
+        revalidate();
+        return active != null && active.mount.node() == target || target.control() instanceof SceneCompositionTarget
+                && ((SceneCompositionTarget) target.control()).compositionState().snapshot().get().composing;
+    }
+
     /** UPDATE(false)结束preedit呈现后，真实联系仍保留应用快捷键，直到COMMIT/CANCEL。 */
     boolean reservesShortcut() {
         revalidate();

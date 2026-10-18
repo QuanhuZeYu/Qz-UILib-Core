@@ -12,6 +12,8 @@ import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -95,6 +97,7 @@ public final class SceneScrollbar {
         private final Signal<Integer> thickness;
         private final Signal<SceneNode.Axis> axis;
         private final Signal<Boolean> hasRange, present;
+        private final Signal<SceneScrollViewport.Snapshot> semanticViewport;
         private final SceneScrollVisibility visibility;
         private final SceneScrollPage page;
         private final Object target = new Object(), trackTarget = new Object();
@@ -105,6 +108,7 @@ public final class SceneScrollbar {
             configuration = runtime.domain().signal(new Options()); thickness = runtime.domain().signal(11);
             axis = runtime.domain().signal(viewport.axis());
             hasRange = runtime.domain().signal(false); present = runtime.domain().signal(false);
+            semanticViewport = runtime.domain().signal(null);
             visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(runtime.domain());
         }
         SceneNode createNode(ReadableSignal<Options> source) {
@@ -115,7 +119,7 @@ public final class SceneScrollbar {
                 if (automatic) owner.own(runtime.observeScrollHover(viewport.node(), visibility::areaHover));
                 else owner.own(runtime.claimScrollbar(viewport));
                 owner.own(viewport.observe(this::viewportChanged));
-                owner.own(() -> { stop(); visibility.close(); });
+                owner.own(() -> { try { stop(); visibility.close(); } finally { semanticViewport.set(null); } });
                 return new BindingActivation() { public void refresh() {} public void close() {} };
             });
             node.bind(NodeBinding.hoverWithin(0, (self, inside) -> visibility.hover(inside)));
@@ -130,9 +134,44 @@ public final class SceneScrollbar {
             if (!next.clickOnTrack) page.stop();
         }
         private void viewportChanged(SceneScrollViewport.Snapshot next) {
+            // 只保留原位置所有者已发布的不可变范围事实；所有改变仍回原端口。
+            semanticViewport.set(next);
             axis.set(viewport.axis()); present.set(next != null); hasRange.set(next != null && next.maximum > 0);
             if (hasRange.get()) visibility.activity(); else stop();
         }
+        @Override public SceneSemantics semantics(SceneNode node) {
+            SceneScrollViewport.Snapshot view = semanticViewport.get();
+            SceneSemantics.Builder result = SceneSemantics.builder(SceneSemantics.Role.SCROLLBAR);
+            java.util.EnumSet<SceneSemantics.Action> actions = java.util.EnumSet.noneOf(SceneSemantics.Action.class);
+            if (node.focusable()) actions.add(SceneSemantics.Action.FOCUS);
+            if (view != null) {
+                result.range(0, view.maximum, view.offset);
+                if (view.maximum > 0) {
+                    actions.add(SceneSemantics.Action.SET_VALUE);
+                    if (view.offset < view.maximum) actions.add(SceneSemantics.Action.INCREMENT);
+                    if (view.offset > 0) actions.add(SceneSemantics.Action.DECREMENT);
+                }
+            }
+            return result.actions(actions.toArray(new SceneSemantics.Action[0])).build();
+        }
+        @Override public boolean semanticAction(SceneNode node, SceneSemanticRequest request) {
+            SceneScrollViewport.Snapshot view = semanticViewport.get();
+            if (view == null || view.maximum <= 0 || !runtime.interactive(viewport.node())) return false;
+            switch (request.action) {
+                case INCREMENT:
+                    page.stop(); viewport.moveByPixels(viewport.node().scrollStep()); break;
+                case DECREMENT:
+                    page.stop(); viewport.moveByPixels(-viewport.node().scrollStep()); break;
+                case SET_VALUE:
+                    if (!Double.isFinite(request.value)) return false;
+                    int offset = (int) Math.round(Math.max(0, Math.min(view.maximum, request.value)));
+                    page.stop(); viewport.moveToPixels(offset); break;
+                default: return false;
+            }
+            visibility.activity();
+            return true;
+        }
+
         private SceneScrollbarGeometry geometry(SceneNode node, SceneGeometryView geometry) {
             return new SceneScrollbarGeometry(geometry.get(node), viewport.snapshot(geometry), viewport.axis(), configuration.get());
         }

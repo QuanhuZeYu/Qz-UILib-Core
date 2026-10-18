@@ -15,6 +15,8 @@ import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.motion.MotionValue;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
@@ -122,6 +124,36 @@ public final class SceneSlider {
             elastic.refresh();
         }
 
+        @Override public SceneSemantics semantics(SceneNode node) {
+            Model declaration = actual.get();
+            Preview preview = gesture.preview.get();
+            java.util.EnumSet<SceneSemantics.Action> actions = java.util.EnumSet.noneOf(SceneSemantics.Action.class);
+            if (node.focusable()) actions.add(SceneSemantics.Action.FOCUS);
+            if (declaration.enabled && !preview.active) {
+                actions.add(SceneSemantics.Action.SET_VALUE);
+                if (preview.value < declaration.max) actions.add(SceneSemantics.Action.INCREMENT);
+                if (preview.value > declaration.min) actions.add(SceneSemantics.Action.DECREMENT);
+            }
+            return SceneSemantics.builder(SceneSemantics.Role.SLIDER)
+                    .range(declaration.min, declaration.max, preview.value)
+                    .actions(actions.toArray(new SceneSemantics.Action[0])).build();
+        }
+        @Override public boolean semanticAction(SceneNode node, SceneSemanticRequest request) {
+            if (!model.enabled || gesture.dragging) return false;
+            double next = gesture.value();
+            switch (request.action) {
+                case INCREMENT: next += model.keyStep; break;
+                case DECREMENT: next -= model.keyStep; break;
+                case SET_VALUE:
+                    if (!Double.isFinite(request.value)) return false;
+                    next = request.value;
+                    break;
+                default: return false;
+            }
+            changeAndCommit(next);
+            return true;
+        }
+
         public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(theme); }
         public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, gesture.preview, actual, elastic.offset); }
         public MeasuredSize measure(SceneNode node, Constraints c, SceneTextMeasurer text) {
@@ -209,13 +241,18 @@ public final class SceneSlider {
             }
             // 原指针 owner 直到 UP/ESC 结束；期间范围键不插入第二个提交，也不结束其预览。
             if (gesture.dragging) return true;
+            changeAndCommit(next);
+            return true;
+        }
+
+        /** 键盘与语义单次改变共用量化和最终提交，不写另一份业务值。 */
+        private void changeAndCommit(double next) {
             elastic.clear();
             gesture.resetPickup();
             next = model.quantize(next);
             gesture.publish(false, next);
             changed.accept(next);
             committed.accept(next);
-            return true;
         }
 
         private Track track(LayoutBox box) {

@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -93,6 +94,16 @@ final class SceneTextControl implements SceneControl {
         ((SceneTextControl)node.control()).modernSurface=new SceneAppearance.Surface(colors,role,node,()->false);
         return node;
     }
+    @Override public SceneSemantics semantics(SceneNode node) {
+        SceneSemantics.Builder result = SceneSemantics.builder(button ? SceneSemantics.Role.BUTTON : SceneSemantics.Role.LABEL)
+                .name(node.text()).actions();
+        if (button && node.clickAction() != null) {
+            if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE);
+            else result.actions(SceneSemantics.Action.ACTIVATE);
+        }
+        return result.build();
+    }
+
     private int iconSize(SceneNode node) { return leadingIcon==null?0:Math.max(1,Math.round(node.style().logicalEm*1.2f)); }
     private int iconSpace(SceneNode node) { return leadingIcon==null?0:iconSize(node)+theme.get().gap; }
     @Override public java.util.List<ReadableSignal<?>> measureDependencies(SceneNode node) {

@@ -5,6 +5,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
@@ -36,6 +37,8 @@ public final class SceneRadioGroup<K> {
                 option -> option.enabled.get(), nodes, selected, change, true);
         node = new SceneNode().size(Size.fill(1), Size.natural()).control(navigation);
         node.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
+        node.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.RADIO_GROUP)
+                .count(options.get().size()).actions().build()));
         node.bind(NodeBinding.repeat(options, option -> option.key, current -> {
             K key = current.get().key;
             ReadableSignal<Boolean> checked = () -> Objects.equals(selected.get(), current.get().key);
@@ -57,6 +60,14 @@ public final class SceneRadioGroup<K> {
     private static final class Mark extends SceneSymbolControl {
         private final ReadableSignal<Boolean> checked;
         Mark(ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> checked) { super(theme, true); this.checked = checked; }
+        @Override public SceneSemantics semantics(SceneNode node) {
+            boolean selected = Objects.requireNonNull(checked.get(), "单选状态");
+            SceneSemantics.Builder result = super.semantics(node).toBuilder().role(SceneSemantics.Role.RADIO)
+                    .checked(selected).selected(selected);
+            if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE, SceneSemantics.Action.SELECT);
+            else result.actions(SceneSemantics.Action.ACTIVATE, SceneSemantics.Action.SELECT);
+            return result.build();
+        }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, checked); }
         @Override void symbol(LayoutBox box, PaintPlanBuilder paint, LayoutBox clip, int color) {
             ScenePaintShapes.rounded(paint, box, clip, color, box.width / 2);

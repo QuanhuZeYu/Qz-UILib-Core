@@ -4,6 +4,8 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -37,6 +39,7 @@ public final class SceneSelect {
             return placeholder.get();
         };
         return new ScenePopupList<>(page, owner, checked, option -> option.key, option -> option.name.get(), option -> option.enabled.get(),
-                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme, false).node();
+                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme, false).node()
+                .bind(NodeBinding.semantics(() -> SceneSemantics.builder().description(placeholder.get()).build()));
     }
 }

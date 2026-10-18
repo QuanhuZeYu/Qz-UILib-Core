@@ -21,5 +21,8 @@ public interface SceneHost {
     /** 字体、主题或度量环境改变时递增；尺寸变化会单独被框架感知。 */
     long metricsRevision();
 
+    /** 同批可读语义实际变化时发布；旧宿主无需提供原生无障碍桥。 */
+    default void semanticsChanged(club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot snapshot) {}
+
     void replay(PaintPlan plan);
 }

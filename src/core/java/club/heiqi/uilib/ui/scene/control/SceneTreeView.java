@@ -19,6 +19,8 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -90,6 +92,7 @@ public final class SceneTreeView<T, K> {
         ReadableSignal<List<Object>> measure = page.domain().computed(owner,
                 () -> Arrays.asList(indent(), theme.get().gap, theme.get().textStyle.logicalEm));
         rows = SceneVirtualList.measured(page, visible, entry -> entry.key, this::row, () -> options.get().rows, measure);
+        rows.semanticRoles(null, null);
         node = new SceneNode().size(Size.fill(1), Size.fill(1)).control(new TreeControl()).add(rows.node()).own(owner);
         node.bind(NodeBinding.value(() -> page.runtime().focusRouter().focused().get(), (self, focused) -> {
             if (primaryKey(focused) == null) typeahead.reset();
@@ -126,11 +129,12 @@ public final class SceneTreeView<T, K> {
         SceneNode marker = SceneIconButton.create(page, () -> entry.get().expanded ? SceneIconButton.Symbol.CHEVRON_DOWN : SceneIconButton.Symbol.CHEVRON_RIGHT,
                 () -> entry.get().expanded ? "折叠" : "展开", theme, toggle::tryExecute).focusable(false).clickFocus(false);
         marker.bind(NodeBinding.value(() -> entry.get().branch, SceneNode::visible));
+        marker.bind(NodeBinding.semantics(() -> SceneSemantics.builder().excluded(true).build()));
         SceneNode slot = new SceneNode().size(Size.fixed(24), Size.natural()).add(marker);
         slot.bind(NodeBinding.value(() -> Math.max(1, Math.round(theme.get().textStyle.logicalEm * 2)),
                 (self, width) -> self.size(Size.fixed(width), Size.natural())));
         row.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
-        return row.control(new RowControl(key)).add(space).add(slot).add(content);
+        return row.control(new RowControl(key, entry)).add(space).add(slot).add(content);
     }
 
     private void requestExpansion(K key, boolean open) {
@@ -258,6 +262,9 @@ public final class SceneTreeView<T, K> {
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) { }
     }
     private final class TreeControl extends FlowControl {
+        public SceneSemantics semantics(SceneNode self) {
+            return SceneSemantics.builder(SceneSemantics.Role.TREE).count(visible.get().size()).build();
+        }
         public SceneFocusTraversal focusTraversal(SceneNode self) {
             return (from, backward) -> {
                 SceneNode row = containingRow(from);
@@ -287,7 +294,42 @@ public final class SceneTreeView<T, K> {
     }
     private final class RowControl extends FlowControl {
         private final K key;
-        RowControl(K key) { this.key = key; }
+        private final ReadableSignal<Entry<T, K>> entry;
+        RowControl(K key, ReadableSignal<Entry<T, K>> entry) { this.key = key; this.entry = entry; }
+        public SceneSemantics semantics(SceneNode self) {
+            Entry<T, K> current = entry.get();
+            TreeIndex.Item<T, K> item = structure.get().items.get(key);
+            if (item == null) return null;
+            page.runtime().interactionRevision().get();
+            SceneNode primary = targets.get(key);
+            SceneSemantics.Builder description = SceneSemantics.builder(SceneSemantics.Role.TREE_ITEM)
+                    .level(current.depth + 1).position(item.position, item.siblingCount);
+            if (textValue != null) description.name(Objects.requireNonNull(textValue.apply(current.value), "条目名称"));
+            if (!item.children.isEmpty()) description.expanded(expanded.get().contains(key));
+            List<SceneSemantics.Action> actions = new ArrayList<>();
+            if (primary != null && primary.focusable() && primary.enabled() && primary.visible()) {
+                description.focusTarget(primary); actions.add(SceneSemantics.Action.FOCUS);
+                if (primary.clickAction() != null) actions.add(SceneSemantics.Action.ACTIVATE);
+            }
+            if (!item.children.isEmpty()) actions.add(expanded.get().contains(key) ? SceneSemantics.Action.COLLAPSE : SceneSemantics.Action.EXPAND);
+            return description.actions(actions.toArray(new SceneSemantics.Action[0])).build();
+        }
+        public boolean semanticAction(SceneNode self, SceneSemanticRequest request) {
+            if (self.runtime() != page.runtime() || !page.runtime().interactive(self) || disabledKeys.get().contains(key)) return false;
+            TreeIndex.Item<T, K> item = structure.get().items.get(key);
+            if (item == null) return false;
+            switch (request.action) {
+                case EXPAND: case COLLAPSE:
+                    if (item.children.isEmpty()) return false;
+                    requestExpansion(key, request.action == SceneSemantics.Action.EXPAND); return true;
+                case ACTIVATE:
+                    SceneNode primary = targets.get(key);
+                    if (primary == null || primary.runtime() != page.runtime() || !page.runtime().interactive(primary) || primary.clickAction() == null) return false;
+                    // 当前语义handler已受原routing保护，直接发布同一主项动作，不能重入输入分发。
+                    primary.clickAction().run(); return true;
+                default: return false;
+            }
+        }
         public List<ReadableSignal<?>> paintDependencies(SceneNode self) { return java.util.Collections.singletonList(theme); }
         public void paint(SceneNode self, SceneGeometryView geometry, PaintPlanBuilder paint) {
             SceneGeometryView.Entry e = geometry.get(self);

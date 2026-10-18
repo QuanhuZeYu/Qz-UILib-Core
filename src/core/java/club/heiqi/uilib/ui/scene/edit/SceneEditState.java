@@ -284,6 +284,17 @@ public final class SceneEditState {
         if (!group) groupKind = Kind.NONE;
     }
 
+    /** 整字段原子替换；保留原选区作为撤销起点，不更换业务基线或清除既有历史。 */
+    public void replaceAll(String text) {
+        domain.checkWrite();
+        String insertion = normalize(text);
+        UnicodeGraphemes.Profile rules = profile();
+        Snapshot before = aligned(value.get(), rules);
+        groupKind = Kind.NONE;
+        replace(before, 0, before.text.length(), insertion, Kind.NONE, rules);
+        groupKind = Kind.NONE;
+    }
+
     public void deleteBackward() {
         delete(-1);
     }

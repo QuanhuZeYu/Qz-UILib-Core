@@ -23,6 +23,8 @@ import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -72,6 +74,9 @@ final class ScenePopupList<T, K> {
         });
         button = SceneButton.createWithTrailingIcon(page, title, theme, this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
                 () -> SceneIconButton.Symbol.CHEVRON_DOWN);
+        // SELECT的名称归外层字段标签，内部按钮只表达打开动作，不把选中显示当成字段名称。
+        button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.BUTTON)
+                .name(menu ? title.get() : "打开选项").expanded(opening.get() != null).build()));
         button.bind(NodeBinding.repeat(() -> opening.get() == null ? Collections.emptyList() : Collections.singletonList(opening.get()),
                 token -> token, token -> new Popup(token.get()).root));
         node = new SceneNode().size(Size.fill(1), Size.natural()).control(new Trigger()).own(owner).add(button);
@@ -109,6 +114,23 @@ final class ScenePopupList<T, K> {
     private final class Trigger extends Flow {
         private final Object target = new Object();
         private Object pointerOpening;
+        @Override public SceneSemantics semantics(SceneNode n) {
+            if (menu) return null;
+            T selected = current(initial.get());
+            return SceneSemantics.builder(SceneSemantics.Role.SELECT)
+                    .value(selected == null ? null : label.apply(selected)).expanded(opening.get() != null).focusTarget(button)
+                    .actions(SceneSemantics.Action.ACTIVATE, opening.get() == null ? SceneSemantics.Action.EXPAND : SceneSemantics.Action.COLLAPSE).build();
+        }
+        @Override public boolean semanticAction(SceneNode n, SceneSemanticRequest request) {
+            if (!sourcePresent()) return false;
+            if (request.action == SceneSemantics.Action.COLLAPSE) {
+                Object token = opening.get();
+                if (token == null) return false;
+                close(token); return true;
+            }
+            if (request.action != SceneSemantics.Action.ACTIVATE && request.action != SceneSemantics.Action.EXPAND) return false;
+            button.clickAction().run(); return true;
+        }
         public Object pointerActivator(SceneNode n, SceneNode hit, SceneGeometryView geometry, int x, int y) { return hit == button ? target : null; }
         public boolean pointerTargetValid(SceneNode n, Object value) { return value == target && (pointerOpening == null || opening.get() == pointerOpening); }
         public boolean capturesPointer() { return true; }
@@ -170,12 +192,14 @@ final class ScenePopupList<T, K> {
                         : SceneButton.createWithTrailingIcon(page, () -> label.apply(item.get()), theme, () -> choose(identity),
                                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE, () -> Objects.equals(initial.get(), identity) ? SceneIconButton.Symbol.CHECK : null);
                 action.bind(NodeBinding.value(() -> enabled.test(item.get()), SceneNode::enabled));
+                action.bind(NodeBinding.semantics(() -> rowSemantics(identity, item)));
                 action.bind(NodeBinding.hoverWithin(0, (self, hovered) -> {
                     if (hovered && opening.get() == token && enabled.test(item.get()))
                         page.runtime().focusRouter().pointTo(page.runtime().captureMount(self));
                 }));
                 identities.put(action, identity); action.own(() -> identities.remove(action)); return action;
             }, () -> new SceneVirtualList.Options().estimatedRowHeight(rowHeight()).overscan(1));
+            rows.semanticRoles(null, null);
             empty = SceneLabel.create(page, () -> "暂无可选项", theme).size(Size.fill(1), Size.natural());
             empty.bind(NodeBinding.value(() -> source.get().isEmpty(), SceneNode::visible));
             root = new SceneNode().size(Size.natural(), Size.natural()).modal(true).clip(false).control(this)
@@ -201,6 +225,22 @@ final class ScenePopupList<T, K> {
                     public void close() { if (popup == Popup.this) popup = null; ScenePopupList.this.close(token); }
                 };
             });
+        }
+        private SceneSemantics rowSemantics(K identity, ReadableSignal<T> item) {
+            SceneSemantics.Builder description = SceneSemantics.builder(menu ? SceneSemantics.Role.MENU_ITEM : SceneSemantics.Role.OPTION)
+                    .name(label.apply(item.get())).position(rows.logicalPosition(identity), rows.logicalCount());
+            if (menu) description.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE);
+            else description.selected(Objects.equals(initial.get(), identity))
+                    .actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE, SceneSemantics.Action.SELECT);
+            return description.build();
+        }
+        @Override public SceneSemantics semantics(SceneNode n) {
+            return SceneSemantics.builder(menu ? SceneSemantics.Role.MENU : SceneSemantics.Role.LISTBOX)
+                    .labelledBy(menu ? button : node).count(source.get().size()).actions(SceneSemantics.Action.COLLAPSE).build();
+        }
+        @Override public boolean semanticAction(SceneNode n, SceneSemanticRequest request) {
+            if (request.action != SceneSemantics.Action.COLLAPSE || opening.get() != token) return false;
+            close(token); return true;
         }
         private void choose(K identity) {
             T live = current(identity);

@@ -15,12 +15,17 @@ import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /** 标签条和活动面板经过正式输入/生命周期，草稿由业务独立持有。 */
 public final class TabsScenario extends TestApplication {
@@ -31,8 +36,69 @@ public final class TabsScenario extends TestApplication {
         scenario("窄窗标签横滚不增加Tab停靠且离条结束方向repeat", this::narrowStrip);
         scenario("正式项目详情保存名称备注并跨面板显示结果", this::projectDetails);
         scenario("纯文字面板自身参与Tab而编辑面板直接进入子项", this::plainPanel);
+        scenario("标签语义沿真实选择重排更新且旧面板动作拒绝", this::semanticTabs);
+        scenario("通知偏好标签说明与业务选择经正式语义请求更新", this::preferencesSemantics);
     }
     private static SceneKeyEvent key(SceneKey key, boolean repeat) { return new SceneKeyEvent(key, false, false, false, false, repeat, null); }
+    private static SceneSemanticSnapshot semantics(ReactiveDomain domain, ScenePageSession session) {
+        SceneSemanticSnapshot[] result = new SceneSemanticSnapshot[1];
+        domain.execute(() -> result[0] = session.pipeline().current().semantics); return result[0];
+    }
+    private static SceneSemanticSnapshot.Entry semanticEntry(SceneSemanticSnapshot snapshot, Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries)
+            if (entry.values.role == role && (name == null || name.equals(entry.values.name))) return entry;
+        throw new AssertionError("缺少语义对象: " + role + " " + name);
+    }
+    private void semanticTabs() {
+        Fixture f = new Fixture(520); onClose(f.session::close); f.session.frame();
+        SceneSemanticSnapshot initial = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry tab = semanticEntry(initial, Role.TAB, "概览与项目基本信息");
+        SceneSemanticSnapshot.Entry panel = semanticEntry(initial, Role.TAB_PANEL, "概览与项目基本信息");
+        SceneSemanticSnapshot.Entry oldField = semanticEntry(initial, Role.TEXT_FIELD, null);
+        require(Boolean.TRUE.equals(tab.values.selected) && tab.values.index == 1 && tab.values.count == 3
+                && semanticEntry(initial, Role.TAB_LIST, null).values.count == 3
+                && panel.labelledBy.equals(Collections.singletonList(tab.id)) && !panel.focusable,
+                "标签角色、逻辑位置或当前编辑面板关系不正确");
+        SceneNode original = f.fields.get("a");
+        f.domain.execute(() -> {
+            f.title.set("更新后的完整概览标题"); f.allowed.set(false);
+            List<SceneTabs.Tab<String>> next = new ArrayList<>(f.source.get()); Collections.reverse(next); f.source.set(next);
+        }); f.session.frame();
+        SceneSemanticSnapshot renamed = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry current = renamed.get(tab.id);
+        require("更新后的完整概览标题".equals(current.values.name) && current.values.index == 3
+                && Boolean.TRUE.equals(current.values.selected) && !current.enabled && current.actions.isEmpty()
+                && renamed.get(panel.id).labelledBy.equals(Collections.singletonList(tab.id))
+                && "更新后的完整概览标题".equals(renamed.get(panel.id).values.name),
+                "当前禁用标签丢失选择、重排位置或动态面板标签");
+        f.domain.execute(() -> require(f.fields.get("a") == original && !original.destroyed(), "语义更新重建了原活动字段"));
+        SceneSemanticSnapshot.Entry nextTab = semanticEntry(renamed, Role.TAB, "备注与独立编辑草稿");
+        CompletableFuture<SceneSemanticRequest.Result> focus = f.session.semantic(SceneSemanticRequest.of(nextTab.id, Action.FOCUS));
+        CompletableFuture<SceneSemanticRequest.Result> select = f.session.semantic(SceneSemanticRequest.of(nextTab.id, Action.SELECT));
+        CompletableFuture<SceneSemanticRequest.Result> stale = f.session.semantic(SceneSemanticRequest.text(oldField.id, "不得进入新面板"));
+        f.session.frame();
+        require(focus.join() == SceneSemanticRequest.Result.APPLIED && select.join() == SceneSemanticRequest.Result.APPLIED
+                && stale.join() == SceneSemanticRequest.Result.REJECTED, "标签切换后同批旧字段动作未按当前挂载拒绝");
+        SceneSemanticSnapshot switched = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry nextPanel = semanticEntry(switched, Role.TAB_PANEL, "备注与独立编辑草稿");
+        require(switched.get(oldField.id) == null && nextPanel.labelledBy.equals(Collections.singletonList(nextTab.id))
+                && nextTab.id.equals(switched.focused) && Boolean.TRUE.equals(switched.get(nextTab.id).values.selected)
+                && Boolean.TRUE.equals(initial.get(tab.id).values.selected) && "概览与项目基本信息".equals(initial.get(tab.id).values.name),
+                "切换后的实际焦点、面板关系或旧快照不正确");
+        f.domain.execute(() -> require("b".equals(f.selected.get()) && f.drafts.get("b").snapshot().get().text.isEmpty(),
+                "语义选择没更新原业务来源或旧动作投到了新字段"));
+        SceneNode preserved = f.fields.get("b");
+        f.domain.execute(() -> f.source.set(Collections.singletonList(new SceneTabs.Tab<>("b", () -> "同键新标题", () -> f.field("b")))));
+        f.session.frame();
+        SceneSemanticSnapshot replaced = semantics(f.domain, f.session);
+        require("同键新标题".equals(replaced.get(nextTab.id).values.name)
+                && semanticEntry(replaced, Role.TAB_PANEL, "同键新标题").labelledBy.equals(Collections.singletonList(nextTab.id)),
+                "同键新声明破坏标签挂载身份或面板关系");
+        f.domain.execute(() -> require(f.fields.get("b") == preserved && !preserved.destroyed(), "同键语义变化重置原面板"));
+        f.domain.execute(() -> f.selected.set("missing")); f.session.frame();
+        require(semantics(f.domain, f.session).entries.stream().noneMatch(entry -> entry.values.role == Role.TAB_PANEL),
+                "无效活动键仍输出旧面板语义");
+    }
     private void activePanel() {
         Fixture f = new Fixture(520); onClose(f.session::close); f.session.frame();
         require(f.created.equals(Collections.singletonMap("a", 1)), "建立了非活动标签面板");
@@ -93,6 +159,10 @@ public final class TabsScenario extends TestApplication {
             page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(tabs[0].node()).add(after[0]));
         }); onClose(session::close); session.frame(); session.navigation(SceneNavigationEvent.NEXT); session.frame();
         domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content[0].parent(), "纯文字面板不能由Tab到达"));
+        SceneSemanticSnapshot.Entry panel = semanticEntry(semantics(domain, session), Role.TAB_PANEL, "说明");
+        require(panel.focusable && panel.focused && panel.actions.contains(Action.FOCUS), "纯文字面板没有语义停靠动作");
+        CompletableFuture<SceneSemanticRequest.Result> focused = session.semantic(SceneSemanticRequest.of(panel.id, Action.FOCUS));
+        session.frame(); require(focused.join() == SceneSemanticRequest.Result.APPLIED, "纯文字面板语义聚焦未沿原路由执行");
         session.navigation(SceneNavigationEvent.NEXT); session.frame();
         domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == after[0], "面板Tab没有继续外部顺序"));
     }
@@ -111,6 +181,13 @@ public final class TabsScenario extends TestApplication {
         session.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL, false, null)); session.edit(SceneEditEvent.text("跨标签保留的新备注"));
         session.navigation(SceneNavigationEvent.NEXT); session.navigation(SceneNavigationEvent.ACTIVATE); session.frame();
         domain.execute(() -> require(Fixture.find(root[0], "项目名称和备注已保存。") != null, "正式项目保存没有提供成功反馈"));
+        SceneSemanticSnapshot saved = semantics(domain, session);
+        SceneSemanticSnapshot.Entry name = semanticEntry(saved, Role.TEXT_FIELD, "项目名称");
+        SceneSemanticSnapshot.Entry notes = semanticEntry(saved, Role.TEXT_AREA, "项目备注");
+        require("新项目名称".equals(name.values.value) && "跨标签保留的新备注".equals(notes.values.value)
+                && name.labelledBy.equals(Collections.singletonList(semanticEntry(saved, Role.LABEL, "项目名称").id))
+                && notes.labelledBy.equals(Collections.singletonList(semanticEntry(saved, Role.LABEL, "项目备注").id)),
+                "真实项目字段没有把标签名称与当前值分开");
         domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(Fixture.find(root[0], "项目概览"))));
         session.navigation(SceneNavigationEvent.ACTIVATE); session.frame();
         domain.execute(() -> require(Fixture.find(root[0], "新项目名称") != null && Fixture.find(root[0], "跨标签保留的新备注") != null,
@@ -118,8 +195,45 @@ public final class TabsScenario extends TestApplication {
         domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(Fixture.find(root[0], "活动记录"))));
         session.navigation(SceneNavigationEvent.ACTIVATE); session.frame();
         domain.execute(() -> require(Fixture.find(root[0], "已保存：新项目名称") != null, "活动面板没有消费实际保存记录"));
+        require(semantics(domain, session).get(name.id) == null && semantics(domain, session).get(notes.id) == null,
+                "退出编辑面板后字段和原标签关系仍在当前快照中");
     }
 
+    private void preferencesSemantics() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.width = 760; host.height = 900;
+        ScenePageSession session = ScenePageSession.open(domain, host, host,
+                page -> page.mount(club.heiqi.uilib.testing.gallery.PreferencesPage.create(page, page.theme(), null)));
+        onClose(session::close); session.frame();
+        SceneSemanticSnapshot initial = semantics(domain, session);
+        SceneSemanticSnapshot.Entry group = semanticEntry(initial, Role.RADIO_GROUP, "通知频率");
+        SceneSemanticSnapshot.Entry instant = semanticEntry(initial, Role.RADIO, "实时通知");
+        require(group.labelledBy.equals(Collections.singletonList(semanticEntry(initial, Role.LABEL, "通知频率").id))
+                && group.describedBy.equals(Collections.singletonList(semanticEntry(initial, Role.LABEL, "当前离线，实时通知暂不可用。").id))
+                && "当前离线，实时通知暂不可用。".equals(group.values.description) && !instant.enabled && instant.actions.isEmpty(),
+                "通知频率缺少原标签、动态说明或禁用事实");
+        CompletableFuture<SceneSemanticRequest.Result> connect = session.semantic(SceneSemanticRequest.of(
+                semanticEntry(initial, Role.BUTTON, "连接网络").id, Action.ACTIVATE));
+        session.frame(); require(connect.join() == SceneSemanticRequest.Result.APPLIED, "原网络动作未执行");
+        SceneSemanticSnapshot online = semantics(domain, session);
+        require(online.get(group.id).labelledBy.equals(group.labelledBy) && online.get(group.id).describedBy.equals(group.describedBy)
+                && "网络连接正常，可选择实时通知。".equals(online.get(group.id).values.description) && online.get(instant.id).enabled,
+                "原网络来源变化没更新说明和选项资格");
+        CompletableFuture<SceneSemanticRequest.Result> select = session.semantic(SceneSemanticRequest.of(instant.id, Action.SELECT));
+        session.frame(); require(select.join() == SceneSemanticRequest.Result.APPLIED
+                && Boolean.TRUE.equals(semantics(domain, session).get(instant.id).values.checked), "通知语义选择未使用原业务来源");
+        SceneSemanticSnapshot selected = semantics(domain, session);
+        CompletableFuture<SceneSemanticRequest.Result> disable = session.semantic(SceneSemanticRequest.of(
+                semanticEntry(selected, Role.SWITCH, "接收项目通知").id, Action.ACTIVATE));
+        session.frame(); require(disable.join() == SceneSemanticRequest.Result.APPLIED, "通知开关未走原动作");
+        SceneSemanticSnapshot disabled = semantics(domain, session);
+        require(!disabled.get(group.id).enabled && disabled.get(instant.id).actions.isEmpty()
+                && Boolean.TRUE.equals(disabled.get(instant.id).values.checked) && disabled.get(group.id).labelledBy.equals(group.labelledBy),
+                "禁用通知丢失已选事实或标签阅读关系");
+        CompletableFuture<SceneSemanticRequest.Result> rejected = session.semantic(SceneSemanticRequest.of(
+                semanticEntry(disabled, Role.RADIO, "每周汇总").id, Action.SELECT));
+        session.frame(); require(rejected.join() == SceneSemanticRequest.Result.REJECTED, "禁用频率仍接受语义选择");
+    }
     private static final class Fixture {
         final ReactiveDomain domain = ReactiveDomain.direct(); final MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         final Map<String, SceneEditState> drafts = new HashMap<>(); final Map<String, SceneNode> fields = new HashMap<>();

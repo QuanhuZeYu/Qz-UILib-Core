@@ -132,7 +132,7 @@ def scenarios = [
     yamlObjectScenario:'YamlObjectScenario', fontConfigurationScenario:'FontConfigurationScenario', coreFontEngineScenario:'CoreFontEngineScenario',
     hoverProjectionScenario:'HoverProjectionScenario', performanceSamplesScenario:'PerformanceSamplesScenario', typedParagraphScenario:'TypedParagraphScenario',
     mathCatalogScenario:'MathCatalogScenario', mathMacroScenario:'MathMacroScenario', virtualCollectionScenario:'VirtualCollectionScenario',
-    commandScenario:'CommandScenario', directionalNavigationScenario:'DirectionalNavigationScenario', dataTableScenario:'DataTableScenario', treeViewScenario:'TreeViewScenario', stateControlsScenario:'StateControlsScenario', tabsScenario:'TabsScenario', popupControlsScenario:'PopupControlsScenario'
+    commandScenario:'CommandScenario', directionalNavigationScenario:'DirectionalNavigationScenario', dataTableScenario:'DataTableScenario', treeViewScenario:'TreeViewScenario', stateControlsScenario:'StateControlsScenario', tabsScenario:'TabsScenario', popupControlsScenario:'PopupControlsScenario', semanticScenario:'SemanticScenario'
 ]
 def coreChecks = scenarios.collect { name, entry -> application(name, 'club.heiqi.uilib.ui.scene.integration.' + entry) }
 coreChecks += application('documentArrangementScenario', 'club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario')

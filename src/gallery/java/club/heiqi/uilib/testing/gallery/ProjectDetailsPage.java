@@ -14,6 +14,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -53,10 +54,15 @@ public final class ProjectDetailsPage {
         });
         SceneTabs.Tab<String> edit = new SceneTabs.Tab<>("notes", () -> "名称与备注", () -> {
             SceneNode body = GalleryStyle.card(theme).size(Size.fill(1), Size.fill(1)).gap(12);
-            body.add(GalleryStyle.label(page, () -> "项目名称", theme, 14, true));
-            body.add(SceneTextField.create(page, name, theme, () -> false, request -> apply.accept(request, notes.request(true))));
-            body.add(GalleryStyle.label(page, () -> "项目备注", theme, 14, true));
-            body.add(SceneTextArea.create(page, notes, theme, () -> false, request -> apply.accept(name.request(true), request)).size(Size.fill(1), Size.fill(1).bounds(100, 420)));
+            SceneNode nameLabel = GalleryStyle.label(page, () -> "项目名称", theme, 14, true);
+            body.add(nameLabel);
+            body.add(SceneTextField.create(page, name, theme, () -> false, request -> apply.accept(request, notes.request(true)))
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(nameLabel).build())));
+            SceneNode notesLabel = GalleryStyle.label(page, () -> "项目备注", theme, 14, true);
+            body.add(notesLabel);
+            body.add(SceneTextArea.create(page, notes, theme, () -> false, request -> apply.accept(name.request(true), request))
+                    .size(Size.fill(1), Size.fill(1).bounds(100, 420))
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(notesLabel).build())));
             body.add(GalleryStyle.primary(page, () -> "保存项目", theme, saveCommand::tryExecute)
                     .bind(NodeBinding.value(saveCommand.executable(), SceneNode::enabled))); return body;
         });
@@ -74,11 +80,13 @@ public final class ProjectDetailsPage {
             name.cancel(); notes.cancel(); feedback.set("名称和备注已恢复到上次保存。");
         });
         SceneNode assignment = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
-        assignment.add(GalleryStyle.label(page, () -> "负责人", theme, 14, true));
+        SceneNode assigneeLabel = GalleryStyle.label(page, () -> "负责人", theme, 14, true);
+        assignment.add(assigneeLabel);
         assignment.add(SceneSelect.create(page, () -> Arrays.asList(new SceneSelect.Option<>("lin", () -> "林岚"),
                 new SceneSelect.Option<>("zhou", () -> "周宁"), new SceneSelect.Option<>("guest", () -> "访客（不可分配）", () -> false)),
                 assignee, next -> { assignee.set(next); feedback.set("负责人已改为" + (next.equals("lin") ? "林岚。" : "周宁。")); }, theme)
-                .size(Size.fixed(180), Size.natural()));
+                .size(Size.fixed(180), Size.natural())
+                .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(assigneeLabel).build())));
         assignment.add(SceneMenu.create(page, () -> "更多操作", () -> Arrays.asList(
                 new SceneMenu.Item<>("save", () -> "保存项目", saveCommand), new SceneMenu.Item<>("reset", () -> "撤销未保存编辑", resetCommand)), theme)
                 .size(Size.fixed(160), Size.natural()));

@@ -11,6 +11,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
@@ -18,8 +19,10 @@ import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.control.SceneSwitch;
+import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
@@ -28,6 +31,10 @@ import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import java.util.concurrent.CompletableFuture;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -43,8 +50,69 @@ public final class StateControlsScenario extends TestApplication {
         scenario("动态重排保留项身份且当前项退出不改业务选择", this::dynamicOptions);
         scenario("首次选择中离组返回和动作失败均结束原续段", this::firstEventExit);
         scenario("续段资格失败仍完成唯一焦点交接并保留原错误", this::qualificationFailure);
+        scenario("状态语义读取真实三态与单选来源且业务拒绝不缓存", this::semanticState);
     }
     private static SceneKeyEvent key(SceneKey key, boolean repeat) { return new SceneKeyEvent(key, false, false, false, false, repeat, null); }
+
+    private void semanticState() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost text = new MultilineEditingScenario.PlainHost();
+        SceneSemanticSnapshot[] snapshot = {SceneSemanticSnapshot.EMPTY};
+        SceneHost host = new SceneHost() {
+            public int width() { return 400; }
+            public int height() { return 300; }
+            public long metricsRevision() { return text.metricsRevision(); }
+            public void replay(PaintPlan plan) { }
+            public void semanticsChanged(SceneSemanticSnapshot next) { snapshot[0] = next; }
+        };
+        Signal<SceneCheckBox.State>[] check = new Signal[1]; Signal<Boolean>[] checked = new Signal[1];
+        Signal<String>[] selected = new Signal[1];
+        List<Boolean> checkRequests = new ArrayList<>(), switchRequests = new ArrayList<>(); List<String> radioRequests = new ArrayList<>();
+        ScenePageSession session = ScenePageSession.open(domain, host, text, page -> {
+            page.runtime().motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
+            check[0] = domain.signal(SceneCheckBox.State.MIXED); checked[0] = domain.signal(false); selected[0] = domain.signal("a");
+            SceneNode checkbox = SceneCheckBox.create(page, check[0], () -> "全部项目", page.theme(), checkRequests::add);
+            SceneNode toggle = SceneSwitch.create(page, checked[0], () -> "自动保存", page.theme(), switchRequests::add);
+            SceneRadioGroup<String> radio = SceneRadioGroup.create(page, () -> Arrays.asList(
+                    new SceneRadioGroup.Option<>("a", () -> "标准"), new SceneRadioGroup.Option<>("b", () -> "紧凑")),
+                    selected[0], radioRequests::add);
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(checkbox).add(toggle).add(radio.node()));
+        }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot.Entry checkbox = stateEntry(snapshot[0], SceneSemantics.Role.CHECKBOX, "全部项目");
+        SceneSemanticSnapshot.Entry toggle = stateEntry(snapshot[0], SceneSemantics.Role.SWITCH, "自动保存");
+        SceneSemanticSnapshot.Entry standard = stateEntry(snapshot[0], SceneSemantics.Role.RADIO, "标准");
+        SceneSemanticSnapshot.Entry compact = stateEntry(snapshot[0], SceneSemantics.Role.RADIO, "紧凑");
+        require(Boolean.TRUE.equals(checkbox.values.mixed) && Boolean.FALSE.equals(checkbox.values.checked)
+                && Boolean.FALSE.equals(toggle.values.checked) && Boolean.TRUE.equals(standard.values.checked)
+                && Boolean.FALSE.equals(compact.values.selected), "初始语义没有区分三态、开关与当前单选来源");
+        CompletableFuture<SceneSemanticRequest.Result> first = session.semantic(SceneSemanticRequest.of(checkbox.id, SceneSemantics.Action.ACTIVATE));
+        CompletableFuture<SceneSemanticRequest.Result> second = session.semantic(SceneSemanticRequest.of(toggle.id, SceneSemantics.Action.ACTIVATE));
+        CompletableFuture<SceneSemanticRequest.Result> third = session.semantic(SceneSemanticRequest.of(compact.id, SceneSemantics.Action.SELECT));
+        session.frame();
+        require(first.join() == SceneSemanticRequest.Result.APPLIED && second.join() == SceneSemanticRequest.Result.APPLIED
+                && third.join() == SceneSemanticRequest.Result.APPLIED && checkRequests.equals(Collections.singletonList(true))
+                && switchRequests.equals(Collections.singletonList(true)) && radioRequests.equals(Collections.singletonList("b")),
+                "语义ACTIVATE/SELECT没有经过原业务改变意图");
+        domain.execute(() -> require(check[0].get() == SceneCheckBox.State.MIXED && !checked[0].get() && "a".equals(selected[0].get()),
+                "业务拒绝后语义动作写入了控件私有选中状态"));
+        require(Boolean.TRUE.equals(snapshot[0].get(checkbox.id).values.mixed) && Boolean.FALSE.equals(snapshot[0].get(toggle.id).values.checked)
+                && Boolean.FALSE.equals(snapshot[0].get(compact.id).values.selected), "拒绝后快照呈现了虚假接受状态");
+        domain.execute(() -> { check[0].set(SceneCheckBox.State.CHECKED); checked[0].set(true); selected[0].set("b"); }); session.frame();
+        require(Boolean.TRUE.equals(snapshot[0].get(checkbox.id).values.checked) && Boolean.FALSE.equals(snapshot[0].get(checkbox.id).values.mixed)
+                && Boolean.TRUE.equals(snapshot[0].get(toggle.id).values.checked) && Boolean.TRUE.equals(snapshot[0].get(compact.id).values.selected),
+                "外部真实状态没有更新原挂载语义");
+        session.semantic(SceneSemanticRequest.of(checkbox.id, SceneSemantics.Action.ACTIVATE));
+        session.semantic(SceneSemanticRequest.of(toggle.id, SceneSemantics.Action.ACTIVATE));
+        session.semantic(SceneSemanticRequest.of(standard.id, SceneSemantics.Action.SELECT)); session.frame();
+        require(checkRequests.equals(Arrays.asList(true, false)) && switchRequests.equals(Arrays.asList(true, false))
+                && radioRequests.equals(Arrays.asList("b", "a")), "第二次语义动作没有即时读取外部更新后的状态");
+        require(Boolean.TRUE.equals(snapshot[0].get(toggle.id).values.checked) && Boolean.TRUE.equals(snapshot[0].get(compact.id).values.selected),
+                "第二次业务拒绝被缓存成新的选中来源");
+    }
+    private static SceneSemanticSnapshot.Entry stateEntry(SceneSemanticSnapshot snapshot, SceneSemantics.Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries)
+            if (entry.values.role == role && name.equals(entry.values.name)) return entry;
+        throw new AssertionError("缺少状态语义 " + role + " / " + name);
+    }
 
     private void qualificationFailure() {
         ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();

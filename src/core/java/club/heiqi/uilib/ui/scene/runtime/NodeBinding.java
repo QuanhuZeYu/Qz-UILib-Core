@@ -146,6 +146,11 @@ public interface NodeBinding {
         };
     }
 
+    /** 补充当前控件的角色、名称/标签关系和值，普通属性沿内建语义；后声明字段覆盖先声明字段。 */
+    static NodeBinding semantics(ReadableSignal<club.heiqi.uilib.ui.scene.semantics.SceneSemantics> source) {
+        return (runtime,node,owner) -> runtime.bindSemantics(node,source);
+    }
+
     static <T> NodeBinding value(ReadableSignal<T> source, BiConsumer<SceneNode, T> apply) {
         return (runtime, node, owner) -> {
             Observation observation =

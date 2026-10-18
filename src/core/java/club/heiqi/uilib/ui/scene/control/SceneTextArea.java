@@ -27,6 +27,8 @@ import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
@@ -140,6 +142,13 @@ public final class SceneTextArea {
             this.readOnly = readOnly;
             this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
             viewChanged = state.domain().signal(false);
+        }
+
+        @Override public SceneSemantics semantics(SceneNode node) {
+            return commands.semantics(node, SceneSemantics.Role.TEXT_AREA, null);
+        }
+        @Override public boolean semanticAction(SceneNode node, SceneSemanticRequest request) {
+            return commands.semanticAction(request, this::resetNavigation);
         }
 
         @Override

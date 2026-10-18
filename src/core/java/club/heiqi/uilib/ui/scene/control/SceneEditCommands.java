@@ -6,6 +6,9 @@ import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState.Submission;
 import club.heiqi.uilib.ui.scene.control.SceneTextField.SubmitPolicy;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -22,6 +25,39 @@ final class SceneEditCommands {
         this.readOnly = readOnly;
         this.onSubmit = onSubmit;
         this.policy = policy;
+    }
+
+    /** 名称由显式标签关系补充；草稿只作为value，提示只作为说明。 */
+    SceneSemantics semantics(SceneNode node, SceneSemantics.Role role, String description) {
+        Snapshot current = state.snapshot().get();
+        boolean locked = readOnly.get();
+        SceneSemantics.Builder result = SceneSemantics.builder(role).value(current.text).readOnly(locked).actions();
+        if (description != null && !description.isEmpty()) result.description(description);
+        if (!locked && !current.composing) {
+            if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.SET_TEXT, SceneSemantics.Action.SUBMIT);
+            else result.actions(SceneSemantics.Action.SET_TEXT, SceneSemantics.Action.SUBMIT);
+        } else if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS);
+        return result.build();
+    }
+
+    /** 已解析到本字段；SET_TEXT沿一次历史与原INPUT提交，完整提交沿原submit。 */
+    boolean semanticAction(SceneSemanticRequest request, Runnable beforeMutation) {
+        Snapshot before = state.snapshot().get();
+        if (readOnly.get() || before.composing) return false;
+        switch (request.action) {
+            case SET_TEXT:
+                if (request.text == null) return false;
+                beforeMutation.run();
+                state.replaceAll(request.text);
+                inputChanged(before);
+                return true;
+            case SUBMIT:
+                beforeMutation.run();
+                submit();
+                return true;
+            default:
+                return false;
+        }
     }
 
     static String display(Snapshot value) {

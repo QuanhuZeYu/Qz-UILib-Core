@@ -15,6 +15,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -60,6 +61,10 @@ public final class SceneTabs<K> {
             SceneNode button = SceneButton.create(page, () -> current.get().title.get(), theme, () -> navigation.select(key), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                     .size(Size.natural(), Size.natural());
             button.bind(NodeBinding.value(() -> current.get().enabled.get(), SceneNode::enabled));
+            button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TAB)
+                    .name(current.get().title.get()).selected(Objects.equals(selected.get(), key))
+                    .position(tabs.get().indexOf(current.get()) + 1, tabs.get().size())
+                    .actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE, SceneSemantics.Action.SELECT).build()));
             targets.put(key, button); button.own(() -> targets.remove(key, button));
             return new SceneNode().size(Size.natural(), Size.natural())
                     .control(new Label(button, theme, () -> Objects.equals(selected.get(), key))).add(button);
@@ -70,6 +75,8 @@ public final class SceneTabs<K> {
         headerViewport = SceneScrollViewport.of(page, scroll.viewport(SceneNode.Axis.ROW), SceneNode.Axis.ROW);
         // 显式横条也属于这个逻辑停靠边界；不能在条与内容之间插入新的Tab目标。
         SceneNode bar = new SceneNode().size(Size.fill(1), Size.natural()).control(navigation).add(scroll.node());
+        bar.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TAB_LIST)
+                .count(tabs.get().size()).actions().build()));
         ReadableSignal<List<Tab<K>>> active = page.domain().computed(owner, () -> {
             K key = selected.get();
             for (Tab<K> tab : tabs.get()) if (Objects.equals(key, tab.key)) return Collections.singletonList(tab);
@@ -78,6 +85,14 @@ public final class SceneTabs<K> {
         SceneNode panel = new SceneNode().size(Size.fill(1), Size.fill(1));
         // 与前端key一致：新的声明对象和普通数据更新不重置同一活动面板，重置由新key明确表达。
         panel.bind(NodeBinding.repeat(active, tab -> tab.key, current -> Objects.requireNonNull(current.get().content.get(), "标签内容产物")));
+        panel.bind(NodeBinding.semantics(() -> {
+            page.runtime().interactionRevision().get();
+            if (active.get().isEmpty()) return null;
+            SceneSemantics.Builder description = SceneSemantics.builder(SceneSemantics.Role.TAB_PANEL);
+            SceneNode label = targets.get(active.get().get(0).key);
+            if (label != null) description.labelledBy(label);
+            return description.build();
+        }));
         panel.bind(NodeBinding.value(() -> {
             page.runtime().interactionRevision().get();
             return !active.get().isEmpty() && !hasFocusableChild(panel);

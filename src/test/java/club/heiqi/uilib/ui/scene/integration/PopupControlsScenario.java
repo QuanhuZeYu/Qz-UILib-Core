@@ -22,10 +22,15 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /** 弹出选择、共享动作和关闭都走正式页面输入；不使用平台窗口或系统输入。 */
 public final class PopupControlsScenario extends TestApplication {
@@ -45,8 +50,83 @@ public final class PopupControlsScenario extends TestApplication {
         scenario("参考菜单Up从末项开启且字符只预览后确认", this::menuOpening);
         scenario("原触发器按下即展开并可拖入选项释放选择", this::pointerOpening);
         scenario("关闭弹层释放失败后不执行旧Tab续行", this::failedTabExit);
+        scenario("选择器语义区分预览业务值且旧弹层ID拒绝", this::semanticSelection);
     }
     private static SceneKeyEvent key(SceneKey value, boolean repeat) { return new SceneKeyEvent(value, false, false, false, false, repeat, null); }
+    private static SceneSemanticSnapshot semantics(ReactiveDomain domain, ScenePageSession session) {
+        SceneSemanticSnapshot[] result = new SceneSemanticSnapshot[1];
+        domain.execute(() -> result[0] = session.pipeline().current().semantics); return result[0];
+    }
+    private static SceneSemanticSnapshot.Entry semanticEntry(SceneSemanticSnapshot snapshot, Role role, String name) {
+        for (SceneSemanticSnapshot.Entry entry : snapshot.entries)
+            if (entry.values.role == role && (name == null || name.equals(entry.values.name))) return entry;
+        throw new AssertionError("缺少语义对象: " + role + " " + name);
+    }
+    private void semanticSelection() {
+        Fixture f = new Fixture(); onClose(f.session::close); f.session.frame();
+        SceneSemanticSnapshot initial = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry select = semanticEntry(initial, Role.SELECT, null);
+        require(select.values.name == null && "乙".equals(select.values.value) && !Boolean.TRUE.equals(select.values.expanded)
+                && select.focusable && "请选择".equals(select.values.description), "无标签旧用法把当前显示或占位文字冒充字段名称和值");
+        CompletableFuture<SceneSemanticRequest.Result> focus = f.session.semantic(SceneSemanticRequest.of(select.id, Action.FOCUS));
+        f.session.frame(); require(focus.join() == SceneSemanticRequest.Result.APPLIED
+                && select.id.equals(semantics(f.domain, f.session).focused), "SELECT语义焦点没有代表原按钮");
+        CompletableFuture<SceneSemanticRequest.Result> expand = f.session.semantic(SceneSemanticRequest.of(select.id, Action.EXPAND));
+        f.session.frame(); require(expand.join() == SceneSemanticRequest.Result.APPLIED, "选择器语义展开未执行原动作");
+        SceneSemanticSnapshot opened = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry list = semanticEntry(opened, Role.LISTBOX, null);
+        SceneSemanticSnapshot.Entry a = semanticEntry(opened, Role.OPTION, "甲"), b = semanticEntry(opened, Role.OPTION, "乙");
+        SceneSemanticSnapshot.Entry disabled = semanticEntry(opened, Role.OPTION, "禁用");
+        require(Boolean.TRUE.equals(opened.get(select.id).values.expanded) && list.id.equals(opened.currentModal)
+                && list.labelledBy.equals(Collections.singletonList(select.id)) && list.values.count == 3
+                && list.id.equals(a.parent) && Boolean.TRUE.equals(b.values.selected) && Boolean.FALSE.equals(a.values.selected)
+                && disabled.values.index == 3 && disabled.values.count == 3 && !disabled.enabled && disabled.actions.isEmpty()
+                && opened.entries.stream().noneMatch(entry -> entry.values.role == Role.LIST || entry.values.role == Role.LIST_ITEM),
+                "所属列表角色、真实选择或逻辑位置被普通集合层覆盖");
+        CompletableFuture<SceneSemanticRequest.Result> preview = f.session.semantic(SceneSemanticRequest.of(a.id, Action.FOCUS));
+        f.session.frame(); SceneSemanticSnapshot previewed = semantics(f.domain, f.session);
+        require(preview.join() == SceneSemanticRequest.Result.APPLIED && a.id.equals(previewed.focused)
+                && Boolean.TRUE.equals(previewed.get(b.id).values.selected) && Boolean.FALSE.equals(previewed.get(a.id).values.selected)
+                && f.requests.isEmpty(), "语义预览提前改变了业务选择");
+        CompletableFuture<SceneSemanticRequest.Result> rejectedChoice = f.session.semantic(SceneSemanticRequest.of(a.id, Action.SELECT));
+        f.session.frame(); SceneSemanticSnapshot closed = semantics(f.domain, f.session);
+        require(rejectedChoice.join() == SceneSemanticRequest.Result.APPLIED && closed.currentModal == null
+                && "乙".equals(closed.get(select.id).values.value) && closed.get(a.id) == null
+                && f.requests.equals(Collections.singletonList("a")), "业务拒绝没有保留实际值或原确认没有关闭弹层");
+        CompletableFuture<SceneSemanticRequest.Result> stale = f.session.semantic(SceneSemanticRequest.of(a.id, Action.SELECT));
+        CompletableFuture<SceneSemanticRequest.Result> reopen = f.session.semantic(SceneSemanticRequest.of(select.id, Action.EXPAND));
+        f.session.frame();
+        require(stale.join() == SceneSemanticRequest.Result.REJECTED && reopen.join() == SceneSemanticRequest.Result.APPLIED,
+                "旧选项请求改投了新弹层或阻断下一独立请求");
+        SceneSemanticSnapshot reopened = semantics(f.domain, f.session);
+        SceneSemanticSnapshot.Entry newA = semanticEntry(reopened, Role.OPTION, "甲"), newB = semanticEntry(reopened, Role.OPTION, "乙");
+        require(!a.id.equals(newA.id), "重建弹层复用了旧选项挂载ID");
+        f.domain.execute(() -> {
+            f.accept.set(true); f.options.set(Arrays.asList(new SceneSelect.Option<>("b", () -> "新乙"),
+                    new SceneSelect.Option<>("a", () -> "甲"), new SceneSelect.Option<>("c", () -> "禁用", () -> false)));
+        }); f.session.frame(); SceneSemanticSnapshot reordered = semantics(f.domain, f.session);
+        require(reordered.get(newA.id).values.index == 2 && reordered.get(newB.id).values.index == 1
+                && "新乙".equals(reordered.get(newB.id).values.name) && Boolean.TRUE.equals(reordered.get(newB.id).values.selected)
+                && "新乙".equals(reordered.get(select.id).values.value) && "乙".equals(reopened.get(newB.id).values.name),
+                "重排更新破坏当前行身份、位置、真实值或旧快照");
+        CompletableFuture<SceneSemanticRequest.Result> accepted = f.session.semantic(SceneSemanticRequest.of(newA.id, Action.SELECT));
+        f.session.frame(); require(accepted.join() == SceneSemanticRequest.Result.APPLIED
+                && "甲".equals(semantics(f.domain, f.session).get(select.id).values.value) && f.requests.equals(Arrays.asList("a", "a")),
+                "语义确认没有复用原选择意图");
+        f.domain.execute(() -> f.selected.set(null)); f.session.frame();
+        require(semantics(f.domain, f.session).get(select.id).values.value == null, "空选择把占位文字伪装成了值");
+        f.domain.execute(() -> f.selected.set("c")); f.session.frame();
+        f.session.semantic(SceneSemanticRequest.of(select.id, Action.EXPAND)); f.session.frame();
+        SceneSemanticSnapshot disabledSelection = semantics(f.domain, f.session);
+        require("禁用".equals(disabledSelection.get(select.id).values.value)
+                && Boolean.TRUE.equals(semanticEntry(disabledSelection, Role.OPTION, "禁用").values.selected),
+                "当前已选项禁用后丢失业务值或选择事实");
+        CompletableFuture<SceneSemanticRequest.Result> collapse = f.session.semantic(SceneSemanticRequest.of(
+                semanticEntry(disabledSelection, Role.LISTBOX, null).id, Action.COLLAPSE));
+        f.session.frame(); require(collapse.join() == SceneSemanticRequest.Result.APPLIED
+                && semantics(f.domain, f.session).currentModal == null && f.requests.equals(Arrays.asList("a", "a")),
+                "语义关闭提交了当前预览");
+    }
     private void failedTabExit() {
         RuntimeException expected = new RuntimeException("弹层资源关闭失败");
         Fixture f = new Fixture(() -> { throw expected; }); onClose(f.session::close); f.session.frame(); f.open();
@@ -149,12 +229,27 @@ public final class PopupControlsScenario extends TestApplication {
         ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
             context[0] = page; root[0] = ProjectDetailsPage.create(page, page.theme(), null); page.mount(root[0]);
         }); onClose(session::close); session.frame();
+        SceneSemanticSnapshot initial = semantics(domain, session);
+        SceneSemanticSnapshot.Entry assignee = semanticEntry(initial, Role.SELECT, "负责人");
+        require("林岚".equals(assignee.values.value) && assignee.labelledBy.equals(Collections.singletonList(
+                semanticEntry(initial, Role.LABEL, "负责人").id)), "真实负责人字段没有关联原标签或名称和值混淆");
         domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(find(root[0], "林岚"))));
         session.key(key(SceneKey.ENTER, false)); session.key(key(SceneKey.DOWN, false)); session.key(key(SceneKey.ENTER, false)); session.frame();
         domain.execute(() -> require(find(root[0], "负责人已改为周宁。") != null && find(root[0], "周宁") != null, "正式选择器没更新项目负责人和反馈"));
         domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(find(root[0], "更多操作"))));
         session.key(key(SceneKey.ENTER, false)); session.key(key(SceneKey.ENTER, false)); session.frame();
         domain.execute(() -> require(find(root[0], "项目名称和备注已保存。") != null, "菜单没执行原保存命令"));
+        require("周宁".equals(semantics(domain, session).get(assignee.id).values.value), "键盘选择没更新真实字段的语义值");
+        session.semantic(SceneSemanticRequest.of(assignee.id, Action.FOCUS));
+        CompletableFuture<SceneSemanticRequest.Result> expand = session.semantic(SceneSemanticRequest.of(assignee.id, Action.EXPAND));
+        session.frame(); require(expand.join() == SceneSemanticRequest.Result.APPLIED, "真实负责人字段不能经语义动作展开");
+        SceneSemanticSnapshot popup = semantics(domain, session);
+        require(semanticEntry(popup, Role.LISTBOX, "负责人").labelledBy.equals(Collections.singletonList(assignee.id)),
+                "真实选项列表没有沿原字段标签命名");
+        CompletableFuture<SceneSemanticRequest.Result> choose = session.semantic(SceneSemanticRequest.of(
+                semanticEntry(popup, Role.OPTION, "林岚").id, Action.SELECT));
+        session.frame(); require(choose.join() == SceneSemanticRequest.Result.APPLIED
+                && "林岚".equals(semantics(domain, session).get(assignee.id).values.value), "真实负责人语义选择没有更新业务来源");
     }
     private static SceneNode find(SceneNode root, String name) {
         if (name.equals(root.text())) return root;
@@ -216,6 +311,11 @@ public final class PopupControlsScenario extends TestApplication {
             require(f.focused().text().equals("选项900") && entry != null && entry.clip != null && entry.box.intersect(entry.clip).height > 0,
                     "屏外当前项只获焦却没有在本次打开显露");
             require(names[0] < 80, "打开当前项提前读取了全量昂贵行名称: " + names[0]);
+            SceneSemanticSnapshot semantic = f.session.pipeline().current().semantics;
+            SceneSemanticSnapshot.Entry option = semanticEntry(semantic, Role.OPTION, "选项900");
+            require(option.values.index == 901 && option.values.count == 1000 && Boolean.TRUE.equals(option.values.selected)
+                    && semantic.entries.stream().filter(value -> value.values.role == Role.OPTION).count() < 80,
+                    "屏外当前项的语义位置不正确或语义创建了全部屏外行");
         });
         f.session.escape(() -> { throw new AssertionError("弹层ESC落到宿主退出"); }); f.session.frame();
         f.domain.execute(() -> require(f.modal() == null && f.focused() == f.trigger(), "ESC未关闭并还原触发焦点"));
@@ -289,6 +389,33 @@ public final class PopupControlsScenario extends TestApplication {
         domain.execute(() -> allowed[0].set(false)); session.navigation(SceneNavigationEvent.ACTIVATE); session.frame();
         session.key(key(SceneKey.ENTER, false)); session.frame(); require(count[0] == 2, "禁用命令仍被空焦点确认执行");
         session.escape(() -> { throw new AssertionError("菜单ESC不应退出宿主"); }); session.frame();
+        domain.execute(() -> allowed[0].set(true)); session.frame();
+        SceneSemanticSnapshot initial = semantics(domain, session);
+        SceneSemanticSnapshot.Entry trigger = semanticEntry(initial, Role.BUTTON, "项目操作");
+        CompletableFuture<SceneSemanticRequest.Result> open = session.semantic(SceneSemanticRequest.of(trigger.id, Action.ACTIVATE));
+        session.frame(); require(open.join() == SceneSemanticRequest.Result.APPLIED, "菜单语义激活没执行原触发动作");
+        SceneSemanticSnapshot opened = semantics(domain, session);
+        SceneSemanticSnapshot.Entry popup = semanticEntry(opened, Role.MENU, "项目操作");
+        SceneSemanticSnapshot.Entry item = semanticEntry(opened, Role.MENU_ITEM, "保存命令");
+        require(Boolean.TRUE.equals(opened.get(trigger.id).values.expanded) && popup.id.equals(opened.currentModal)
+                && popup.labelledBy.equals(Collections.singletonList(trigger.id)) && popup.id.equals(item.parent)
+                && item.values.selected == null && item.values.index == 1 && item.values.count == 1,
+                "菜单角色、完整触发名称或原命令项关系不正确");
+        domain.execute(() -> allowed[0].set(false));
+        CompletableFuture<SceneSemanticRequest.Result> rejected = session.semantic(SceneSemanticRequest.of(item.id, Action.ACTIVATE));
+        session.frame(); require(rejected.join() == SceneSemanticRequest.Result.REJECTED && count[0] == 2
+                && semantics(domain, session).get(item.id).actions.isEmpty(), "语义菜单动作越过了当次原命令资格");
+        CompletableFuture<SceneSemanticRequest.Result> collapse = session.semantic(SceneSemanticRequest.of(popup.id, Action.COLLAPSE));
+        session.frame(); require(collapse.join() == SceneSemanticRequest.Result.APPLIED
+                && !Boolean.TRUE.equals(semantics(domain, session).get(trigger.id).values.expanded), "菜单语义关闭没更新触发事实");
+        domain.execute(() -> allowed[0].set(true));
+        CompletableFuture<SceneSemanticRequest.Result> stale = session.semantic(SceneSemanticRequest.of(item.id, Action.ACTIVATE));
+        session.semantic(SceneSemanticRequest.of(trigger.id, Action.ACTIVATE)); session.frame();
+        SceneSemanticSnapshot.Entry rebuilt = semanticEntry(semantics(domain, session), Role.MENU_ITEM, "保存命令");
+        require(stale.join() == SceneSemanticRequest.Result.REJECTED && !item.id.equals(rebuilt.id), "旧菜单项动作改投了同键新挂载");
+        CompletableFuture<SceneSemanticRequest.Result> execute = session.semantic(SceneSemanticRequest.of(rebuilt.id, Action.ACTIVATE));
+        session.frame(); require(execute.join() == SceneSemanticRequest.Result.APPLIED && count[0] == 3
+                && semantics(domain, session).currentModal == null, "语义确认没有执行原共享命令并关闭菜单");
     }
     private static final class Fixture {
         final ReactiveDomain domain = ReactiveDomain.direct(); final MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();

@@ -149,6 +149,7 @@ public final class SceneRuntime implements AutoCloseable {
     private SceneNode logicalModal;
     private boolean logicalModalKnown;
     private final SceneComposition composition = new SceneComposition(this);
+    private final SceneSemanticCoordinator semantics = new SceneSemanticCoordinator(this);
 
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
@@ -267,6 +268,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 局部内容变更影响来源及祖先；共同几何仍由下一批完整控件回调建立。 */
     public void invalidate(SceneNode origin) {
         domain.checkAccess();
+        semantics.invalidate(origin);
         if (origin == null || !mounts.containsKey(origin)) {
             invalidate();
             return;
@@ -318,6 +320,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     public void invalidateRange(SceneNode origin) {
         domain.checkAccess();
+        semantics.invalidate(origin);
         interactionRevision.set(++interactionClock);
         focusRouter.rangeChanged();
         invalidate(origin);
@@ -422,6 +425,7 @@ public final class SceneRuntime implements AutoCloseable {
         mounts.put(node, mount);
         clearLogicalModal();
         node.frameworkRuntime(this, true);
+        semantics.mount(node);
         for (NodeBinding binding : node.bindings()) {
             BindingActivation active = binding.activate(this, node, mount.owner);
             if (binding instanceof MoveBinding) {
@@ -445,9 +449,42 @@ public final class SceneRuntime implements AutoCloseable {
                 public void close() { inputFrames.remove(node); input.close(); }
             });
         }
+        BindingActivation semanticObservation = semantics.observe(node, mount.owner);
+        mount.bindings.add(semanticObservation); mount.owner.own(semanticObservation);
         dirtyBindings.add(node);
         scrollDecorations.changed(node);
         for (SceneNode child : node.children()) mountSubtree(child, mount.owner);
+    }
+
+    public BindingActivation bindSemantics(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.semantics.SceneSemantics> source) {
+        domain.checkWrite(); return semantics.bind(node, source, false);
+    }
+    public BindingActivation bindDefaultSemantics(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.semantics.SceneSemantics> source) {
+        domain.checkWrite(); return semantics.bind(node, source, true);
+    }
+    public club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semanticSnapshot(SceneGeometryView geometry) {
+        domain.checkWrite(); return semantics.publish(geometry);
+    }
+    public club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot clearSemantics() {
+        domain.checkWrite(); return semantics.clear();
+    }
+    public boolean dispatchSemantic(club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request, SceneGeometryView geometry) {
+        command(); return semantics.dispatch(request, geometry);
+    }
+    boolean semanticCompositionActive(SceneNode target) { return composition.activeFor(target); }
+    boolean invokeSemanticAction(SceneNode node, club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request) {
+        if ((request.action == club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action.ACTIVATE
+                || request.action == club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action.SELECT) && !pointerRouter.idle()) return false;
+        boolean previous = routing; routing = true;
+        try {
+            if (node.control() != null && node.control().semanticAction(node, request)) return true;
+        } finally { routing = previous; }
+        if (request.action == club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action.ACTIVATE
+                || request.action == club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Action.SELECT) {
+            if (node.clickAction() == null || !pointerRouter.idle()) return false;
+            dispatchClick(node); return true;
+        }
+        return false;
     }
 
     /** 页面主题投影进入默认条，原有页面无需另行声明条。 */
@@ -635,6 +672,7 @@ public final class SceneRuntime implements AutoCloseable {
         scrollMotions.remove(node);
         presence.release(node);
         layoutMotions.release(node);
+        semantics.unmount(node);
         mounts.remove(node);
         clearLogicalModal();
         scrolling.remove(node);
@@ -1566,6 +1604,7 @@ public final class SceneRuntime implements AutoCloseable {
             inputFrames.clear();
             transitions.clear();
             motionChannels.clear();
+            semantics.clear();
             scrollObservers.clear();
             disposed = true;
         }

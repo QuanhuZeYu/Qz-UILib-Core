@@ -19,6 +19,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.ArrayList;
@@ -53,7 +54,9 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private final VirtualHeightIndex<K> heights = new VirtualHeightIndex<>();
     private final Map<K, T> values = new HashMap<>();
     private final Map<K, Row<T, K>> rows = new LinkedHashMap<>();
-    private final Signal<Long> viewRevision;
+    private final Signal<Long> viewRevision, logicalRevision;
+    private long logicalClock;
+    private SceneSemantics.Role semanticRole = SceneSemantics.Role.LIST, itemSemanticRole = SceneSemantics.Role.LIST_ITEM;
     private final Map<SceneNode, Integer> measured = new HashMap<>();
     private List<K> order = Collections.emptyList();
     private SceneNode root;
@@ -82,7 +85,25 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             ReadableSignal<?> measurementCondition) {
         this.page = page; runtime = page.runtime(); this.source = source; this.key = key;
         this.declaration = declaration; this.options = options; this.measurementCondition = measurementCondition;
-        viewRevision = page.domain().signal(0L);
+        viewRevision = page.domain().signal(0L); logicalRevision = page.domain().signal(0L);
+    }
+
+    /** 复合控件沿真实行提供所属角色，不再嵌入一层普通LIST/LIST_ITEM语义。 */
+    void semanticRoles(SceneSemantics.Role collection, SceneSemantics.Role item) { semanticRole = collection; itemSemanticRole = item; }
+    int logicalPosition(K identity) { logicalRevision.get(); return heights.position(identity) + 1; }
+    int logicalCount() { logicalRevision.get(); return order.size(); }
+    @Override public SceneSemantics semantics(SceneNode node) {
+        logicalRevision.get();
+        return semanticRole == null ? null : SceneSemantics.builder(semanticRole).count(order.size()).build();
+    }
+    private SceneSemantics itemSemantics(K identity, SceneNode node) {
+        int position = logicalPosition(identity);
+        if (itemSemanticRole == null || position <= 0) return null;
+        // 集合只补普通内容的条目角色；正式控件的角色、状态和动作仍由其真实描述决定。
+        SceneSemantics content = node.control() == null ? null : node.control().semantics(node);
+        SceneSemantics.Role role = content == null ? null : content.values.role;
+        return SceneSemantics.builder(role == null || role == SceneSemantics.Role.LABEL ? itemSemanticRole : null)
+                .position(position, order.size()).build();
     }
 
     void attach(SceneNode node) {
@@ -140,6 +161,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             heights.reconcile(order, nextEstimate, root.gap(), reset);
             metrics = nextMetrics; estimate = nextEstimate; gap = root.gap(); measuredWidth = width; measuredCondition = nextCondition;
             if (conditionChanged) viewRevision.set(++revision);
+            if (changed) logicalRevision.set(++logicalClock);
         }
         if (requested != null && (!values.containsKey(requested) || !runtime.interactive(root)
                 || requestRange == null || !requestRange.active())) cancelRequest();
@@ -172,6 +194,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                     if (child.destroyed() || child.runtime() != null || child.parent() != null)
                         throw new IllegalArgumentException("集合行不能重复拥有: " + identity);
                     acquired.add(child);
+                    // 只为当前真实行注册低优先默认；调用方的局部角色/名称覆盖保持原顺序。
+                    child.bind((ownerRuntime, self, owner) -> ownerRuntime.bindDefaultSemantics(self, () -> itemSemantics(identity, self)));
                     row = new Row<>(identity, value, child);
                 } else row.value.set(values.get(identity));
                 nextRows.put(identity, row);
