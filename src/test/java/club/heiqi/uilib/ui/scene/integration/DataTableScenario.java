@@ -26,6 +26,45 @@ public final class DataTableScenario extends TestApplication {
         scenario("总宽不变的列重分配重测行高并保持滚动锚点", this::columnMeasurement);
         scenario("排序与列隐藏保留业务草稿及同批新目标", this::sortingDraft);
         scenario("全单元格暂时隐藏后仍可按来源恢复", this::emptyCells);
+        scenario("普通表格字段优先处理光标并在Tab离开时提交", this::editingPriority);
+    }
+
+    private void editingPriority() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; SceneNode[] field = new SceneNode[1], action = new SceneNode[1];
+        club.heiqi.uilib.ui.scene.edit.SceneEditState[] draft = new club.heiqi.uilib.ui.scene.edit.SceneEditState[1];
+        Signal<String>[] value = new Signal[1]; Signal<Boolean>[] readOnly = new Signal[1]; int[] submissions = {0}, actions = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; value[0] = domain.signal("alpha"); readOnly[0] = domain.signal(false);
+            draft[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, value[0].get());
+            SceneDataTable.Column<Integer, String> text = new SceneDataTable.Column<>("text", () -> Size.fill(1).bounds(120, 500),
+                    () -> SceneLabel.create(page, () -> "备注", page.theme()), row -> field[0] =
+                    club.heiqi.uilib.ui.scene.control.SceneTextField.create(page, draft[0], page.theme(), readOnly[0], request -> {
+                        submissions[0]++;
+                        if (draft[0].accept(request, request.text)) value[0].set(request.text);
+                    }, club.heiqi.uilib.ui.scene.control.SceneTextField.SubmitPolicy.BLUR));
+            SceneDataTable.Column<Integer, String> button = new SceneDataTable.Column<>("action", () -> Size.fixed(100),
+                    () -> SceneLabel.create(page, () -> "操作", page.theme()), row -> action[0] =
+                    club.heiqi.uilib.ui.scene.control.SceneButton.create(page, () -> "执行", page.theme(), () -> actions[0]++));
+            page.mount(SceneDataTable.create(page, () -> java.util.Collections.singletonList(1), row -> row, () -> Arrays.asList(text, button)).node());
+        }); onClose(session::close); session.frame();
+        domain.execute(() -> draft[0].select(2, 2));
+        session.key(new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(club.heiqi.uilib.ui.scene.input.SceneKey.LEFT, false, false, false, false, false, null));
+        session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text("X")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == field[0]
+                && draft[0].snapshot().get().text.equals("aXlpha") && value[0].get().equals("alpha"),
+                "表格方向抢走字段光标或编辑过早提交业务值"));
+        session.key(new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(club.heiqi.uilib.ui.scene.input.SceneKey.HOME, false, false, false, false, false, null)); session.frame();
+        domain.execute(() -> require(draft[0].snapshot().get().caret == 0 && context[0].runtime().focusRouter().focused().get() == field[0], "字段Home改成表格导航"));
+        session.key(new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(club.heiqi.uilib.ui.scene.input.SceneKey.TAB, false, false, false, false, false, null)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == action[0] && submissions[0] == 1
+                && value[0].get().equals("aXlpha") && !draft[0].snapshot().get().active, "Tab没有按普通字段失焦提交到业务来源"));
+        session.navigation(club.heiqi.uilib.ui.scene.input.SceneNavigationEvent.ACTIVATE); session.frame();
+        require(actions[0] == 1, "字段后的普通动作不再可达");
+        domain.execute(() -> { readOnly[0].set(true); context[0].runtime().focusRouter().request(context[0].runtime().captureMount(field[0])); draft[0].select(2, 2); });
+        session.key(new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(club.heiqi.uilib.ui.scene.input.SceneKey.RIGHT, false, false, false, false, false, null)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == field[0] && draft[0].snapshot().get().caret == 3
+                && value[0].get().equals("aXlpha"), "只读字段的查看方向被表格截获"));
     }
 
     private void emptyCells() {

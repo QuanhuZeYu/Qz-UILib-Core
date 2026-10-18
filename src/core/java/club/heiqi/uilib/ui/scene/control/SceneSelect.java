@@ -37,6 +37,6 @@ public final class SceneSelect {
             return placeholder.get();
         };
         return new ScenePopupList<>(page, owner, checked, option -> option.key, option -> option.name.get(), option -> option.enabled.get(),
-                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme).node();
+                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme, false).node();
     }
 }

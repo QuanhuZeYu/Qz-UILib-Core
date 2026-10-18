@@ -14,6 +14,9 @@ import java.util.function.Consumer;
 /** 布尔来源的开关；动作即时读取来源，是否接受意图由业务决定。 */
 public final class SceneSwitch {
     private SceneSwitch() { }
+    public static SceneNode create(ScenePageContext page, ReadableSignal<Boolean> checked, ReadableSignal<String> name, Consumer<Boolean> change) {
+        return create(page, checked, name, page.theme(), change);
+    }
     public static SceneNode create(ScenePageContext page, ReadableSignal<Boolean> checked, ReadableSignal<String> name,
             ReadableSignal<SceneTheme> theme, Consumer<Boolean> change) {
         return create(page, checked, name, theme, change, true);

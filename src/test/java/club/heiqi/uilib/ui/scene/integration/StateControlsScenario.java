@@ -141,12 +141,12 @@ public final class StateControlsScenario extends TestApplication {
                     .size(Size.fixed(180), Size.fixed(40)).bind(NodeBinding.value(enabled[0], SceneNode::enabled));
             page.mount(toggle[0]);
         }); onClose(session::close); session.frame();
-        session.key(key(SceneKey.SPACE, false)); session.frame();
+        session.key(key(SceneKey.SPACE, false)); session.key(key(SceneKey.SPACE, false).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
         session.key(key(SceneKey.ENTER, false)); session.frame();
         require(requests.equals(Arrays.asList(true, true)), "拒绝后开关保存了自己的伪状态");
         domain.execute(() -> checked[0].set(true));
-        session.key(key(SceneKey.SPACE, false)); session.frame(); require(requests.equals(Arrays.asList(true, true, false)), "开关没重读外部新状态");
-        domain.execute(() -> enabled[0].set(false)); session.key(key(SceneKey.SPACE, false)); session.frame();
+        session.key(key(SceneKey.SPACE, false)); session.key(key(SceneKey.SPACE, false).withPhase(SceneKeyEvent.Phase.UP)); session.frame(); require(requests.equals(Arrays.asList(true, true, false)), "开关没重读外部新状态");
+        domain.execute(() -> enabled[0].set(false)); session.key(key(SceneKey.SPACE, false)); session.key(key(SceneKey.SPACE, false).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
         require(requests.size() == 3, "禁用开关仍发布改变");
         domain.execute(() -> require(session.pipeline().current().geometry.get(toggle[0]).box.width == 180
                 && session.pipeline().current().geometry.get(toggle[0]).box.height == 40, "自然尺寸覆盖了显式Size"));
@@ -164,7 +164,7 @@ public final class StateControlsScenario extends TestApplication {
         fixture.session.navigation(SceneNavigationEvent.NEXT); fixture.session.frame();
         fixture.domain.execute(() -> require(fixture.focused() == fixture.after, "Tab没有从组内直接离组"));
         fixture.session.navigation(SceneNavigationEvent.PREVIOUS); fixture.session.frame();
-        fixture.domain.execute(() -> require(fixture.focused() == fixture.items().get(0), "反向进入应使用同一组停靠选择"));
+        fixture.domain.execute(() -> require(fixture.focused() == fixture.items().get(3), "无有效选择时反向进入应到末个可用项"));
         fixture.domain.execute(() -> fixture.selected.set("c")); fixture.session.navigation(SceneNavigationEvent.PREVIOUS); fixture.session.frame();
         fixture.domain.execute(() -> require(fixture.focused() == fixture.before, "反向Tab没有直接离组"));
         fixture.session.navigation(SceneNavigationEvent.NEXT); fixture.session.frame();

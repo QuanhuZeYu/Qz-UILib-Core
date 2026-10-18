@@ -13,29 +13,38 @@ import java.util.function.Consumer;
 public final class SceneKeyInputAdapter {
     private final SceneEditInputAdapter edits = new SceneEditInputAdapter();
     private final Set<SceneKey> held = EnumSet.noneOf(SceneKey.class);
+    private final Set<SceneKey> dispatched = EnumSet.noneOf(SceneKey.class);
     private final Consumer<SceneKeyEvent> sink;
 
     public SceneKeyInputAdapter(Consumer<SceneKeyEvent> sink) { this.sink = Objects.requireNonNull(sink, "sink"); }
-    public void availability(boolean active) { edits.availability(active); }
+    public void availability(boolean active) { edits.availability(active); if (!active) dispatched.clear(); }
+
+    public void key(SceneKeyEvent event) { key(event, event.phase == SceneKeyEvent.Phase.DOWN); }
 
     public void key(SceneKeyEvent event, boolean down) {
         Objects.requireNonNull(event, "event");
         boolean previous = held.contains(event.key);
         boolean accepted = edits.key(event.key.ordinal(), down, event.repeat);
-        if (!down) { held.remove(event.key); return; }
+        if (!down) {
+            held.remove(event.key);
+            if (dispatched.remove(event.key)) sink.accept(new SceneKeyEvent(event.key,
+                    event.primary, event.shift, event.alt, event.extra, false, event.clipboard, SceneKeyEvent.Phase.UP));
+            return;
+        }
         // 没有已接收起手的repeat不建立按压；后续repeat也不能自行转为有效起手。
         if (event.repeat && !previous) return;
         held.add(event.key);
         if (!accepted) return;
         boolean repeated = event.repeat || previous;
-        sink.accept(repeated == event.repeat ? event : new SceneKeyEvent(event.key,
-                event.primary, event.shift, event.alt, event.extra, repeated, event.clipboard));
+        dispatched.add(event.key);
+        sink.accept(new SceneKeyEvent(event.key, event.primary, event.shift, event.alt, event.extra,
+                repeated, event.clipboard, SceneKeyEvent.Phase.DOWN));
     }
 
     /** 只能在原生历史耗尽后提供真实物理集合，不旁读或消费队列。 */
     public void historyDrained(Set<SceneKey> physical) {
         Objects.requireNonNull(physical, "physical");
         Set<Integer> encoded = new HashSet<>(); for (SceneKey key : physical) encoded.add(key.ordinal());
-        held.retainAll(physical); edits.historyDrained(encoded);
+        held.retainAll(physical); dispatched.retainAll(physical); edits.historyDrained(encoded);
     }
 }

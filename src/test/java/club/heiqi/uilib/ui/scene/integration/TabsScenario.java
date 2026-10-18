@@ -27,9 +27,10 @@ public final class TabsScenario extends TestApplication {
     public static void main(String[] args) throws Exception { new TabsScenario().run(args); }
     @Override protected void runTests() throws Exception {
         scenario("只构造当前面板且切换后同批Tab文字进入新字段", this::activePanel);
-        scenario("标题重排及禁用保留内容而同键新定义替换面板", this::definitionIdentity);
+        scenario("同键新声明保留当前面板而换键明确重置", this::definitionIdentity);
         scenario("窄窗标签横滚不增加Tab停靠且离条结束方向repeat", this::narrowStrip);
         scenario("正式项目详情保存名称备注并跨面板显示结果", this::projectDetails);
+        scenario("纯文字面板自身参与Tab而编辑面板直接进入子项", this::plainPanel);
     }
     private static SceneKeyEvent key(SceneKey key, boolean repeat) { return new SceneKeyEvent(key, false, false, false, false, repeat, null); }
     private void activePanel() {
@@ -55,8 +56,10 @@ public final class TabsScenario extends TestApplication {
         f.domain.execute(() -> require(f.fields.get("a") == original && !original.destroyed() && f.tab("新的概览标题") == label
                 && f.selected.get().equals("a"), "标题/顺序/当前禁用不应替换活动内容或标签"));
         f.domain.execute(() -> f.source.set(Arrays.asList(new SceneTabs.Tab<>("a", () -> "替换定义", () -> false, () -> f.field("a"))))); f.session.frame();
-        f.domain.execute(() -> require(original.destroyed() && f.fields.get("a") != original && f.tab("替换定义") == label,
-                "同键新定义未结束旧内容或破坏标签身份"));
+        f.domain.execute(() -> require(!original.destroyed() && f.fields.get("a") == original && f.tab("替换定义") == label,
+                "同键新声明意外清掉当前面板或破坏标签身份"));
+        f.domain.execute(() -> { f.source.set(Collections.singletonList(new SceneTabs.Tab<>("a-new", () -> "新业务键", () -> f.field("a")))); f.selected.set("a-new"); }); f.session.frame();
+        f.domain.execute(() -> require(original.destroyed() && f.fields.get("a") != original, "换键没有明确重置原面板"));
         f.domain.execute(() -> f.selected.set("missing")); f.session.frame();
         require(f.fields.get("a").destroyed(), "活动键缺失仍保留旧面板");
         f.domain.execute(() -> f.source.set(Collections.emptyList())); f.session.frame();
@@ -78,6 +81,22 @@ public final class TabsScenario extends TestApplication {
         f.session.key(key(SceneKey.RIGHT, true)); f.session.frame();
         f.domain.execute(() -> require(f.selected.get().equals("c") && f.focused() == f.fields.get("c"), "离开标签条的旧repeat改投了面板或新标签"));
     }
+    private void plainPanel() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; SceneTabs<String>[] tabs = new SceneTabs[1]; SceneNode[] content = new SceneNode[1], after = new SceneNode[1];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page;
+            tabs[0] = SceneTabs.create(page, () -> Collections.singletonList(new SceneTabs.Tab<>("info", () -> "说明", () -> {
+                content[0] = club.heiqi.uilib.ui.scene.control.SceneLabel.create(page, () -> "纯文字面板内容", page.theme()); return content[0];
+            })), () -> "info", ignored -> {});
+            after[0] = SceneButton.create(page, () -> "之后", page.theme(), () -> {});
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(tabs[0].node()).add(after[0]));
+        }); onClose(session::close); session.frame(); session.navigation(SceneNavigationEvent.NEXT); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content[0].parent(), "纯文字面板不能由Tab到达"));
+        session.navigation(SceneNavigationEvent.NEXT); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == after[0], "面板Tab没有继续外部顺序"));
+    }
+
     private void projectDetails() {
         ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         host.width = 760; host.height = 640;

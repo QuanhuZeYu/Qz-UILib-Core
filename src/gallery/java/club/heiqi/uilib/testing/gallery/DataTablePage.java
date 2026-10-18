@@ -16,6 +16,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public final class DataTablePage {
         Signal<Boolean> ascending = page.domain().signal(true), notesShown = page.domain().signal(true), wider = page.domain().signal(false);
         Signal<String> feedback = page.domain().signal("选择任务，编辑备注或更新完成状态。");
         Map<Integer, SceneEditState> drafts = new HashMap<>();
+        Signal<Map<Integer, String>> notes = page.domain().signal(Collections.emptyMap());
         ReadableSignal<List<Task>> sorted = page.domain().computed(owner, () -> {
             List<Task> rows = new ArrayList<>(source.get());
             Comparator<Task> order = Comparator.comparing((Task task) -> task.title).thenComparingInt(task -> task.id);
@@ -55,9 +57,14 @@ public final class DataTablePage {
         SceneDataTable.Column<Task, String> note = new SceneDataTable.Column<>("note", () -> Size.fill(1).bounds(200, 500),
                 () -> GalleryStyle.label(page, () -> "我的备注", theme, 14, true), row -> {
                     int id = row.get().id;
-                    SceneEditState draft = drafts.computeIfAbsent(id, ignored -> new SceneEditState(page.domain(), ""));
-                    return SceneTextField.create(page, draft, theme, () -> false,
-                            request -> feedback.set("已记录备注：" + row.get().title), SceneTextField.SubmitPolicy.BLUR);
+                    SceneEditState draft = drafts.computeIfAbsent(id, ignored -> new SceneEditState(page.domain(), notes.get().getOrDefault(id, "")));
+                    return SceneTextField.create(page, draft, theme, () -> false, request -> {
+                        if (draft.accept(request, request.text)) {
+                            Map<Integer, String> next = new HashMap<>(notes.get()); next.put(id, request.text);
+                            notes.set(Collections.unmodifiableMap(next));
+                            feedback.set("已记录备注：" + row.get().title + " · " + request.text);
+                        }
+                    }, SceneTextField.SubmitPolicy.BLUR);
                 });
         SceneDataTable.Column<Task, String> action = new SceneDataTable.Column<>("action", () -> Size.fixed(120),
                 () -> GalleryStyle.label(page, () -> "操作", theme, 14, true), row -> {
@@ -74,7 +81,7 @@ public final class DataTablePage {
         SceneDataTable<Task, Integer, String> table = SceneDataTable.create(page, sorted, task -> task.id, columns,
                 () -> new SceneDataTable.Options().columnGap(theme.get().gap), theme);
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(18).own(owner);
-        root.add(GalleryStyle.header(page, theme, "团队任务", "按标题排序，编辑备注并完成任务。方向键在行列间移动。", back));
+        root.add(GalleryStyle.header(page, theme, "团队任务", "按标题排序，按 Tab 编辑备注，离开字段后记录。", back));
         SceneNode tools = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
         tools.add(GalleryStyle.button(page, () -> notesShown.get() ? "隐藏备注列" : "显示备注列", theme, () -> notesShown.set(!notesShown.get())));
         tools.add(GalleryStyle.button(page, () -> wider.get() ? "收窄任务列" : "加宽任务列", theme, () -> wider.set(!wider.get())));

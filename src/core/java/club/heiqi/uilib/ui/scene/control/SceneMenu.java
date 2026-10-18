@@ -25,7 +25,7 @@ public final class SceneMenu {
         Owner owner = page.scope().child();
         ReadableSignal<List<Item<K>>> checked = ScenePopupList.checked(page, owner, Objects.requireNonNull(source, "菜单来源"), item -> item.key);
         return new ScenePopupList<>(page, owner, checked, item -> item.key, item -> item.name.get(), item -> item.command.executable().get(),
-                () -> null, name, item -> item.command.tryExecute(), theme).node();
+                () -> null, name, item -> item.command.tryExecute(), theme, true).node();
     }
     public static <K> SceneNode create(ScenePageContext page, ReadableSignal<String> name, ReadableSignal<List<Item<K>>> source) {
         return create(page, name, source, page.theme());

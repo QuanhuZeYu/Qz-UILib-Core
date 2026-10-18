@@ -31,9 +31,9 @@ final class SceneShortcuts {
     }
 
     boolean dispatch(SceneKeyEvent event) {
-        if (!event.applicationChord()) return false;
-        // 没有可执行动作仍结束重复段，不能借repeat穿透到返回后的外层或宿主。
-        if (event.repeat) return true;
+        if (event.phase != SceneKeyEvent.Phase.DOWN) return false;
+        // 应用动作只由fresh执行；原NAVIGATION的无修饰续段仍可继续。
+        if (event.repeat) return event.applicationChord();
         SceneNode modal = runtime.activeModal();
         Registration found = null; SceneShortcut binding = null;
         for (Registration registration : registrations) {
@@ -44,11 +44,13 @@ final class SceneShortcuts {
             } else if (modal != null) continue;
             for (SceneShortcut candidate : registration.entries) if (candidate.matches(event)) {
                 if (binding != null) throw new IllegalStateException("范围快捷键冲突: " + event.key
-                        + (event.shift ? "+Shift" : "") + " / " + found.mount.node().id() + " / " + node.id());
+                        + (event.primary ? "+Primary" : "") + (event.shift ? "+Shift" : "")
+                        + (event.alt ? "+Alt" : "") + (event.extra ? "+Extra" : "")
+                        + " / " + found.mount.node().id() + " / " + node.id());
                 binding = candidate; found = registration;
             }
         }
         if (binding != null) { binding.command.tryExecute(); return true; }
-        return modal != null;
+        return modal != null && event.applicationChord();
     }
 }

@@ -68,7 +68,7 @@ abstract class SceneSymbolControl implements SceneControl {
         SceneTheme style = theme.get(); boolean enabled = true;
         for (SceneNode n = node; n != null; n = n.parent()) enabled &= n.enabled();
         boolean hover = enabled && node.runtime().pointerRouter().hovered(geometry) == node;
-        boolean pressed = enabled && node.runtime().pointerRouter().pressed(node);
+        boolean pressed = enabled && node.runtime().pressed(node);
         if(node.clickAction()!=null) club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target,e.box,e.clip,
                 motion.color(!enabled?style.disabled:pressed?style.pressed:hover?style.hover:style.button),Math.min(e.box.width,e.box.height)/2);
         if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.border(target,e.box,e.clip,style.focus);

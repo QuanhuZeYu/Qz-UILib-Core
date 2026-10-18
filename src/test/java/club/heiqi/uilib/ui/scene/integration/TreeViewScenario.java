@@ -45,16 +45,128 @@ public final class TreeViewScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("乱序父子来源沿展开投影与主目标左右移动", this::projection);
         scenario("千项展开只创建有限行且折叠结束旧后代", this::bounded);
-        scenario("普通无control主根可展开且不替代子项主目标", this::plainRoot);
+        scenario("普通内容由树提供主条目并复用已有可聚焦根", this::plainRoot);
         scenario("主控件自身编辑与只读字段先于树左右", this::editingRoots);
         scenario("折叠后重开沿业务保留独立编辑草稿", this::draftAcrossCollapse);
         scenario("重复键缺父和循环先在逻辑来源定位", this::invalidStructure);
+        scenario("参考树主项方向首末与屏外名称跳转", this::referenceNavigation);
+        scenario("复杂条目的Tab进入内部编辑后离树", this::complexItemTab);
+        scenario("逻辑禁用键跳过首末方向与名称且即时结束焦点", this::disabledItems);
     }
     private static SceneKeyEvent key(SceneKey key) { return new SceneKeyEvent(key, false, false, false, false, false, null); }
     private static void change(Signal<Set<Integer>> state, SceneTreeView.Expansion<Integer> request) {
         Set<Integer> next = new LinkedHashSet<>(state.get());
         if (request.expanded) next.add(request.key); else next.remove(request.key); state.set(Collections.unmodifiableSet(next));
     }
+    private void disabledItems() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; SceneTreeView<Item, Integer>[] tree = new SceneTreeView[1];
+        Signal<Set<Integer>>[] disabled = new Signal[1]; Map<Integer, SceneNode> content = new HashMap<>(); int[] changes = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; disabled[0] = domain.signal(new LinkedHashSet<>(Arrays.asList(0, 2, 4)));
+            List<Item> items = Arrays.asList(new Item(0, null), new Item(1, null), new Item(2, null), new Item(3, null), new Item(4, null));
+            java.util.function.Function<Item, String> name = item -> item.id == 1 ? "Bravo" : "Alpha " + item.id;
+            tree[0] = SceneTreeView.create(page, () -> items, item -> item.id, item -> item.parent, Collections::emptySet,
+                    request -> changes[0]++, disabled[0], name, entry -> {
+                        SceneNode label = club.heiqi.uilib.ui.scene.control.SceneLabel.create(page, () -> name.apply(entry.get().value), page.theme());
+                        content.put(entry.get().key, label); return label;
+                    }); page.mount(tree[0].node());
+        }); onClose(session::close); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(1).parent(), "初始入口没有跳过禁用首项"));
+        session.key(key(SceneKey.DOWN)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(3).parent(), "Down没有跳过禁用逻辑项"));
+        session.key(key(SceneKey.END)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(3).parent(), "End进入禁用末项"));
+        session.key(key(SceneKey.HOME)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(1).parent(), "Home进入禁用首项"));
+        session.edit(SceneEditEvent.text("a")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(3).parent(), "字符匹配进入禁用名称"));
+        domain.execute(() -> disabled[0].set(new LinkedHashSet<>(Arrays.asList(0, 2, 3, 4)))); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == null && !tree[0].focus(3), "动态禁用当前树项没有结束原焦点"));
+        domain.execute(() -> disabled[0].set(Collections.emptySet())); session.frame();
+        domain.execute(() -> { require(context[0].runtime().focusRouter().focused().get() == null, "重新启用擅自恢复旧焦点"); tree[0].focus(1); }); session.frame();
+        session.key(key(SceneKey.HOME)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == content.get(0).parent(), "启用来源变化后旧主项不可再达"));
+        require(changes[0] == 0, "禁用变化或焦点移动擅自写展开状态");
+    }
+
+    private void referenceNavigation() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.width = 320; host.height = 100;
+        SceneTreeView<Item, Integer>[] tree = new SceneTreeView[1]; ScenePageContext[] context = new ScenePageContext[1];
+        Map<Integer, SceneNode> labels = new HashMap<>(); int[] created = {0}, expansions = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; List<Item> items = new ArrayList<>();
+            for (int i = 0; i < 120; i++) items.add(new Item(i, null));
+            java.util.function.Function<Item, String> name = item -> item.id == 0 ? "Alpha" : item.id == 90 ? "Beta"
+                    : item.id == 91 ? "Bravo" : item.id == 92 ? "Éclair" : "Node " + item.id;
+            tree[0] = SceneTreeView.create(page, () -> items, item -> item.id, item -> item.parent, Collections::emptySet,
+                    request -> expansions[0]++, name, entry -> {
+                        created[0]++; SceneNode label = club.heiqi.uilib.ui.scene.control.SceneLabel.create(page,
+                                () -> name.apply(entry.get().value), page.theme()).size(Size.fill(1), Size.fixed(24));
+                        labels.put(entry.get().key, label); return label;
+                    }, () -> new SceneTreeView.Options().rows(new SceneVirtualList.Options().estimatedRowHeight(24).overscan(0)), page.theme());
+            page.mount(tree[0].node());
+        }); onClose(session::close); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(0).parent(), "纯标签工厂缺少可聚焦TreeItem"));
+        session.key(key(SceneKey.DOWN));
+        session.key(new SceneKeyEvent(SceneKey.DOWN, false, false, false, false, true, null)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(2).parent(), "按住Down没有沿可见DFS主条目继续"));
+        session.key(key(SceneKey.END)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(119).parent(), "End没有准备最后主项"));
+        require(created[0] < 40, "End导航为屏外条目全量构造视图");
+        session.key(key(SceneKey.DOWN)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(119).parent(), "树Down在末尾循环"));
+        session.key(key(SceneKey.HOME)); session.frame();
+        session.edit(SceneEditEvent.text("b")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(90).parent(), "字符没有按屏外业务名称准备主项"));
+        session.edit(SceneEditEvent.text("r")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(91).parent(), "连续字符没有组成名称前缀"));
+        session.key(key(SceneKey.HOME)); session.frame();
+        session.edit(SceneEditEvent.text("b")); session.frame(); session.edit(SceneEditEvent.text("b")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(91).parent(), "重复首字母没有循环同前缀项"));
+        session.key(key(SceneKey.HOME)); session.frame(); session.edit(SceneEditEvent.text("e")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == labels.get(92).parent(), "名称跳转未复用不区分重音的前缀算法"));
+        require(expansions[0] == 0, "普通主项导航隐含更改展开或选择");
+    }
+
+    private void complexItemTab() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.width = 500; host.height = 240;
+        ScenePageContext[] context = new ScenePageContext[1]; SceneTreeView<Item, Integer>[] tree = new SceneTreeView[1];
+        SceneNode[] before = new SceneNode[1], after = new SceneNode[1]; Map<Integer, SceneNode[]> parts = new HashMap<>();
+        Map<Integer, SceneEditState> drafts = new HashMap<>(); int[] actions = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page;
+            tree[0] = SceneTreeView.create(page, () -> Arrays.asList(new Item(0, null), new Item(1, null)), item -> item.id,
+                    item -> item.parent, Collections::emptySet, request -> {}, item -> "Node " + item.id, entry -> {
+                        int id = entry.get().key; SceneEditState draft = new SceneEditState(domain, "alpha"); drafts.put(id, draft);
+                        SceneNode field = SceneTextField.create(page, draft, page.theme(), () -> false, request -> {});
+                        SceneNode action = SceneButton.create(page, () -> "打开", page.theme(), () -> actions[0]++);
+                        SceneNode item = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural())
+                                .focusable(true).onClick(() -> actions[0]++).add(field).add(action);
+                        parts.put(id, new SceneNode[] {item, field, action}); return item;
+                    });
+            before[0] = SceneButton.create(page, () -> "之前", page.theme(), () -> {});
+            after[0] = SceneButton.create(page, () -> "之后", page.theme(), () -> {});
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(before[0]).add(tree[0].node()).add(after[0]));
+        }); onClose(session::close); session.frame();
+        session.key(key(SceneKey.TAB)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == parts.get(0)[0], "Tab没有从树的单入口进入主项"));
+        session.key(key(SceneKey.DOWN)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == parts.get(1)[0], "Down误入当前行内部动作"));
+        session.key(key(SceneKey.TAB)); session.frame();
+        domain.execute(() -> { require(context[0].runtime().focusRouter().focused().get() == parts.get(1)[1], "Tab没有进入当前条目字段"); drafts.get(1).select(2, 2); });
+        session.key(key(SceneKey.LEFT)); session.edit(SceneEditEvent.text("X")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == parts.get(1)[1]
+                && drafts.get(1).snapshot().get().text.equals("aXlpha"), "树字符或方向导航抢走内部编辑输入"));
+        session.key(key(SceneKey.TAB)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == parts.get(1)[2], "字段后内部动作不可达"));
+        session.key(key(SceneKey.TAB)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == after[0], "当前条目结束后Tab没有离树"));
+        require(actions[0] == 0, "导航意外激活主项或内部动作");
+    }
+
     private void invalidStructure() {
         List<List<Item>> cases = Arrays.asList(Arrays.asList(new Item(1, null), new Item(1, null)),
                 Collections.singletonList(new Item(2, 9)), Arrays.asList(new Item(1, 2), new Item(2, 1)));
@@ -89,10 +201,15 @@ public final class TreeViewScenario extends TestApplication {
         session.key(key(SceneKey.RIGHT)); session.frame();
         domain.execute(() -> require(expanded[0].get().contains(0), "无control主根被早退挡住展开接续"));
         session.key(key(SceneKey.RIGHT)); session.frame();
-        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == primary[0], "子项无主目标却焦到内部字段"));
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nested[0].parent().parent()
+                && nested[0].parent().parent().focusable(), "纯内容子项没有自己的TreeItem或错误聚焦内部字段"));
+        session.key(key(SceneKey.LEFT)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == primary[0], "子TreeItem不能返回原合法主根"));
         session.key(key(SceneKey.ENTER)); session.frame(); require(clicked[0] == 1, "普通主根Enter不再沿原动作激活");
         domain.execute(() -> tree[0].rows().focus(1)); session.frame();
-        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nested[0], "旧集合focus丢失首合法后代语义"));
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nested[0].parent().parent(), "集合首合法焦点不是新增TreeItem"));
+        session.key(key(SceneKey.TAB)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nested[0], "TreeItem的Tab没有进入其内部字段"));
     }
 
     private void editingRoots() {

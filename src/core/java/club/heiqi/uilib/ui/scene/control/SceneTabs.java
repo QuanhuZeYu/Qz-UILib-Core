@@ -76,8 +76,12 @@ public final class SceneTabs<K> {
             return Collections.emptyList();
         });
         SceneNode panel = new SceneNode().size(Size.fill(1), Size.fill(1));
-        // Tab保持对象身份语义：新同键定义替换面板，当前定义的标题/资格变化不重建内容。
-        panel.bind(NodeBinding.repeat(active, tab -> tab, current -> Objects.requireNonNull(current.get().content.get(), "标签内容产物")));
+        // 与前端key一致：新的声明对象和普通数据更新不重置同一活动面板，重置由新key明确表达。
+        panel.bind(NodeBinding.repeat(active, tab -> tab.key, current -> Objects.requireNonNull(current.get().content.get(), "标签内容产物")));
+        panel.bind(NodeBinding.value(() -> {
+            page.runtime().interactionRevision().get();
+            return !active.get().isEmpty() && !hasFocusableChild(panel);
+        }, (self, focusable) -> { if (self.focusable() != focusable) self.focusable(focusable); }));
         node = new SceneNode().size(Size.fill(1), Size.fill(1)).gap(8).own(owner).add(bar).add(panel);
         node.bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
     }
@@ -89,6 +93,13 @@ public final class SceneTabs<K> {
     }
     public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
             Consumer<K> change) { return create(page, tabs, selected, change, page.theme()); }
+    private static boolean hasFocusableChild(SceneNode parent) {
+        for (SceneNode child : parent.children()) {
+            if (!child.visible() || !child.enabled() || child.destroyed()) continue;
+            if (child.focusable() || hasFocusableChild(child)) return true;
+        }
+        return false;
+    }
     /** 下划线跟随已分配按钮宽度，不能用自然宽容器中的FILL子项反过来撑宽标题。 */
     private static final class Label implements SceneControl {
         private final SceneNode button;

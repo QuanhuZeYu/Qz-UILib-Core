@@ -42,12 +42,13 @@ public final class ResourceTreePage {
         Signal<Set<String>> expanded = page.domain().signal(new LinkedHashSet<>(Arrays.asList("project", "folder-0")));
         Signal<String> opened = page.domain().signal(null), feedback = page.domain().signal("打开一个资源，或切换名称编辑后按 Enter 应用。");
         Signal<Boolean> editing = page.domain().signal(false);
+        Signal<Set<String>> disabled = page.domain().signal(Collections.singleton("folder-1/0"));
         Map<String, SceneEditState> drafts = new HashMap<>();
         SceneTreeView<Resource, String> tree = SceneTreeView.create(page, source, item -> item.key, item -> item.parent, expanded, request -> {
             Set<String> next = new LinkedHashSet<>(expanded.get());
             if (request.expanded) next.add(request.key); else next.remove(request.key);
             expanded.set(Collections.unmodifiableSet(next));
-        }, entry -> {
+        }, disabled, item -> item.name, entry -> {
             String identity = entry.get().key;
             SceneNode row = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).padding(6).gap(10)
                     .focusable(true).clickFocus(true).onClick(() -> { opened.set(identity); feedback.set("已打开：" + entry.get().value.name); });
@@ -72,11 +73,15 @@ public final class ResourceTreePage {
             return row;
         }, () -> new SceneTreeView.Options(), theme);
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(18);
-        root.add(GalleryStyle.header(page, theme, "项目资源", "展开目录，打开资源，保留未完成的名称编辑。", back));
+        root.add(GalleryStyle.header(page, theme, "项目资源", "方向键浏览与展开，Home/End 到首末，键入名称跳转；Tab 编辑当前条目。", back));
         SceneNode tools = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
         tools.add(GalleryStyle.button(page, () -> "展开全部目录", theme, () -> expanded.set(Collections.unmodifiableSet(new LinkedHashSet<>(allDirectories)))));
         tools.add(GalleryStyle.button(page, () -> "折叠全部目录", theme, () -> expanded.set(Collections.emptySet())));
         tools.add(GalleryStyle.button(page, () -> editing.get() ? "收起名称编辑" : "编辑名称", theme, () -> editing.set(!editing.get())));
+        tools.add(GalleryStyle.button(page, () -> disabled.get().contains("folder-1") ? "启用模型目录" : "禁用模型目录", theme, () -> {
+            Set<String> next = new LinkedHashSet<>(disabled.get());
+            if (!next.remove("folder-1")) next.add("folder-1"); disabled.set(Collections.unmodifiableSet(next));
+        }));
         tools.add(GalleryStyle.button(page, () -> "反转同级顺序", theme, () -> { List<Resource> next = new ArrayList<>(source.get()); Collections.reverse(next); source.set(next); }));
         root.add(tools).add(GalleryStyle.frame(tree.node(), theme).size(Size.fill(1), Size.fill(1)));
         root.add(GalleryStyle.label(page, feedback, theme, 14, true));

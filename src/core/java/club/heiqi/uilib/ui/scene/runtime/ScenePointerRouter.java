@@ -144,7 +144,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         checkAccess();
         if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
-        if (owner != null && geometry.get(owner.node()) == null) cancelOwner();
+        if (owner != null && geometry.get(owner.node()) == null && !ownedCaptureScope(owner.node())) cancelOwner();
         wheel.prepare(geometry, runtime.inputNanos());
         publishHover(geometry);
     }
@@ -156,8 +156,21 @@ public final class ScenePointerRouter implements AutoCloseable {
         wheel.revalidate();
         if (owner != null
                 && (!owner.active()
-                        || !runtime.interactive(owner.node())
+                        || !captureInteractive(owner.node())
                         || !runtime.pointerTargetValid(owner.node(), ownerTarget))) cancelOwner();
+    }
+
+    boolean captureInteractive(SceneNode node) {
+        return runtime.interactive(node) || ownedCaptureScope(node);
+    }
+
+    private boolean ownedCaptureScope(SceneNode node) {
+        if (!runtime.locallyInteractive(node) || node.control() == null) return false;
+        SceneNode scope = runtime.domain().readOnly(() -> node.control().capturedPointerScope(node));
+        if (scope == null || scope != runtime.activeModal()) return false;
+        for (SceneNode parent = scope.parent(); parent != null; parent = parent.parent())
+            if (parent == node) return true;
+        return false;
     }
 
     /** 释放坐标先交给原 owner 声明位置；不结束物理段、不合成 MOVE、不建立新 owner。

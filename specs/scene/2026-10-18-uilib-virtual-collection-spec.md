@@ -2,6 +2,8 @@
 
 状态：依据用户 2026-10-18 认可的[成熟度路线](<../proposals/2026-10-18-uilib-maturity-roadmap.md>)形成的首阶段实施合同。
 
+前端参考为[React Aria Virtualizer](https://react-aria.adobe.com/Virtualizer.md)的可变尺寸列表与可操作展开行示例、[Collections](https://react-aria.adobe.com/collections.md)的动态来源和唯一键，以及[Collection焦点键保留实现](https://raw.githubusercontent.com/adobe/react-spectrum/main/packages/react-aria-components/src/Collection.tsx)。本模块采用有限昂贵行、真实动态测量、稳定数据键及焦点行有限保留；动态高度失效由已有Signal/正式子测量承担。Virtualizer只承担布局，单停靠或行内Tab策略归其上层集合组件；SceneVirtualList保留通用行内控件逻辑顺序，不为复刻ListBox删除内部字段/按钮的焦点资格。
+
 ## 1. 用途与职责
 
 页面提供有序数据、集合内稳定业务键和真实行控件声明；Core 按视口需要实例化有限行视图，协调可变行高、滚动范围、输入、导航及资源释放。适用于长邮件、任务、日志和物品条目，行内可组合文本、图片、复选、按钮及独立编辑状态，不把交互行限制成单一动作。

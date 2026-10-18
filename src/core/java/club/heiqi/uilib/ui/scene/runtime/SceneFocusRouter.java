@@ -40,6 +40,13 @@ public final class SceneFocusRouter {
     private club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor navigation;
     private Range navigationRange;
     private boolean navigationReveal, navigationDirectional;
+    private ScopeExit scopeExit;
+    private static final class ScopeExit {
+        final Range closing, parent; final MountHandle anchor; final boolean backward;
+        ScopeExit(Range closing, Range parent, MountHandle anchor, boolean backward) {
+            this.closing = closing; this.parent = parent; this.anchor = anchor; this.backward = backward;
+        }
+    }
 
     SceneFocusRouter(SceneRuntime runtime) {
         this.runtime = runtime;
@@ -121,6 +128,13 @@ public final class SceneFocusRouter {
         runtime.domain().checkWrite();Objects.requireNonNull(target);if(!local(target)||!target.node().focusable())return false;keyboardInput();if(!request(target))return false;pendingReveal=owner;return true;
     }
 
+    /** 由真实指针悬停交互切换焦点，不把鼠标选择画成键盘导航线索。 */
+    public boolean pointTo(MountHandle target) {
+        runtime.domain().checkWrite();
+        if (!request(target)) return false;
+        pointerInput(); return true;
+    }
+
     /** 按spec6.2当前范围的逻辑前序循环；调用方先结算声明。返回是否有有效候选，
      * 单项仍返回true但不重复通知，无焦点正向取首项/反向取末项；不激活控件。 */
     public boolean navigate(boolean backward) {
@@ -129,12 +143,22 @@ public final class SceneFocusRouter {
         if (closed) return false;
         revalidate();
         SceneNode scope = top().modal == null ? pagePolicy() : top().modal.node();
-        if (runtime.dispatchScopeNavigation(scope, backward)) { cancelPending(); return true; }
+        if (runtime.dispatchScopeNavigation(scope, backward)) { cancelNavigation(); return true; }
         SceneNode from = owner == null ? null : owner.node();
         cancelPending();
         beginNavigation(from, backward, true);
         prepareNavigation();
         return navigation != null || owner != null;
+    }
+
+    /** 菜单的本次Tab关闭意图：声明退出结算后从原触发器继续同一外层逻辑序列。 */
+    public boolean leaveScope(MountHandle modal, MountHandle anchor, boolean backward) {
+        runtime.domain().checkWrite(); revalidate();
+        if (closed || ranges.size() < 2 || !modal.active() || top().modal == null
+                || top().modal.node() != modal.node() || !local(anchor)) return false;
+        cancelNavigation();
+        scopeExit = new ScopeExit(top(), ranges.get(ranges.size() - 2), anchor, backward);
+        return true;
     }
 
     /** 四方向以当前正式几何选目标，边缘保持焦点；无焦点仍沿现有默认逻辑入口。 */
@@ -210,7 +234,11 @@ public final class SceneFocusRouter {
         setOwner(null);
     }
 
+    /** 批次失败只丢弃尚未执行的范围退出意图，不清除当前焦点或恢复规则。 */
+    void cancelScopeExit() { scopeExit = null; }
+
     private void cancelPending() {
+        scopeExit = null;
         cancelNavigation();
         Range range = top();
         range.pending = false;
@@ -378,6 +406,14 @@ public final class SceneFocusRouter {
         if (closed) return;
         revalidate();
         Range range = top();
+        if (scopeExit != null && !ranges.contains(scopeExit.closing)) {
+            ScopeExit exit = scopeExit; scopeExit = null;
+            if (range == exit.parent && local(exit.anchor) && runtime.interactive(exit.anchor.node())
+                    && contains(range, exit.anchor.node())) {
+                range.pending = range.returning = false; range.saved = null;
+                beginNavigation(exit.anchor.node(), exit.backward, true); prepareNavigation(); return;
+            }
+        }
         if (navigation != null) { prepareNavigation(); return; }
         if (!range.pending || runtime.roots().isEmpty()) return;
         range.pending = false;
@@ -421,6 +457,7 @@ public final class SceneFocusRouter {
         runtime.domain().checkWrite();
         if (closed) return;
         closed = true;
+        scopeExit = null;
         cancelNavigation();
         try {
             setOwner(null);

@@ -167,6 +167,8 @@ Android/FCL 的潜在兼容与独立验收遵循核心第 9 节。字体后端�
 
 ### 5.3 动态更新与失败归属
 
+资源来源换代和卸载的对称释放参考[React useEffect连接与清理示例](https://github.com/reactjs/react.dev/blob/main/src/content/reference/react/useEffect.md#connecting-to-an-external-system)。字体服务按资源代际结束旧引用、关闭所属face和通知失效；单项释放错误沿现有首错/suppressed通道汇总，不追加重试或保留旧代结果。
+
 | 变化/失败 | 处理 |
 | --- | --- |
 | 文本、候选、字族成员、字重／字姿、字号、语言、宽度 | 相关排版失效；最终行位置更新，按新结果请求字形 |

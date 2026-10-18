@@ -150,7 +150,7 @@ public class SceneAppearance {
             SceneNode hit = target == null || target.runtime() == null ? null : target.runtime().pointerRouter().hoverTarget().get();
             boolean hover = false;
             for (SceneNode at = hit; at != null; at = at.parent()) if (at == target) { hover = true; break; }
-            boolean pressed = target != null && target.runtime() != null && target.runtime().pointerRouter().pressedTarget().get() == target;
+            boolean pressed = target != null && target.runtime() != null && target.runtime().pressed(target);
             int fill = role == Role.PRIMARY ? p.primary : role == Role.GHOST || role == Role.ENTRY ? 0 : p.background;
             if (role == Role.ENTRY && selected.get()) fill = p.hover;
             if ((hover || pressed) && active) fill = role == Role.PRIMARY ? p.muted : p.hover;
@@ -161,7 +161,7 @@ public class SceneAppearance {
             SceneGeometryView.Entry e=geometry.get(n);if(e==null)return;
             Palette p=colors.get();boolean active=enabled();
             boolean focused=target!=null&&target.runtime()!=null&&target.runtime().focusRouter().focusVisible(target);
-            boolean pressed=target!=null&&target.runtime()!=null&&target.runtime().pointerRouter().pressed(target);
+            boolean pressed=target!=null&&target.runtime()!=null&&target.runtime().pressed(target);
             int fill=role==Role.PRIMARY?p.primary:role==Role.GHOST||role==Role.ENTRY?0:p.background;
             if(role==Role.ENTRY&&selected.get())fill=p.hover;
             if(hovered(geometry)&&active||pressed&&active)fill=role==Role.PRIMARY?p.muted:p.hover;

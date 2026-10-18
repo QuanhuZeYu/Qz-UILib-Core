@@ -32,6 +32,13 @@ public final class SceneButton {
         return SceneTextControl.createModern(text,colors,role,icon).size(Size.natural(),Size.natural())
                 .focusable(true).clickFocus(true).onClick(Objects.requireNonNull(action,"action"));
     }
+    /** 触发器尾部图标复用原按钮的度量预算、省略及唯一焦点。 */
+    static SceneNode createWithTrailingIcon(ScenePageContext context, ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme, Runnable action, SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon) {
+        Objects.requireNonNull(context, "context").domain().checkWrite();
+        return SceneTextControl.createTrailing(text, theme, policy, icon).size(Size.fill(1), Size.natural())
+                .focusable(true).clickFocus(true).onClick(Objects.requireNonNull(action, "action"));
+    }
     /** 包内组合仍使用同一文字、省略与提示控制器；图标只占用声明的文字前缀区域。 */
     static SceneNode createWithIcon(ScenePageContext context,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,
             Runnable action,SceneTextPolicy policy,ReadableSignal<SceneIconButton.Symbol> icon) {

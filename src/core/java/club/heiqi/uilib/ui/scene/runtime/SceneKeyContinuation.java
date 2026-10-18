@@ -17,14 +17,19 @@ public final class SceneKeyContinuation implements AutoCloseable {
     private final SceneFocusRouter.RangeHandle range;
     private final SceneEditContinuation action;
     private final SceneEditEvent.Command command;
+    private final Runnable release;
     private final Owner scope;
     private final Observation qualification;
     private boolean closed, qualified;
 
     SceneKeyContinuation(SceneRuntime runtime, SceneNode consumer, SceneFocusRouter.RangeHandle range,
             SceneEditContinuation action, SceneEditEvent.Command command, Owner scope) {
+        this(runtime, consumer, range, action, command, scope, null);
+    }
+    SceneKeyContinuation(SceneRuntime runtime, SceneNode consumer, SceneFocusRouter.RangeHandle range,
+            SceneEditContinuation action, SceneEditEvent.Command command, Owner scope, Runnable release) {
         this.runtime = runtime; this.consumer = runtime.captureMount(consumer); this.control = consumer.control();
-        this.range = range; this.action = action; this.command = command; this.scope = scope;
+        this.range = range; this.action = action; this.command = command; this.scope = scope; this.release = release;
         scope.own(() -> { closed = true; runtime.forgetKeyContinuation(this); });
         qualification = runtime.domain().observe(scope, () -> {
             runtime.interactionRevision().get();
@@ -55,8 +60,18 @@ public final class SceneKeyContinuation implements AutoCloseable {
         refresh();
         if (closed) return;
         if (!valid(runtime.focusRouter().focused().get())) { close(); return; }
+        if (release != null) return; // Space只维持原按压，repeat不产生动作。
         SceneEditEvent event = SceneKeyInterpreter.edit(key);
         if (event == null || event.command != command || !runtime.continueKeyEdit(action, event)) close();
+    }
+    /** 只有原按压仍有效才完成；先结束呈现和许可，再执行原目标动作。 */
+    public void release() {
+        runtime.domain().checkWrite();
+        refresh();
+        if (closed || release == null) return;
+        if (!valid(runtime.focusRouter().focused().get())) { close(); return; }
+        close();
+        release.run();
     }
     @Override public void close() {
         runtime.domain().checkWrite();

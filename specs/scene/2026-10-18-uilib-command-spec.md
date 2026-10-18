@@ -20,9 +20,9 @@
 
 ## 3. 中性键意图与编辑优先
 
-宿主把原生历史事件转换为中性命名键、当次修饰键、按压/重复事实和既有剪贴板端口，经页面原输入队列递交。原生整数键码、设备枚举及操作系统队列只在宿主边界解释；Core不消费原生队列。普通文本、中文提交与带真实来源的组字仍沿原文本接口递交，键意图不从字母键合成字符。
+宿主把原生历史事件转换为中性命名键、当次修饰键、DOWN/UP阶段、重复事实和既有剪贴板端口，经页面原输入队列递交。原生整数键码、设备枚举及操作系统队列只在宿主边界解释；Core不消费原生队列。旧SceneKeyEvent构造默认DOWN，真实宿主也递交UP，不在宿主维护按钮按压或合成click。普通文本、空格、中文提交与带真实来源的组字仍沿原文本接口递交，键意图不从命名键合成字符。
 
-本期应用快捷键支持精确Primary+字母，可附Shift；Primary由宿主映射到其主快捷修饰键，额外Alt等修饰条件不隐式匹配。裸字符、空格、Tab、Enter、ESC及任意多步键序列不作为本期应用绑定语法。普通f、斜线及中文文字继续进入文本，不触发搜索命令。
+快捷键以一个命名键及精确的Primary/Shift/Alt/额外修饰键集合声明，包含功能键、方向、数字与符号键，不限于Primary+字母。Primary由宿主映射到其主快捷修饰键；primary/primaryShift便利入口保留。没有声明的修饰组合不隐式匹配，也不合成文字或多步键序列。普通可打印键在当前文字编辑目标中仍交原字符来源，不因页级同名键绑定触发搜索等动作；标准编辑命令已经消费时不执行应用绑定。ESC先沿原专用退出链处理。
 
 Core将标准编辑键意图解释为既有编辑命令，经唯一编辑目标与已声明editActivator先处理。编辑已消费即停止，包含复制空选区、空撤销历史、只读修改及无实际文案变化的消费；不能以草稿是否改变判断让渡。Tab、Enter、Space、方向及ESC保留所属编辑、导航和激活合同，不把保存或搜索加入编辑命令枚举。
 
@@ -34,7 +34,9 @@ ESC保持既有捕获、编辑/IME、Tooltip、范围/页面策略及宿主fallb
 
 ## 4. 物理按压与旧输入隔离
 
-应用快捷键每段合法fresh DOWN至多执行一次；repeat不重新执行，不因为动作关闭内层模态而在同一按压段转投外层。Core记录首个fresh已获准的编辑、导航或保留类别；repeat进入编辑前核验原范围，编辑续段还核验原焦点挂载，导航续段直接延续导航并读取当次Shift，不因新焦点开启INSERT_TAB而变成编辑。组字保留仍优先。标准编辑删除、移动和Tab继续各自已确认的重复规则。按压门只维护物理事实，不拥有业务范围；主Enter与小键盘Enter共享确认含义，保留独立物理身份。
+应用快捷键每段合法fresh DOWN至多执行一次；repeat不重新执行，不因为动作关闭内层模态而在同一按压段转投外层。Core保留已获准的原范围与消费类别；原编辑续段仍要求原焦点挂载，保留/应用段不会变成后来目标的编辑。Tab导航repeat继续逻辑导航并读取当次Shift，不因新字段开启INSERT_TAB而变成编辑。空间箭头导航repeat每次先交当次焦点的编辑/activator；消费后将后续编辑限定到该实际挂载，未消费才继续本次范围的空间导航。组字保留仍优先。标准编辑删除和移动保持重复。按压门只维护物理事实，不拥有业务范围；主Enter与小键盘Enter共享确认含义，保留独立物理身份。
+
+无修饰Space被编辑和应用绑定让渡后，只在原合法click目标建立按压，DOWN显示按压而不激活；UP仍为同一挂载、同一当前范围且从未离开焦点时，结束按压并激活一次。焦点离开再返回、失活、模态覆盖、失焦、事件失败与关闭都会结束旧按压；repeat和没有起手的UP不激活。按压事实复用有限SceneKeyContinuation和原焦点转换核验，标准控件通过共同runtime.pressed呈现，不建立第二路由。Enter保持常规DOWN激活并忽略repeat；带修饰的Space遵循其明确快捷键声明。旧edit/editOrNavigate的原命令含义保持，文字空格始终来自原字符串事件。
 
 开屏或恢复可用性时，旧持键、历史DOWN和repeat不能激活命令；唯一原生消费者耗尽历史并确认真实释放后，新的完整按压才有效。UP、失焦、设备可用性和历史耗尽按原输入适配合同递交；不为每次回调重新假定fresh，不旁读原生事件队列。
 
@@ -61,3 +63,9 @@ ESC保持既有捕获、编辑/IME、Tooltip、范围/页面策略及宿主fallb
 | 旧编辑、导航、ESC及Runnable按钮 | 原入口和原使用条件继续有效 |
 
 稳定逻辑通过正式ScenePageSession和统一测试应用观察；实际字体、剪贴板及GLFW历史与按压通过正式桌面运行，Minecraft只按受影响成品组合验证，实机仍遵守会话授权。中性组字来源测试不能替代操作系统输入法桥的真实验收。
+
+## 7. 前端参考与采用行为
+
+[React Aria useKeyboard](https://react-aria.adobe.com/useKeyboard.md)与其[实现](https://raw.githubusercontent.com/adobe/react-spectrum/main/packages/react-aria/src/interactions/useKeyboard.ts)提供精确修饰键和命名键组合，普通目标先处理，快捷键默认不重复且不抢组字。本模块采用这些默认及声明便利度，继续保留原编辑消费、Scene范围和同事件Effect结算。
+
+[Button](https://react-aria.adobe.com/Button.md)、[按钮按压案例](https://react-aria.adobe.com/blog/building-a-button-part-1.md)及[usePress实现](https://raw.githubusercontent.com/adobe/react-spectrum/main/packages/react-aria/src/interactions/usePress.ts)提供完整按压、忽略重复和目标失效取消的参考；Core以DOWN/UP和原挂载许可表达Space释放激活，Enter维持常规按下激活。按钮、菜单和快捷键继续引用同一业务命令。

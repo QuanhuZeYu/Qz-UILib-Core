@@ -80,7 +80,7 @@ final class SceneChoiceNavigation<T, K> implements SceneControl {
                 List<SceneNode> choices = available(); if (choices.isEmpty()) return SceneFocusTraversal.Result.end();
                 SceneNode target = page.runtime().focusRouter().focused().get();
                 if (!choices.contains(target)) target = nodes.get(selected.get());
-                if (!choices.contains(target)) target = choices.get(0);
+                if (!choices.contains(target)) target = choices.get(vertical && backward ? choices.size() - 1 : 0);
                 return SceneFocusTraversal.Result.ready(target);
             }
             public void close() { closed = true; }

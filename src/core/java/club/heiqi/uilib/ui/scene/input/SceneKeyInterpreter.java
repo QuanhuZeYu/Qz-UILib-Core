@@ -4,7 +4,7 @@ package club.heiqi.uilib.ui.scene.input;
 public final class SceneKeyInterpreter {
     private SceneKeyInterpreter() {}
     public static SceneEditEvent edit(SceneKeyEvent event) {
-        if (event.alt || event.extra) return null;
+        if (event.phase != SceneKeyEvent.Phase.DOWN || event.alt || event.extra) return null;
         SceneEditEvent.Command command = null;
         if (event.primary) {
             switch (event.key) {
@@ -20,6 +20,10 @@ public final class SceneKeyInterpreter {
                 case Y: command = SceneEditEvent.Command.REDO; break;
                 case HOME: command = SceneEditEvent.Command.DOCUMENT_HOME; break;
                 case END: command = SceneEditEvent.Command.DOCUMENT_END; break;
+                case UP: command = SceneEditEvent.Command.UP; break;
+                case DOWN: command = SceneEditEvent.Command.DOWN; break;
+                case PAGE_UP: command = SceneEditEvent.Command.PAGE_UP; break;
+                case PAGE_DOWN: command = SceneEditEvent.Command.PAGE_DOWN; break;
                 default: break;
             }
         } else {
@@ -40,7 +44,7 @@ public final class SceneKeyInterpreter {
         if (event.key == SceneKey.TAB) command = SceneEditEvent.Command.TAB;
         if (!event.repeat && (event.key == SceneKey.ENTER || event.key == SceneKey.KEYPAD_ENTER))
             command = event.primary ? SceneEditEvent.Command.SUBMIT : SceneEditEvent.Command.CONFIRM;
-        if (!event.repeat && event.key == SceneKey.SPACE) command = SceneEditEvent.Command.ACTIVATE_ONLY;
+        if (!event.repeat && event.plainSpace()) command = SceneEditEvent.Command.ACTIVATE_ONLY;
         return command == null ? null : SceneEditEvent.command(command, event.shift, event.clipboard);
     }
 
@@ -56,7 +60,7 @@ public final class SceneKeyInterpreter {
     }
 
     public static SceneNavigationEvent navigation(SceneKeyEvent event) {
-        if (event.alt || event.extra) return null;
+        if (event.phase != SceneKeyEvent.Phase.DOWN || event.alt || event.extra) return null;
         if (event.key == SceneKey.TAB) return event.shift ? SceneNavigationEvent.PREVIOUS : SceneNavigationEvent.NEXT;
         if (!event.primary) {
             switch (event.key) {
@@ -67,7 +71,7 @@ public final class SceneKeyInterpreter {
                 default: break;
             }
         }
-        if (!event.repeat && (event.key == SceneKey.ENTER || event.key == SceneKey.KEYPAD_ENTER || event.key == SceneKey.SPACE)) return SceneNavigationEvent.ACTIVATE;
+        if (!event.repeat && (event.key == SceneKey.ENTER || event.key == SceneKey.KEYPAD_ENTER)) return SceneNavigationEvent.ACTIVATE;
         return null;
     }
 }

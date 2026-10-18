@@ -70,4 +70,5 @@ public final class SceneVirtualList<T, K> {
 
     /** 弹出复合内容按明确起点准备并显露，普通初始遍历仍保留原条件。 */
     club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor beginAt(K key, boolean backward) { return controller.beginAt(key, backward); }
+    club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor beginAt(K key, boolean backward, boolean reveal) { return controller.beginAt(key, backward, reveal); }
 }

@@ -19,6 +19,67 @@ public final class DirectionalNavigationScenario extends TestApplication {
         scenario("二维方向按当前几何选择且边缘不循环", this::grid);
         scenario("中性方向和键盘均尊重编辑与组字联系", this::editingPriority);
         scenario("嵌套集合耗尽后准备下一组屏外合法项", this::nestedCollections);
+        scenario("有限同列偏好不越过近邻斜向目标", this::finiteDistance);
+        scenario("箭头repeat进入字段后当前编辑优先包含只读", this::repeatIntoEditor);
+    }
+
+    private void finiteDistance() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        host.height = 1100; ScenePageContext[] context = new ScenePageContext[1]; SceneNode[] buttons = new SceneNode[3];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page;
+            for (int i = 0; i < buttons.length; i++) buttons[i] = SceneButton.create(page, () -> "候选", page.theme(), () -> {})
+                    .size(Size.fixed(100), Size.fixed(40));
+            SceneNode layout = new SceneNode().size(Size.fill(1), Size.fill(1)).initialFocus(buttons[0])
+                    .control(new club.heiqi.uilib.ui.scene.control.SceneControl() {
+                        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node,
+                                club.heiqi.uilib.ui.scene.layout.Constraints limits, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text) {
+                            return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(limits.availableWidth, limits.availableHeight);
+                        }
+                        public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node,
+                                club.heiqi.uilib.ui.scene.layout.LayoutBox box, club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+                            java.util.List<club.heiqi.uilib.ui.scene.layout.ChildPlacements.Entry> positions = new java.util.ArrayList<>();
+                            int[][] xy = {{0, 0}, {0, 1000}, {105, 50}};
+                            for (int i = 0; i < buttons.length; i++) {
+                                children.measureChild(buttons[i], new club.heiqi.uilib.ui.scene.layout.Constraints(100, 40));
+                                positions.add(new club.heiqi.uilib.ui.scene.layout.ChildPlacements.Entry(buttons[i],
+                                        new club.heiqi.uilib.ui.scene.layout.LayoutBox(xy[i][0], xy[i][1], 100, 40)));
+                            }
+                            return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(positions);
+                        }
+                        public void paint(SceneNode node, club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry,
+                                club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder paint) { }
+                    });
+            for (SceneNode button : buttons) layout.add(button);
+            page.mount(layout);
+        }); onClose(session::close); session.frame(); session.navigation(SceneNavigationEvent.DOWN); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == buttons[2], "任意同列交集仍压过距离近的合法斜向目标"));
+    }
+
+    private void repeatIntoEditor() {
+        for (boolean locked : new boolean[] {false, true}) {
+            ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+            ScenePageContext[] context = new ScenePageContext[1]; SceneNode[] nodes = new SceneNode[3];
+            club.heiqi.uilib.ui.scene.edit.SceneEditState[] state = new club.heiqi.uilib.ui.scene.edit.SceneEditState[1];
+            ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+                context[0] = page; state[0] = new club.heiqi.uilib.ui.scene.edit.SceneEditState(domain, "abcd");
+                nodes[0] = SceneButton.create(page, () -> "A", page.theme(), () -> {}).size(Size.fixed(100), Size.fixed(40));
+                nodes[1] = club.heiqi.uilib.ui.scene.control.SceneTextField.create(page, state[0], page.theme(), () -> locked, request -> {})
+                        .size(Size.fixed(100), Size.fixed(40));
+                nodes[2] = SceneButton.create(page, () -> "C", page.theme(), () -> {}).size(Size.fixed(100), Size.fixed(40));
+                page.mount(new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.fill(1)).initialFocus(nodes[0])
+                        .add(nodes[0]).add(nodes[1]).add(nodes[2]));
+            }); onClose(session::close); session.frame(); domain.execute(() -> state[0].select(0, 0));
+            session.key(new SceneKeyEvent(SceneKey.RIGHT, false, false, false, false, false, null)); session.frame();
+            domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nodes[1], "首个Right未进入B字段"));
+            session.key(new SceneKeyEvent(SceneKey.RIGHT, false, false, false, false, true, null)); session.frame();
+            domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nodes[1] && state[0].snapshot().get().caret == 1,
+                    "Right repeat绕过当前字段编辑跳往C，readOnly=" + locked));
+            domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(nodes[2])));
+            session.key(new SceneKeyEvent(SceneKey.RIGHT, false, false, false, false, true, null)); session.frame();
+            domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == nodes[2] && state[0].snapshot().get().caret == 1,
+                    "已接管的编辑repeat离开原挂载后继续投送"));
+        }
     }
 
     private void nestedCollections() {
@@ -74,6 +135,12 @@ public final class DirectionalNavigationScenario extends TestApplication {
         session.key(new SceneKeyEvent(SceneKey.DOWN, false, false, false, false, false, null)); session.frame();
         domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == editor[0] && state[0].snapshot().get().caret > 5,
                 "只读方向查看跳成焦点导航"));
+        session.key(new SceneKeyEvent(SceneKey.UP, true, false, false, false, false, null)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == editor[0] && state[0].snapshot().get().caret < 5,
+                "单个Primary+Up未保留原宿主字段编辑"));
+        session.key(new SceneKeyEvent(SceneKey.DOWN, true, false, false, false, false, null)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == editor[0] && state[0].snapshot().get().caret > 5,
+                "单个Primary+Down未保留原宿主字段编辑"));
         club.heiqi.uilib.ui.scene.input.SceneCompositionSource source = new club.heiqi.uilib.ui.scene.input.SceneCompositionSource();
         domain.execute(() -> readOnly[0].set(false));
         session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.compositionBegin(source, "拼"));

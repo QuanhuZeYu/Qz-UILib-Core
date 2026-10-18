@@ -45,6 +45,9 @@ public interface SceneControl {
      * 与指针捕获丢失分别通知，不能补发业务提交或重复 captureLost。 */
     default void inputFrameCancelled(SceneNode node) {}
 
+    /** 捕获起手控件可明确把本段延续到自己打开的所属模态；null保持普通当前范围资格。 */
+    default SceneNode capturedPointerScope(SceneNode node) { return null; }
+
     /** 只有显式声明的子 activator 可把其命中交给祖先；普通子按钮仍优先。 */
     default Object pointerActivator(SceneNode node, SceneNode hit, SceneGeometryView geometry, int x, int y) {
         return null;

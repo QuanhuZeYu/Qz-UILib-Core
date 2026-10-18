@@ -48,6 +48,10 @@ final class ScenePopupList<T, K> {
     private final Consumer<T> confirm;
     private final ReadableSignal<SceneTheme> theme;
     private final Signal<Object> opening;
+    private final boolean menu;
+    private boolean backwardOpening;
+    private final SceneTypeahead closedTypeahead = new SceneTypeahead();
+    private Popup popup;
     private final SceneNode button, node;
 
     static <T, K> ReadableSignal<List<T>> checked(ScenePageContext page, Owner owner, ReadableSignal<List<T>> source, Function<T, K> key) {
@@ -59,14 +63,14 @@ final class ScenePopupList<T, K> {
         });
     }
     ScenePopupList(ScenePageContext page, Owner owner, ReadableSignal<List<T>> source, Function<T, K> key, Function<T, String> label,
-            Predicate<T> enabled, ReadableSignal<K> initial, ReadableSignal<String> title, Consumer<T> confirm, ReadableSignal<SceneTheme> theme) {
+            Predicate<T> enabled, ReadableSignal<K> initial, ReadableSignal<String> title, Consumer<T> confirm, ReadableSignal<SceneTheme> theme, boolean menu) {
         this.page = page; this.source = source; this.key = key; this.label = label; this.enabled = enabled;
-        this.initial = initial; this.confirm = confirm; this.theme = theme; opening = page.domain().signal(null);
+        this.initial = initial; this.confirm = confirm; this.theme = theme; this.menu = menu; opening = page.domain().signal(null);
         available = page.domain().computed(owner, () -> {
             List<T> choices = new ArrayList<>(); for (T item : source.get()) if (enabled.test(item)) choices.add(item);
             return Collections.unmodifiableList(choices);
         });
-        button = SceneButton.createWithIcon(page, title, theme, this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
+        button = SceneButton.createWithTrailingIcon(page, title, theme, this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
                 () -> SceneIconButton.Symbol.CHEVRON_DOWN);
         button.bind(NodeBinding.repeat(() -> opening.get() == null ? Collections.emptyList() : Collections.singletonList(opening.get()),
                 token -> token, token -> new Popup(token.get()).root));
@@ -77,7 +81,8 @@ final class ScenePopupList<T, K> {
         });
     }
     SceneNode node() { return node; }
-    private void open() { if (opening.get() == null) opening.set(new Object()); }
+    private void open() { open(false); }
+    private void open(boolean backward) { if (opening.get() == null) { backwardOpening = backward; closedTypeahead.reset(); opening.set(new Object()); } }
     private void close(Object token) { if (opening.get() == token) opening.set(null); }
     private int rowHeight() { return Math.max(1, Math.round(theme.get().textStyle.logicalEm * 1.4f) + theme.get().padding * 2); }
     private T current(K identity) {
@@ -102,27 +107,73 @@ final class ScenePopupList<T, K> {
         public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) { }
     }
     private final class Trigger extends Flow {
+        private final Object target = new Object();
+        private Object pointerOpening;
+        public Object pointerActivator(SceneNode n, SceneNode hit, SceneGeometryView geometry, int x, int y) { return hit == button ? target : null; }
+        public boolean pointerTargetValid(SceneNode n, Object value) { return value == target && (pointerOpening == null || opening.get() == pointerOpening); }
+        public boolean capturesPointer() { return true; }
+        public SceneNode capturedPointerScope(SceneNode n) {
+            return popup != null && pointerOpening != null && opening.get() == pointerOpening ? popup.root : null;
+        }
+        public void pointer(SceneNode n, ScenePointerEvent event, SceneGeometryView geometry) {
+            if (event.kind == ScenePointerEvent.Kind.DOWN) {
+                page.runtime().focusRouter().pointTo(page.runtime().captureMount(button));
+                open(); pointerOpening = opening.get();
+            } else if (event.kind == ScenePointerEvent.Kind.UP && popup != null && opening.get() == pointerOpening) {
+                SceneNode hit = page.runtime().pointerRouter().hovered(geometry);
+                K identity = popup.identities.get(hit);
+                if (identity != null) popup.choose(identity);
+                pointerOpening = null;
+            }
+        }
+        public void captureLost(SceneNode n) { pointerOpening = null; }
+        public void activatePointer(SceneNode n, Object value) {
+            if (value == target) { page.runtime().focusRouter().pointTo(page.runtime().captureMount(button)); open(); }
+        }
         public boolean editFallback(SceneNode n, SceneNode focused, SceneEditEvent event, SceneGeometryView geometry) {
-            if (focused != button || event.command != SceneEditEvent.Command.DOWN) return false;
-            open(); return true;
+            if (focused != button) return false;
+            if (event.command == SceneEditEvent.Command.DOWN || event.command == SceneEditEvent.Command.UP) {
+                open(event.command == SceneEditEvent.Command.UP); return true;
+            }
+            if (menu) return false;
+            List<T> choices = available.get(); int index = -1;
+            for (int i = 0; i < choices.size(); i++) if (Objects.equals(key.apply(choices.get(i)), initial.get())) { index = i; break; }
+            int next;
+            if (event.command == SceneEditEvent.Command.LEFT || event.command == SceneEditEvent.Command.RIGHT) {
+                List<T> all = source.get(); int anchor = -1;
+                for (int i = 0; i < all.size(); i++) if (Objects.equals(key.apply(all.get(i)), initial.get())) { anchor = i; break; }
+                if (anchor < 0) { if (!choices.isEmpty()) confirm.accept(choices.get(0)); }
+                else {
+                    int step = event.command == SceneEditEvent.Command.LEFT ? -1 : 1;
+                    for (next = anchor + step; next >= 0 && next < all.size(); next += step)
+                        if (enabled.test(all.get(next))) { confirm.accept(all.get(next)); break; }
+                }
+                return true;
+            }
+            next = closedTypeahead.find(choices, label, index, event.text);
+            if (next < 0) return false;
+            confirm.accept(choices.get(next)); return true;
         }
     }
 
     private final class Popup extends Flow {
         final Object token, outside = new Object();
+        final SceneTypeahead typeahead = new SceneTypeahead();
         final Map<SceneNode, K> identities = new IdentityHashMap<>();
         final SceneVirtualList<T, K> rows;
         final SceneNode root, empty;
         Popup(Object token) {
-            this.token = token;
+            this.token = token; popup = this;
             rows = SceneVirtualList.create(page, source, key, item -> {
                 K identity = key.apply(item.get());
-                SceneNode action = SceneButton.create(page, () -> label.apply(item.get()), theme, () -> {
-                    T live = current(identity);
-                    if (opening.get() != token || live == null || !enabled.test(live)) return;
-                    close(token); confirm.accept(live);
-                });
+                SceneNode action = menu ? SceneButton.create(page, () -> label.apply(item.get()), theme, () -> choose(identity))
+                        : SceneButton.createWithTrailingIcon(page, () -> label.apply(item.get()), theme, () -> choose(identity),
+                                SceneTextPolicy.ELLIPSIS_SINGLE_LINE, () -> Objects.equals(initial.get(), identity) ? SceneIconButton.Symbol.CHECK : null);
                 action.bind(NodeBinding.value(() -> enabled.test(item.get()), SceneNode::enabled));
+                action.bind(NodeBinding.hoverWithin(0, (self, hovered) -> {
+                    if (hovered && opening.get() == token && enabled.test(item.get()))
+                        page.runtime().focusRouter().pointTo(page.runtime().captureMount(self));
+                }));
                 identities.put(action, identity); action.own(() -> identities.remove(action)); return action;
             }, () -> new SceneVirtualList.Options().estimatedRowHeight(rowHeight()).overscan(1));
             empty = SceneLabel.create(page, () -> "暂无可选项", theme).size(Size.fill(1), Size.natural());
@@ -147,9 +198,14 @@ final class ScenePopupList<T, K> {
                 observer[0].refresh();
                 return new BindingActivation() {
                     public void refresh() { }
-                    public void close() { ScenePopupList.this.close(token); }
+                    public void close() { if (popup == Popup.this) popup = null; ScenePopupList.this.close(token); }
                 };
             });
+        }
+        private void choose(K identity) {
+            T live = current(identity);
+            if (opening.get() != token || live == null || !enabled.test(live)) return;
+            close(token); confirm.accept(live);
         }
         @Override public SceneLayer.Policy layerPolicy(SceneNode n) { return new SceneLayer.Policy(theme.get().gap, SceneLayer.Participation.INTERACTIVE); }
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Arrays.asList(theme, source, page.viewportHeight()); }
@@ -185,12 +241,15 @@ final class ScenePopupList<T, K> {
             if (event.kind == ScenePointerEvent.Kind.DOWN && event.button == 0) close(token);
         }
         @Override public void activatePointer(SceneNode n, Object target) { if (target == outside) close(token); }
-        @Override public boolean navigateScope(SceneNode n, boolean backward) { close(token); return true; }
+        @Override public boolean navigateScope(SceneNode n, boolean backward) {
+            page.runtime().focusRouter().leaveScope(page.runtime().captureMount(root), page.runtime().captureMount(button), backward);
+            close(token); return true;
+        }
         @Override public SceneFocusTraversal focusTraversal(SceneNode n) {
             return (from, backward) -> {
                 List<T> choices = available.get(); K start = null;
                 for (T item : choices) if (Objects.equals(key.apply(item), initial.get())) { start = key.apply(item); break; }
-                if (start == null && !choices.isEmpty()) start = key.apply(choices.get(0));
+                if (start == null && !choices.isEmpty()) start = key.apply(choices.get(backwardOpening ? choices.size() - 1 : 0));
                 if (start != null) return rows.beginAt(start, backward);
                 return new SceneFocusTraversal.Cursor() {
                     public SceneFocusTraversal.Result prepare() { return SceneFocusTraversal.Result.end(); }
@@ -214,11 +273,20 @@ final class ScenePopupList<T, K> {
             if (index < 0) return false;
             int next = event.command == SceneEditEvent.Command.HOME ? 0 : event.command == SceneEditEvent.Command.END ? choices.size() - 1
                     : Math.floorMod(index + (event.command == SceneEditEvent.Command.UP ? -1 : 1), choices.size());
-            rows.focus(key.apply(choices.get(next))); return true;
+            if (!menu && event.command != SceneEditEvent.Command.HOME && event.command != SceneEditEvent.Command.END)
+                next = Math.max(0, Math.min(choices.size() - 1, index + (event.command == SceneEditEvent.Command.UP ? -1 : 1)));
+            typeahead.reset(); rows.focus(key.apply(choices.get(next))); return true;
         }
         @Override public boolean editFallback(SceneNode n, SceneNode focused, SceneEditEvent event, SceneGeometryView geometry) {
-            if (event.command == SceneEditEvent.Command.TAB) { close(token); return true; }
-            return page.runtime().focusRouter().focused().get() == focused && move(event);
+            if (event.command == SceneEditEvent.Command.TAB) return navigateScope(n, event.shift);
+            if (page.runtime().focusRouter().focused().get() != focused) return false;
+            if (move(event)) return true;
+            if (!accepts(focused)) return false;
+            List<T> choices = available.get(); int index = -1; K identity = identities.get(focused);
+            for (int i = 0; i < choices.size(); i++) if (Objects.equals(key.apply(choices.get(i)), identity)) { index = i; break; }
+            int match = typeahead.find(choices, label, index, event.text);
+            if (match < 0) return false;
+            rows.focus(key.apply(choices.get(match))); return true;
         }
         @Override public SceneEditContinuation editContinuation(SceneNode n, SceneNode focused, SceneEditEvent event) {
             if (!accepts(focused) || !moves(event)) return null;

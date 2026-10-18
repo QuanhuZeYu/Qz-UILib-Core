@@ -46,6 +46,123 @@ public final class CommandScenario extends TestApplication {
         scenario("命令和Effect失败不执行宿主继续或后续文字", this::failedCommand);
         scenario("关闭模态的应用粘贴键repeat不改外层草稿", this::applicationRepeat);
         scenario("Tab续段保留导航并读取当次Shift", this::tabRepeat);
+        scenario("精确命名键组合保留编辑与组字默认", this::namedShortcuts);
+        scenario("Space只在原完整按压释放时激活且失效不可复活", this::spacePress);
+    }
+
+    private static SceneKeyEvent plain(SceneKey key) {
+        return new SceneKeyEvent(key, false, false, false, false, false, null);
+    }
+
+    private void namedShortcuts() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; SceneNode[] targets = new SceneNode[2];
+        SceneEditState[] state = new SceneEditState[1]; int[] actions = new int[5];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; state[0] = new SceneEditState(domain, "text");
+            targets[0] = SceneButton.create(page, () -> "动作", page.theme(), () -> actions[4]++);
+            targets[1] = SceneTextField.create(page, state[0], page.theme(), () -> false, request -> {});
+            SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).initialFocus(targets[0]).add(targets[0]).add(targets[1]);
+            root.bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
+                    SceneShortcut.of(SceneKey.ENTER, SceneCommand.of(() -> true, () -> actions[0]++), SceneShortcut.Modifier.ALT),
+                    SceneShortcut.of(SceneKey.LEFT, SceneCommand.of(() -> true, () -> actions[1]++), SceneShortcut.Modifier.SHIFT),
+                    SceneShortcut.of(SceneKey.F2, SceneCommand.of(() -> true, () -> actions[2]++)),
+                    SceneShortcut.of(SceneKey.F, SceneCommand.of(() -> true, () -> actions[3]++)),
+                    SceneShortcut.of(SceneKey.SPACE, SceneCommand.of(() -> true, () -> actions[0]++), SceneShortcut.Modifier.ALT)));
+            page.mount(root);
+        }); onClose(session::close); session.frame();
+        session.key(new SceneKeyEvent(SceneKey.ENTER, false, false, true, false, false, null));
+        session.key(new SceneKeyEvent(SceneKey.LEFT, false, true, false, false, false, null));
+        session.key(plain(SceneKey.F2));
+        session.key(new SceneKeyEvent(SceneKey.SPACE, false, false, true, false, false, null));
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(actions[0] == 2 && actions[1] == 1 && actions[2] == 1 && actions[4] == 0, "非字母/Alt/Shift精确组合没有执行或被当作按钮Space");
+        session.key(new SceneKeyEvent(SceneKey.ENTER, false, true, true, false, false, null)); session.frame();
+        require(actions[0] == 2, "额外Shift错误匹配Alt+Enter");
+        domain.execute(() -> { context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[1])); state[0].select(2, 2); });
+        session.key(plain(SceneKey.F)); session.edit(SceneEditEvent.text("f"));
+        session.key(new SceneKeyEvent(SceneKey.LEFT, false, true, false, false, false, null)); session.frame();
+        domain.execute(() -> require(actions[3] == 0 && actions[1] == 1 && state[0].snapshot().get().text.equals("tefxt")
+                && state[0].snapshot().get().caret == 2, "字段普通字符或Shift方向被页命令抢占"));
+        SceneCompositionSource source = new SceneCompositionSource();
+        session.edit(SceneEditEvent.compositionBegin(source, "组字"));
+        session.edit(SceneEditEvent.compositionUpdate(source, "", false));
+        session.key(new SceneKeyEvent(SceneKey.ENTER, false, false, true, false, false, null)); session.frame();
+        require(actions[0] == 2, "Alt命令越过UPDATE(false)真实组字联系");
+        session.edit(SceneEditEvent.compositionCancel(source));
+        session.key(new SceneKeyEvent(SceneKey.ENTER, false, false, true, false, false, null)); session.frame();
+        require(actions[0] == 3, "组字结束后新的精确组合仍被拒绝");
+    }
+
+    private void spacePress() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; SceneNode[] targets = new SceneNode[3];
+        Signal<Boolean>[] enabled = new Signal[1], modal = new Signal[1], explode = new Signal[1];
+        SceneEditState[] draft = new SceneEditState[1]; int[] clicks = {0}, fallbacks = {0};
+        RuntimeException expected = new RuntimeException("释放动作失败");
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; enabled[0] = domain.signal(true); modal[0] = domain.signal(false); explode[0] = domain.signal(false);
+            targets[0] = SceneButton.create(page, () -> "原按钮", page.theme(), () -> { if (explode[0].get()) throw expected; clicks[0]++; })
+                    .bind(NodeBinding.value(enabled[0], SceneNode::enabled));
+            targets[1] = SceneButton.create(page, () -> "另一目标", page.theme(), () -> {});
+            draft[0] = new SceneEditState(domain, "");
+            targets[2] = SceneTextField.create(page, draft[0], page.theme(), () -> false, request -> {});
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).initialFocus(targets[0]).add(targets[0]).add(targets[1]).add(targets[2]));
+            page.mount(new SceneNode().size(Size.fixed(100), Size.fixed(60)).bind(NodeBinding.value(modal[0], SceneNode::modal))
+                    .add(SceneButton.create(page, () -> "内层", page.theme(), () -> {})));
+        }); onClose(session::close); session.frame();
+        SceneKeyInputAdapter input = new SceneKeyInputAdapter(session::key);
+        input.availability(true); input.historyDrained(java.util.Collections.emptySet());
+        input.key(plain(SceneKey.SPACE), true); session.frame();
+        domain.execute(() -> require(clicks[0] == 0 && context[0].runtime().pressed(targets[0]), "Space DOWN没有保留按压而直接激活"));
+        input.key(new SceneKeyEvent(SceneKey.SPACE, false, false, false, false, true, null), true); session.frame();
+        require(clicks[0] == 0, "Space repeat激活了原按钮");
+        input.key(plain(SceneKey.SPACE), false); session.frame();
+        domain.execute(() -> require(clicks[0] == 1 && !context[0].runtime().pressed(targets[0]), "物理UP没有结束原按压并只激活一次"));
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "没有原DOWN的UP产生了动作");
+        session.key(plain(SceneKey.SPACE)); session.frame();
+        domain.execute(() -> domain.batch(() -> {
+            context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[1]));
+            context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[0]));
+        }));
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "合批离开再返回复活了Space按压");
+        session.key(plain(SceneKey.SPACE)); session.frame();
+        domain.execute(() -> enabled[0].set(false)); session.frame();
+        domain.execute(() -> enabled[0].set(true)); session.frame();
+        domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[0])));
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "禁用恢复复活了旧Space按压");
+        session.key(plain(SceneKey.SPACE)); session.frame();
+        domain.execute(() -> modal[0].set(true)); session.frame();
+        domain.execute(() -> modal[0].set(false)); session.frame();
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "模态覆盖返回复活了旧Space按压");
+        domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[0])));
+        session.key(plain(SceneKey.SPACE)); session.frame(); session.focusLost(); session.frame();
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "失焦后的旧UP激活了按钮");
+        domain.execute(() -> { context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[0])); explode[0].set(true); });
+        session.key(plain(SceneKey.SPACE)); session.frame();
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP), () -> fallbacks[0]++);
+        session.edit(SceneEditEvent.text("迟到"));
+        try { session.frame(); throw new AssertionError("Space释放动作失败没有传播"); }
+        catch (RuntimeException failure) { require(failure == expected, "Space释放动作错误身份改变"); }
+        session.key(new SceneKeyEvent(SceneKey.SPACE, false, false, false, false, true, null)); session.frame();
+        domain.execute(() -> {
+            require(fallbacks[0] == 0 && !context[0].runtime().pressed(targets[0]) && draft[0].snapshot().get().text.isEmpty(), "释放失败后执行继续动作或保留按压");
+            context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[2]));
+        });
+        session.key(plain(SceneKey.SPACE)); session.edit(SceneEditEvent.text(" "));
+        session.key(plain(SceneKey.SPACE).withPhase(SceneKeyEvent.Phase.UP)); session.frame();
+        domain.execute(() -> require(draft[0].snapshot().get().text.equals(" ") && clicks[0] == 1, "字段Space没有只消费原字符来源"));
+        domain.execute(() -> { explode[0].set(false); context[0].runtime().focusRouter().request(context[0].runtime().captureMount(targets[0])); });
+        session.key(plain(SceneKey.ENTER)); session.frame(); require(clicks[0] == 2, "Enter没有保留DOWN激活");
+        session.key(new SceneKeyEvent(SceneKey.ENTER, false, false, false, false, true, null)); session.frame();
+        require(clicks[0] == 2, "Enter repeat触发了第二次动作");
+        session.key(plain(SceneKey.SPACE)); session.frame(); session.close();
+        domain.execute(() -> require(context[0].runtime().keyboardPressedTarget().get() == null, "关闭残留Space按压呈现"));
     }
 
     private void tabRepeat() {
@@ -188,7 +305,9 @@ public final class CommandScenario extends TestApplication {
 
     private void physicalKeys() {
         java.util.List<SceneKeyEvent> accepted = new java.util.ArrayList<>();
-        SceneKeyInputAdapter input = new SceneKeyInputAdapter(accepted::add);
+        SceneKeyInputAdapter input = new SceneKeyInputAdapter(event -> {
+            if (event.phase == SceneKeyEvent.Phase.DOWN) accepted.add(event);
+        });
         SceneKey f = SceneKey.F;
         SceneKey s = SceneKey.S;
         input.availability(true); input.key(primary(f), true);

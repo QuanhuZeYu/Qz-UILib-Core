@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.scene.control.SceneMenu;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
@@ -40,8 +41,91 @@ public final class PopupControlsScenario extends TestApplication {
         scenario("正式项目页分配负责人并从菜单执行原保存命令", this::projectWorkflow);
         scenario("菜单动作失败保留原错且不执行后续宿主", this::commandFailure);
         scenario("窗口缩短后弹层正文真实受限且末项完整显露", this::shortViewport);
+        scenario("参考选择器闭合字符选择开启边缘及悬停预览", this::referenceSelection);
+        scenario("参考菜单Up从末项开启且字符只预览后确认", this::menuOpening);
+        scenario("原触发器按下即展开并可拖入选项释放选择", this::pointerOpening);
+        scenario("关闭弹层释放失败后不执行旧Tab续行", this::failedTabExit);
     }
     private static SceneKeyEvent key(SceneKey value, boolean repeat) { return new SceneKeyEvent(value, false, false, false, false, repeat, null); }
+    private void failedTabExit() {
+        RuntimeException expected = new RuntimeException("弹层资源关闭失败");
+        Fixture f = new Fixture(() -> { throw expected; }); onClose(f.session::close); f.session.frame(); f.open();
+        f.session.key(key(SceneKey.TAB, false));
+        try { f.session.frame(); throw new AssertionError("释放失败被吞掉"); }
+        catch (RuntimeException failure) { require(failure == expected, "没有保留原关闭错误"); }
+        f.session.frame();
+        f.domain.execute(() -> require(f.modal() == null && f.focused() == f.trigger(), "失败后后续帧继续了旧Tab退出意图"));
+    }
+
+    private void menuOpening() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ScenePageContext[] context = new ScenePageContext[1]; int[] count = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page; SceneCommand action = SceneCommand.of(() -> true, () -> count[0]++);
+            page.mount(SceneMenu.create(page, () -> "Actions", () -> Arrays.asList(new SceneMenu.Item<>("first", () -> "First", action),
+                    new SceneMenu.Item<>("second", () -> "Second", action), new SceneMenu.Item<>("last", () -> "Last", action))));
+        }); onClose(session::close); session.frame(); session.key(key(SceneKey.UP, false)); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get().text().equals("Last"), "Up未从菜单末项开启"));
+        session.edit(SceneEditEvent.text("s")); session.edit(SceneEditEvent.text("e")); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get().text().equals("Second") && count[0] == 0, "菜单字符未预览或提前执行"));
+        session.key(key(SceneKey.ENTER, false)); session.frame(); require(count[0] == 1, "菜单确认未执行预览项");
+    }
+    private void pointerOpening() {
+        Fixture f = new Fixture(); onClose(f.session::close); f.session.frame(); f.domain.execute(() -> f.accept.set(true));
+        int[] point = new int[2]; f.domain.execute(() -> { LayoutBox box = f.session.pipeline().current().geometry.get(f.trigger()).box;
+            point[0] = box.x + 5; point[1] = box.y + 5;
+        }); f.session.pointer(ScenePointerEvent.down(0, point[0], point[1])); f.session.frame();
+        f.domain.execute(() -> require(f.modal() != null && f.requests.isEmpty(), "菜单直到UP才展开或DOWN已提交"));
+        f.session.pointer(ScenePointerEvent.up(0, point[0], point[1])); f.session.frame();
+        f.domain.execute(() -> require(f.modal() != null && f.requests.isEmpty(), "触发器原UP错误关闭或确认了菜单"));
+        f.session.escape(() -> {}); f.session.frame();
+        f.session.pointer(ScenePointerEvent.down(0, point[0], point[1])); f.session.frame();
+        f.domain.execute(() -> { LayoutBox box = f.session.pipeline().current().geometry.get(find(f.select, "甲")).box;
+            point[0] = box.x + 5; point[1] = box.y + 5;
+        }); f.session.pointer(ScenePointerEvent.move(point[0], point[1])); f.session.pointer(ScenePointerEvent.up(0, point[0], point[1])); f.session.frame();
+        f.domain.execute(() -> require(f.modal() == null && f.selected.get().equals("a") && f.requests.equals(Collections.singletonList("a")),
+                "原捕获不能拖入项释放选择或重复提交"));
+    }
+
+    private void referenceSelection() {
+        Fixture f = new Fixture(); onClose(f.session::close); f.session.frame();
+        f.domain.execute(() -> {
+            f.options.set(Arrays.asList(new SceneSelect.Option<>("alpha", () -> "Alpha"), new SceneSelect.Option<>("alpine", () -> "Alpine"),
+                    new SceneSelect.Option<>("beta", () -> "Beta"), new SceneSelect.Option<>("bravo", () -> "Bravo")));
+            f.selected.set("beta"); f.accept.set(true);
+            f.context.runtime().focusRouter().request(f.context.runtime().captureMount(f.trigger()));
+        }); f.session.frame();
+        f.domain.execute(() -> f.selected.set(null)); f.session.key(key(SceneKey.LEFT, false)); f.session.frame();
+        f.domain.execute(() -> require(f.selected.get().equals("alpha"), "无当前值Left没有选择首个可用项"));
+        f.domain.execute(() -> f.selected.set(null)); f.session.key(key(SceneKey.RIGHT, false)); f.session.frame();
+        f.domain.execute(() -> require(f.selected.get().equals("alpha"), "无当前值Right没有选择首个可用项"));
+        f.domain.execute(() -> {
+            f.options.set(Arrays.asList(new SceneSelect.Option<>("alpha", () -> "Alpha"), new SceneSelect.Option<>("alpine", () -> "Alpine"),
+                    new SceneSelect.Option<>("beta", () -> "Beta", () -> false), new SceneSelect.Option<>("bravo", () -> "Bravo"))); f.selected.set("beta");
+        }); f.session.key(key(SceneKey.LEFT, false)); f.session.frame();
+        f.domain.execute(() -> require(f.selected.get().equals("alpine"), "禁用当前项丢失向前位置锚点"));
+        f.domain.execute(() -> f.selected.set("beta")); f.session.key(key(SceneKey.RIGHT, false)); f.session.frame();
+        f.domain.execute(() -> require(f.selected.get().equals("bravo"), "禁用当前项丢失向后位置锚点"));
+        f.domain.execute(() -> { f.options.set(Arrays.asList(new SceneSelect.Option<>("alpha", () -> "Alpha"), new SceneSelect.Option<>("alpine", () -> "Alpine"),
+                new SceneSelect.Option<>("beta", () -> "Beta"), new SceneSelect.Option<>("bravo", () -> "Bravo"))); f.selected.set("beta"); });
+        f.session.edit(SceneEditEvent.text("b")); f.session.frame();
+        f.domain.execute(() -> require(f.modal() == null && f.selected.get().equals("bravo"), "闭合选择器字符选择未按当前项继续"));
+        f.session.key(key(SceneKey.LEFT, false)); f.session.frame();
+        f.domain.execute(() -> require(f.modal() == null && f.selected.get().equals("beta"), "闭合选择器方向未直接选择"));
+        f.open(); f.session.key(key(SceneKey.END, false)); f.session.key(key(SceneKey.DOWN, false)); f.session.frame();
+        f.domain.execute(() -> require(f.focused().text().equals("Bravo") && f.selected.get().equals("beta"), "选择器边缘错误循环或预览提前提交"));
+        f.session.edit(SceneEditEvent.text("a")); f.session.edit(SceneEditEvent.text("l")); f.session.frame();
+        f.domain.execute(() -> require(f.focused().text().equals("Alpha"), "弹出前缀未定位到匹配项"));
+        int[] point = new int[2]; f.domain.execute(() -> {
+            SceneNode bravo = find(f.select, "Bravo"); LayoutBox box = f.session.pipeline().current().geometry.get(bravo).box;
+            point[0] = box.x + 4; point[1] = box.y + 4;
+        }); f.session.pointer(ScenePointerEvent.move(point[0], point[1])); f.session.frame();
+        f.domain.execute(() -> require(f.focused().text().equals("Bravo") && f.selected.get().equals("beta")
+                && !f.context.runtime().focusRouter().focusVisible(f.focused()), "鼠标悬停未预览实际项或使用了键盘线索"));
+        f.session.key(key(SceneKey.TAB, false)); f.session.frame();
+        f.domain.execute(() -> require(f.modal() == null && f.focused() == f.after && f.selected.get().equals("beta"), "Tab没有一次离开或提交了预览"));
+    }
+
     private void shortViewport() {
         Fixture f = new Fixture(); onClose(f.session::close); f.session.frame();
         f.domain.execute(() -> {
@@ -92,13 +176,13 @@ public final class PopupControlsScenario extends TestApplication {
     private void selection() {
         Fixture f = new Fixture(); onClose(f.session::close); f.session.frame(); f.open();
         f.domain.execute(() -> require(f.modal() != null && f.focused().text().equals("乙"), "没有从当前有效选择进入弹层: modal=" + (f.modal() != null) + ", focus=" + (f.focused() == null ? "null" : f.focused().text()) + ", owned=" + f.trigger().children().size()));
-        f.session.key(key(SceneKey.DOWN, false)); f.session.frame();
+        f.session.key(key(SceneKey.UP, false)); f.session.frame();
         f.domain.execute(() -> require(f.focused().text().equals("甲") && f.selected.get().equals("b") && f.requests.isEmpty(), "方向移动提前提交或没跳过禁用项"));
         f.session.key(key(SceneKey.ENTER, false)); f.session.frame();
         f.domain.execute(() -> require(f.modal() == null && f.selected.get().equals("b") && f.requests.equals(Collections.singletonList("a"))
                 && f.focused() == f.trigger(), "确认拒绝伪造了选择或没关闭返回"));
         f.domain.execute(() -> f.accept.set(true)); f.open();
-        f.session.key(key(SceneKey.DOWN, false)); f.session.key(key(SceneKey.ENTER, false)); f.session.frame();
+        f.session.key(key(SceneKey.UP, false)); f.session.key(key(SceneKey.ENTER, false)); f.session.frame();
         f.domain.execute(() -> require(f.selected.get().equals("a") && f.trigger().text().equals("甲"), "业务接受没有反映到触发名称"));
     }
     private void outsideAndSource() {
@@ -117,7 +201,7 @@ public final class PopupControlsScenario extends TestApplication {
             f.open(); f.domain.execute(() -> require(f.modal() != null && f.focused() == null, "空结果不应制造焦点占位项"));
             if (physical) f.session.key(key(SceneKey.TAB, false)); else f.session.navigation(SceneNavigationEvent.PREVIOUS);
             f.session.frame();
-            f.domain.execute(() -> require(f.modal() == null && f.focused() == f.trigger(), "无焦点弹层的显式Tab没有关闭并返回"));
+            f.domain.execute(() -> require(f.modal() == null && f.focused() == (physical ? f.after : f.behind), "无焦点弹层的Tab没有一次关闭并继续前后顺序"));
         }
     }
     private void farInitial() {
@@ -173,7 +257,7 @@ public final class PopupControlsScenario extends TestApplication {
         f.domain.execute(() -> require(f.modal() == null, "触发器完整裁剪后恢复又打开了旧弹层"));
     }
     private void dynamicRepeat() {
-        Fixture f = new Fixture(); onClose(f.session::close); f.session.frame(); f.open();
+        Fixture f = new Fixture(); onClose(f.session::close); f.session.frame(); f.domain.execute(() -> f.selected.set("a")); f.open();
         f.session.key(key(SceneKey.DOWN, false)); f.session.key(key(SceneKey.DOWN, true)); f.session.frame();
         f.domain.execute(() -> require(f.focused().text().equals("乙") && f.requests.isEmpty(), "弹层方向repeat没留在可用选项内或提前提交"));
         SceneNode[] original = new SceneNode[1]; f.domain.execute(() -> original[0] = f.focused());
@@ -183,10 +267,10 @@ public final class PopupControlsScenario extends TestApplication {
         f.domain.execute(() -> require(f.focused().text().equals("甲"), "repeat未读取当前来源顺序"));
         f.session.escape(() -> { throw new AssertionError("ESC不应退出宿主"); }); f.session.frame(); f.open();
         f.session.key(key(SceneKey.DOWN, true)); f.session.frame();
-        f.domain.execute(() -> require(f.focused().text().equals("新乙") && f.requests.isEmpty(), "关闭再打开复活了旧方向续段"));
+        f.domain.execute(() -> require(f.focused().text().equals("甲") && f.requests.isEmpty(), "关闭再打开复活了旧方向续段"));
         f.domain.execute(() -> f.options.set(Collections.singletonList(new SceneSelect.Option<>("b", () -> "新乙", () -> false)))); f.session.frame();
         f.session.key(key(SceneKey.ENTER, false)); f.session.frame();
-        f.domain.execute(() -> require(f.requests.isEmpty() && f.selected.get().equals("b"), "退出或禁用当前项仍被迟到确认"));
+        f.domain.execute(() -> require(f.requests.isEmpty() && f.selected.get().equals("a"), "退出或禁用当前项仍被迟到确认"));
     }
 
     private void menuCommand() {
@@ -209,18 +293,28 @@ public final class PopupControlsScenario extends TestApplication {
     private static final class Fixture {
         final ReactiveDomain domain = ReactiveDomain.direct(); final MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         final List<String> requests = new ArrayList<>(); final int[] background = {0}; final ScenePageSession session;
-        ScenePageContext context; SceneNode select, behind; Signal<String> selected; Signal<Boolean> accept, shown; Signal<Integer> clipHeight; Signal<List<SceneSelect.Option<String>>> options;
-        Fixture() {
+        ScenePageContext context; SceneNode select, behind, after; Signal<String> selected; Signal<Boolean> accept, shown; Signal<Integer> clipHeight; Signal<List<SceneSelect.Option<String>>> options;
+        Fixture() { this(null); }
+        Fixture(Runnable popupClosing) {
             host.width = 520; host.height = 420;
             session = ScenePageSession.open(domain, host, host, page -> {
                 context = page; selected = domain.signal("b"); accept = domain.signal(false); shown = domain.signal(true); clipHeight = domain.signal(48);
                 options = domain.signal(Arrays.asList(new SceneSelect.Option<>("a", () -> "甲"), new SceneSelect.Option<>("b", () -> "乙"), new SceneSelect.Option<>("c", () -> "禁用", () -> false)));
                 select = SceneSelect.create(page, options, selected, next -> { requests.add(next); if (accept.get()) selected.set(next); })
                         .bind(NodeBinding.value(shown, SceneNode::visible));
+                if (popupClosing != null) {
+                    final boolean[] installed = {false};
+                    select.bind(NodeBinding.value(() -> page.runtime().interactionRevision().get(), (self, revision) -> {
+                        if (!installed[0]) for (SceneNode child : trigger().children()) if (child.modal()) {
+                            installed[0] = true; child.own(popupClosing::run); break;
+                        }
+                    }));
+                }
                 behind = SceneButton.create(page, () -> "后台动作", page.theme(), () -> background[0]++);
                 SceneNode clipped = new SceneNode().size(Size.fill(1), Size.fixed(48)).clip(true).add(select)
                         .bind(NodeBinding.value(clipHeight, (self, height) -> self.size(Size.fill(1), Size.fixed(height))));
-                page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(behind).add(clipped));
+                after = SceneButton.create(page, () -> "后续动作", page.theme(), () -> {});
+                page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(behind).add(clipped).add(after));
             });
         }
         SceneNode trigger() { return select.children().get(0); }

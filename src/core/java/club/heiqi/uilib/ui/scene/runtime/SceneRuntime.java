@@ -59,6 +59,7 @@ public final class SceneRuntime implements AutoCloseable {
     private final SceneTooltipCoordinator tooltips;
     private final ScenePointerRouter pointerRouter;
     private final SceneFocusRouter focusRouter;
+    private final club.heiqi.uilib.ui.reactive.Signal<SceneNode> keyboardPressed;
     private final ReactiveDomain domain;
     private final SceneTransitions transitions = new SceneTransitions();
     private final SceneLayoutMotions layoutMotions = new SceneLayoutMotions(this);
@@ -153,6 +154,7 @@ public final class SceneRuntime implements AutoCloseable {
         this.domain = domain;
         domain.checkAccess();
         interactionRevision = domain.signal(0L);
+        keyboardPressed = domain.signal(null);
         motionPolicy = domain.signal(club.heiqi.uilib.ui.scene.motion.MotionPolicy.NORMAL);
         viewportWidth = domain.signal(0);
         viewportHeight = domain.signal(0);
@@ -532,6 +534,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 原失败边界只通知本批仍同挂载的参与者；错误清理不能把取消变成全局重置。 */
     public void cancelInputFrame(InputFrame frame) {
         domain.checkWrite();
+        focusRouter.cancelScopeExit();
         if (frame.cancelled) return;
         frame.cancelled = true;
         Throwable failure = null;
@@ -1000,6 +1003,43 @@ public final class SceneRuntime implements AutoCloseable {
         return shortcuts.bind(anchor, scope, entries);
     }
 
+    /** Space按压的呈现事实；与指针共同消费，不拥有第二焦点或原生键状态。 */
+    public ReadableSignal<SceneNode> keyboardPressedTarget() { return keyboardPressed::get; }
+    public boolean pressed(SceneNode node) {
+        domain.checkAccess(); return pointerRouter.pressed(node) || keyboardPressed.get() == node;
+    }
+
+    /** 未被编辑或命令消费的Space，复用原有限许可追踪实际焦点与范围。 */
+    public SceneKeyContinuation beginKeyPress(MountHandle target, SceneFocusRouter.RangeHandle range) {
+        domain.checkWrite(); command();
+        if (target == null || !target.active() || !range.current() || focusRouter.focused().get() != target.node()
+                || !interactive(target.node()) || target.node().clickAction() == null) return null;
+        focusRouter.keyboardInput();
+        Owner scope = owner.child();
+        scope.own(() -> {
+            if (keyboardPressed.get() == target.node()) { keyboardPressed.set(null); invalidatePaint(); }
+        });
+        club.heiqi.uilib.ui.scene.input.SceneEditContinuation action = new club.heiqi.uilib.ui.scene.input.SceneEditContinuation() {
+            public boolean accepts(SceneNode actual) { return actual == target.node() && actual.clickAction() != null; }
+            public boolean repeat(SceneEditEvent event) { return true; }
+        };
+        SceneKeyContinuation held = null;
+        try {
+            held = new SceneKeyContinuation(this, target.node(), range, action, SceneEditEvent.Command.ACTIVATE_ONLY, scope, () -> {
+                // 结束按压的Signal也可改变焦点，激活前再次核验原联系。
+                if (target.active() && range.current() && focusRouter.focused().get() == target.node()
+                        && interactive(target.node())) dispatchClick(target.node());
+            });
+            keyContinuations.add(held); held.refresh();
+            keyboardPressed.set(target.node()); invalidatePaint();
+            return held;
+        } catch (RuntimeException | Error failure) {
+            try { if (held != null) held.close(); else scope.dispose(); }
+            catch (RuntimeException | Error cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
+            throw failure;
+        }
+    }
+
     /** KEY首段只走既有编辑/ESC链；应用命令等待本事件Effect成功结算。 */
     public enum KeyResult { IGNORED, EDITED, RESERVED }
 
@@ -1008,6 +1048,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** KEY首段可取得实际消费方许可；旧入口不登记续段。 */
     public KeyResult dispatchKeyEdit(SceneKeyEvent event, java.util.function.Consumer<SceneKeyContinuation> continuation) {
         domain.checkWrite(); command();
+        if (event.phase != SceneKeyEvent.Phase.DOWN) return KeyResult.RESERVED;
         if (event.key == SceneKey.ESCAPE)
             return event.repeat || dispatchEscape() ? KeyResult.RESERVED : KeyResult.IGNORED;
         if ((event.applicationChord() || SceneKeyInterpreter.navigation(event) != null)
@@ -1019,7 +1060,12 @@ public final class SceneRuntime implements AutoCloseable {
     /** 调用者已准备Effect后的当前范围；命令动作受同一routing写入保护。 */
     public boolean dispatchKeyCommand(SceneKeyEvent event) {
         domain.checkWrite(); command();
+        if (event.phase != SceneKeyEvent.Phase.DOWN) return true;
         if (composition.reservesShortcut()) return true;
+        SceneNode focused = focusRouter.focused().get();
+        if (event.textKey() && focused != null && focused.control() != null
+                && (focused.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget
+                    || domain.readOnly(() -> focused.control().acceptsTextInput(focused)))) return true;
         boolean previous = routing; routing = true;
         try { return shortcuts.dispatch(event); }
         finally { routing = previous; }
@@ -1061,7 +1107,9 @@ public final class SceneRuntime implements AutoCloseable {
         try {
             boolean consumed = node.control() != null && dispatchConsumerEdit(node, focused, event, false, range, continuation);
             // 保留原焦点而非重新选出的目标；无control只是未消费，普通可聚焦Node仍可由所属行为接续。
-            if (!consumed && event.compositionSource == null && event.command != null && focused != null
+            boolean fallbackInput = event.command != null || !event.compositionEvent && !event.composing
+                    && event.text != null && !event.text.isEmpty() && !composition.reservesShortcut();
+            if (!consumed && event.compositionSource == null && fallbackInput && focused != null
                     && focusRouter.focused().get() == focused && interactive(focused)) {
                 for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
                     if (interactive(ancestor) && ancestor.control() != null
@@ -1147,7 +1195,7 @@ public final class SceneRuntime implements AutoCloseable {
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,
             SceneGeometryView geometry) {
         command();
-        if (!interactive(node) || node.control() == null) return;
+        if (!pointerRouter.captureInteractive(node) || node.control() == null) return;
         routing = true;
         try {
             node.control().pointer(node, event, geometry);

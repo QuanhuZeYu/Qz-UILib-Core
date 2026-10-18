@@ -19,6 +19,7 @@ final class SceneControlMotion {
                 runtime.interactionRevision().get();
                 runtime.pointerRouter().hoverTarget().get();
                 runtime.pointerRouter().pressedTarget().get();
+                runtime.keyboardPressedTarget().get();
                 return target.applyAsInt(self);
             }, () -> self.feedbackMotion() == null ? spec.get() : self.feedbackMotion(),
                     channel, (n, value) -> { color.set(value); runtime.invalidatePaint(); }).activate(runtime, self, owner);
@@ -32,7 +33,7 @@ final class SceneControlMotion {
     static int target(SceneNode node, SceneTheme theme) {
         if (!enabled(node)) return theme.disabled;
         if (node.runtime() == null) return theme.button;
-        if (node.runtime().pointerRouter().pressedTarget().get() == node) return theme.pressed;
+        if (node.runtime().pressed(node)) return theme.pressed;
         return node.runtime().pointerRouter().hoverTarget().get() == node ? theme.hover : theme.button;
     }
 }

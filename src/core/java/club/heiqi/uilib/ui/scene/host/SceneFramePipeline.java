@@ -58,12 +58,12 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private static final class KeySequence {
-        enum Use { RESERVED, EDIT, NAVIGATION }
+        enum Use { RESERVED, EDIT, NAVIGATION, PRESS }
         final SceneFocusRouter.RangeHandle range;
-        final MountHandle editing;
+        MountHandle editing;
         Use use = Use.RESERVED;
         club.heiqi.uilib.ui.scene.runtime.SceneKeyContinuation continuation;
-        void close() { if (continuation != null) { continuation.close(); continuation = null; } }
+        void close() { use = Use.RESERVED; if (continuation != null) { continuation.close(); continuation = null; } }
         KeySequence(SceneFocusRouter.RangeHandle range, MountHandle editing) { this.range = range; this.editing = editing; }
     }
 
@@ -320,6 +320,16 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private void routeKey(QueuedInput event) {
+        if (event.key.phase == SceneKeyEvent.Phase.UP) {
+            event.consumed = true;
+            KeySequence sequence = keySequences.remove(event.key.key);
+            if (sequence == null) return;
+            try {
+                if (sequence.use == KeySequence.Use.PRESS && sequence.range.current() && sequence.continuation != null)
+                    sequence.continuation.release();
+            } finally { sequence.close(); }
+            return;
+        }
         if (event.key.repeat) {
             KeySequence sequence = keySequences.get(event.key.key);
             event.keySequence = sequence;
@@ -327,17 +337,33 @@ public final class SceneFramePipeline implements AutoCloseable {
             if (sequence == null) return;
             if (!sequence.range.current()) { sequence.close(); return; }
             if (sequence.continuation != null) { sequence.continuation.repeat(event.key); return; }
-            if (sequence.use == KeySequence.Use.NAVIGATION) { event.consumed = false; return; }
+            if (sequence.use == KeySequence.Use.NAVIGATION) {
+                SceneNavigationEvent direction = SceneKeyInterpreter.navigation(event.key);
+                if (direction != null && direction.directional()) {
+                    // 空间方向每次先问当次目标；Tab仍延续原逻辑导航，不转为INSERT_TAB。
+                    club.heiqi.uilib.ui.scene.node.SceneNode focused = runtime.focusRouter().focused().get();
+                    SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key, held -> sequence.continuation = held);
+                    if (result != SceneRuntime.KeyResult.IGNORED) {
+                        if (result == SceneRuntime.KeyResult.EDITED) {
+                            sequence.use = KeySequence.Use.EDIT;
+                            sequence.editing = focused == null ? null : runtime.captureMount(focused);
+                        }
+                        return;
+                    }
+                }
+                event.consumed = false; return;
+            }
             if (sequence.use != KeySequence.Use.EDIT || sequence.editing == null || !sequence.editing.active()
                     || runtime.focusRouter().focused().get() != sequence.editing.node()) return;
             // 编辑续段不再查询应用绑定，也不因当前控件未消费而转为导航或宿主动作。
             runtime.dispatchKeyEdit(event.key);
             return;
         }
+        KeySequence previous = keySequences.remove(event.key.key);
+        if (previous != null) previous.close();
         club.heiqi.uilib.ui.scene.node.SceneNode focused = runtime.focusRouter().focused().get();
         KeySequence sequence = new KeySequence(runtime.focusRouter().captureRange(), focused == null ? null : runtime.captureMount(focused));
-        KeySequence previous = keySequences.put(event.key.key, sequence);
-        if (previous != null) previous.close();
+        keySequences.put(event.key.key, sequence);
         event.keySequence = sequence;
         SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key, held -> sequence.continuation = held);
         event.consumed = result != SceneRuntime.KeyResult.IGNORED;
@@ -361,6 +387,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                     return;
                 }
                 if (runtime.dispatchKeyCommand(event.key)) return;
+                if (event.key.plainSpace()) {
+                    event.keySequence.use = KeySequence.Use.PRESS;
+                    event.keySequence.continuation = runtime.beginKeyPress(event.keySequence.editing, event.keySequence.range);
+                    return;
+                }
                 SceneNavigationEvent navigation = SceneKeyInterpreter.navigation(event.key);
                 if (navigation != null) { event.keySequence.use = KeySequence.Use.NAVIGATION; navigate(navigation); }
                 else if (event.followUp.host != null) event.followUp.host.run();

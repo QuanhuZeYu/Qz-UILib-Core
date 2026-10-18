@@ -27,6 +27,7 @@ final class SceneTextControl implements SceneControl {
     private final SceneTextPolicy policy;
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
+    private boolean trailingIcon;
     private SceneAppearance.Surface modernSurface;
     private final SceneControlMotion motion = new SceneControlMotion();
     private TextLayout source, presented;
@@ -74,6 +75,13 @@ final class SceneTextControl implements SceneControl {
                     self -> control.modernSurface == null ? SceneControlMotion.target(self, theme.get())
                             : control.modernSurface.fill(self));
         }
+        return node;
+    }
+
+    static SceneNode createTrailing(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
+            SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon) {
+        SceneNode node = create(text, theme, policy, true, Objects.requireNonNull(icon, "尾部图标"));
+        ((SceneTextControl) node.control()).trailingIcon = true;
         return node;
     }
 
@@ -143,7 +151,7 @@ final class SceneTextControl implements SceneControl {
         else if (button) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
-            boolean pressed = enabled && runtime != null && runtime.pointerRouter().pressed(node);
+            boolean pressed = enabled && runtime != null && runtime.pressed(node);
             int color =
                     !enabled
                             ? style.disabled
@@ -154,11 +162,14 @@ final class SceneTextControl implements SceneControl {
         LayoutBox inner = inner(entry.box, node.padding());
         if(leadingIcon!=null){
             int side=Math.min(iconSize(node),Math.min(inner.width,inner.height));
-            SceneIconGlyph.paint(Objects.requireNonNull(leadingIcon.get(),"按钮图标"),
-                    new LayoutBox(inner.x,inner.y+Math.max(0,(inner.height-side)/2),side,side),target,entry.clip,
+            int x = trailingIcon ? inner.x + inner.width - side : inner.x;
+            SceneIconButton.Symbol icon = leadingIcon.get();
+            // 已配置的图标位保留预算；null表示当前没有标记，适用于选择器未选项。
+            if (icon != null) SceneIconGlyph.paint(icon,
+                    new LayoutBox(x,inner.y+Math.max(0,(inner.height-side)/2),side,side),target,entry.clip,
                     enabled?node.style().color:style.disabledText);
             int inset=iconSpace(node);
-            inner=new LayoutBox(inner.x+inset,inner.y,Math.max(0,inner.width-inset),inner.height);
+            inner=new LayoutBox(trailingIcon ? inner.x : inner.x+inset,inner.y,Math.max(0,inner.width-inset),inner.height);
         }
         LayoutBox clip =
                 policy == SceneTextPolicy.OVERFLOW
