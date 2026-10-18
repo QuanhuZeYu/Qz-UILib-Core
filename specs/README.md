@@ -13,6 +13,7 @@
 | 内部协作者如何交接 | [内部协作职责](<scene/2026-10-14-uilib-internal-responsibilities-spec.md>) | 挂载、帧协调、布局、绘制与编辑协作者的职责 |
 | 状态、布局和手势如何连续运动 | [声明式弹性 UI 动效](<scene/2026-10-17-uilib-motion-spec.md>) | 通用策略、统一时间、布局呈现、显式存在性与手势释放 |
 | 普通容器如何排列 | [常规布局](<scene/2026-10-13-uilib-layout-spec.md>) | 横纵排列、响应网格与自定义容器接入 |
+| 长交互集合如何按需准备与导航 | [交互虚拟集合](<scene/2026-10-18-uilib-virtual-collection-spec.md>) | 稳定业务键、有限行视图、可变行高、屏外可达及共享选择基础 |
 | 增删、重排、折叠和移动是否延续节点 | [动态结构](<scene/uilib-dynamic-structure-spec.md>) | 稳定对应关系、拥有、退出及同页明确移动 |
 | 浮层如何锚定、裁剪和参与输入 | [所属层与输入范围](<scene/2026-10-13-uilib-layer-input-spec.md>) | 来源空间、呈现序、层边界与有效输入 |
 | 草稿如何编辑、提交及隔离旧输入 | [编辑状态与输入法](<scene/2026-10-07-uilib-editing-spec.md>) | 单多行、历史、提交、编辑目标及组字联系 |
