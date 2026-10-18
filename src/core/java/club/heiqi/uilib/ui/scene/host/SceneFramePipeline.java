@@ -72,6 +72,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         final SceneEditEvent edit;
         final SceneKeyEvent key;
         KeySequence keySequence;
+        SceneFocusRouter.RangeHandle directionRange;
         final FollowUp followUp;
         boolean consumed;
 
@@ -89,7 +90,9 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
 
         static QueuedInput navigation(SceneNavigationEvent event) {
-            return new QueuedInput(InputKind.NAVIGATION, null, Objects.requireNonNull(event, "event"), null, null, null);
+            Objects.requireNonNull(event, "event");
+            return new QueuedInput(InputKind.NAVIGATION, null, event, null,
+                    event.directional() ? FollowUp.navigation(event) : null, null);
         }
 
         static QueuedInput edit(SceneEditEvent event, FollowUp followUp) {
@@ -290,13 +293,18 @@ public final class SceneFramePipeline implements AutoCloseable {
                 routeKey(event);
                 break;
             case EDIT:
+                if (event.followUp != null && event.followUp.navigation != null && event.followUp.navigation.directional())
+                    event.directionRange = runtime.focusRouter().captureRange();
                 event.consumed = runtime.dispatchEdit(event.edit);
                 break;
             case POINTER:
                 router.route(event.pointer, geometry);
                 break;
             case NAVIGATION:
-                navigate(event.navigation);
+                if (event.navigation.directional()) {
+                    event.directionRange = runtime.focusRouter().captureRange();
+                    event.consumed = runtime.dispatchKeyEdit(SceneKeyInterpreter.direction(event.navigation)) != SceneRuntime.KeyResult.IGNORED;
+                } else navigate(event.navigation);
                 break;
             case ESCAPE:
                 event.consumed = runtime.dispatchEscape();
@@ -350,6 +358,10 @@ public final class SceneFramePipeline implements AutoCloseable {
                 event.followUp.host.run();
                 break;
             case NAVIGATION:
+                if (event.directionRange != null) {
+                    prepare(batch.frameNanos);
+                    if (!event.directionRange.current() || runtime.dispatchKeyCommand(SceneKeyInterpreter.direction(event.followUp.navigation))) return;
+                }
                 navigate(event.followUp.navigation);
                 break;
         }
@@ -360,6 +372,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             if (!runtime.dispatchEdit(SceneEditEvent.command(SceneEditEvent.Command.ACTIVATE_ONLY, false, null)))
                 runtime.focusRouter().activate();
         }
+        else if (event.directional()) runtime.focusRouter().navigate(event);
         else runtime.focusRouter().navigate(event == SceneNavigationEvent.PREVIOUS);
     }
 

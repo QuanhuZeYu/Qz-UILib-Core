@@ -141,6 +141,7 @@ public final class SceneRuntime implements AutoCloseable {
     // 只引用布局发布的唯一几何；声明结算与来源事实未齐时不推进范围转换。
     private SceneGeometryView inputGeometry;
     private boolean inputGeometryReady;
+    private long inputGeometryRevision = -1;
     private long layerPresenceRevision = -1, layerValidationRevision = -1;
     private boolean layersDeclared;
     private SceneNode logicalModal;
@@ -883,6 +884,11 @@ public final class SceneRuntime implements AutoCloseable {
         return layersDeclared;
     }
 
+    /** 方向游标只读取已完成排列的当前代几何，不以挂载或旧帧当作准备完成。 */
+    SceneGeometryView navigationGeometry() {
+        return inputGeometryReady && inputGeometryRevision == geometryRevision ? inputGeometry : null;
+    }
+
     boolean scopeFactsReady() {
         return !hasLayers() || inputGeometryReady;
     }
@@ -893,6 +899,7 @@ public final class SceneRuntime implements AutoCloseable {
         boolean changed = inputGeometry != geometry || !inputGeometryReady;
         inputGeometry = Objects.requireNonNull(geometry, "geometry");
         inputGeometryReady = true;
+        inputGeometryRevision = geometryRevision;
         if (changed) focusRouter.rangeChanged();
         focusRouter.prepareScopes();
         // 所属层资格必须消费本批输入几何；布局刚返回时尚无首帧层事实。
@@ -969,7 +976,15 @@ public final class SceneRuntime implements AutoCloseable {
         return node.modal() ? node : null;
     }
 
-    /** 普通编辑按当前焦点；真实组字只投向 BEGIN 建立的仍有效联系。 */
+    /** 复合控件准备同一声明子树的逻辑目标；边界不循环，游标由调用方单次导航拥有。 */
+    public club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor beginFocusTraversal(
+            SceneNode boundary, SceneNode from, boolean backward) {
+        domain.checkWrite(); checkAlive();
+        if (Objects.requireNonNull(boundary, "boundary").runtime() != this)
+            throw new IllegalArgumentException("焦点子树必须已挂载到当前runtime");
+        return new SceneLogicalNavigation(this, java.util.Collections.singletonList(boundary), from, backward, false);
+    }
+
     public AutoCloseable bindShortcuts(SceneNode anchor, SceneShortcut.Scope scope,
             SceneShortcut... entries) {
         domain.checkWrite(); checkAlive();
@@ -983,7 +998,8 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkWrite(); command();
         if (event.key == SceneKey.ESCAPE)
             return event.repeat || dispatchEscape() ? KeyResult.RESERVED : KeyResult.IGNORED;
-        if (event.applicationChord() && composition.reservesShortcut()) return KeyResult.RESERVED;
+        if ((event.applicationChord() || SceneKeyInterpreter.navigation(event) != null)
+                && composition.reservesShortcut()) return KeyResult.RESERVED;
         SceneEditEvent edit = SceneKeyInterpreter.edit(event);
         return edit != null && dispatchEdit(edit) ? KeyResult.EDITED : KeyResult.IGNORED;
     }

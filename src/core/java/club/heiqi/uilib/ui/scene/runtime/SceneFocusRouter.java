@@ -37,9 +37,9 @@ public final class SceneFocusRouter {
     }
     private final java.util.ArrayDeque<FocusLoss> pendingFocusLosses = new java.util.ArrayDeque<>();
     private boolean closed, rangesDirty = true;
-    private SceneLogicalNavigation navigation;
+    private club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor navigation;
     private Range navigationRange;
-    private boolean navigationReveal;
+    private boolean navigationReveal, navigationDirectional;
 
     SceneFocusRouter(SceneRuntime runtime) {
         this.runtime = runtime;
@@ -135,6 +135,25 @@ public final class SceneFocusRouter {
         return navigation != null || owner != null;
     }
 
+    /** 四方向以当前正式几何选目标，边缘保持焦点；无焦点仍沿现有默认逻辑入口。 */
+    public boolean navigate(club.heiqi.uilib.ui.scene.input.SceneNavigationEvent direction) {
+        runtime.domain().checkWrite();
+        if (!java.util.Objects.requireNonNull(direction, "direction").directional())
+            throw new IllegalArgumentException("需要四方向导航");
+        keyboardInput();
+        if (closed) return false;
+        revalidate();
+        MountHandle from = owner;
+        cancelPending(); navigationRange = top();
+        List<SceneNode> roots = navigationRange.modal == null ? runtime.roots()
+                : java.util.Collections.singletonList(navigationRange.modal.node());
+        navigation = from == null ? new SceneLogicalNavigation(runtime, roots, null, false)
+                : new SceneSpatialNavigation(runtime, roots, from, direction);
+        navigationReveal = navigationDirectional = true;
+        prepareNavigation();
+        return navigation != null || owner != null;
+    }
+
     private void beginNavigation(SceneNode from, boolean backward, boolean reveal) {
         cancelNavigation();
         navigationRange = top();
@@ -145,7 +164,7 @@ public final class SceneFocusRouter {
     }
 
     private void prepareNavigation() {
-        SceneLogicalNavigation pending = navigation;
+        club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor pending = navigation;
         if (pending == null) return;
         if (navigationRange != top()) { cancelNavigation(); return; }
         club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Result result = pending.prepare();
@@ -154,16 +173,17 @@ public final class SceneFocusRouter {
         if (result.status == club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Result.Status.CANCELLED) {
             cancelNavigation(); return;
         }
-        boolean reveal = navigationReveal;
+        boolean reveal = navigationReveal, directional = navigationDirectional;
         MountHandle next = result.target == null ? null : candidate(top(), result.target);
         cancelNavigation();
+        if (directional && next == null) return;
         setOwner(next);
         if (reveal) pendingReveal = owner;
     }
 
     private void cancelNavigation() {
-        SceneLogicalNavigation pending = navigation;
-        navigation = null; navigationRange = null; navigationReveal = false;
+        club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor pending = navigation;
+        navigation = null; navigationRange = null; navigationReveal = navigationDirectional = false;
         if (pending != null) pending.close();
     }
 

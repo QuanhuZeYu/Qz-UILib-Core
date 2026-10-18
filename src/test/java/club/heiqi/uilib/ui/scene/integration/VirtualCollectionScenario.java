@@ -62,12 +62,13 @@ public final class VirtualCollectionScenario extends TestApplication {
         int created, mounted, released, clicks = -1;
 
         Page(int count, int firstFocusable, boolean header) { this(count, firstFocusable, header, false); }
-        Page(int count, int firstFocusable, boolean header, boolean editors) {
+        Page(int count, int firstFocusable, boolean header, boolean editors) { this(count, firstFocusable, header, editors, false); }
+        Page(int count, int firstFocusable, boolean header, boolean editors, boolean smallAction) {
             host.width = 200; host.height = 100;
             session = ScenePageSession.open(domain, host, host, page -> {
                 context = page;
                 List<Item> values = new ArrayList<>();
-                for (int i = 0; i < count; i++) values.add(new Item(i, i % 4 == 0 ? 40 : 20));
+                for (int i = 0; i < count; i++) values.add(new Item(i, smallAction ? 60 : i % 4 == 0 ? 40 : 20));
                 items = domain.signal(values);
                 list = SceneVirtualList.create(page, items, item -> item.id, value -> {
                     created++;
@@ -89,6 +90,7 @@ public final class VirtualCollectionScenario extends TestApplication {
                     } else a.bind(NodeBinding.value(value, (node, next) -> node.text(next.caption)));
                     SceneNode b = new SceneNode().size(Size.fixed(30), Size.fill(1)).text("B")
                             .focusable(current.id >= firstFocusable).clickFocus(true).onClick(() -> clicks = -value.get().id - 2);
+                    if (smallAction) { a.size(Size.fill(1), Size.fixed(10)); b.focusable(false); }
                     row.add(a).add(b); nodes.put(current.id, new SceneNode[] {row, a, b});
                     return row;
                 }, () -> new SceneVirtualList.Options().estimatedRowHeight(20).overscan(0));
@@ -137,6 +139,77 @@ public final class VirtualCollectionScenario extends TestApplication {
         scenario("独立资格投影全隐藏与恢复保持有限行", this::membershipProjection);
         scenario("显式跳末尾在估算校正后显露最后一行", this::jumpToEnd);
         scenario("末行隐藏也结束末端意图且追加不追尾", this::hiddenEnd);
+        scenario("方向跨屏按相邻逻辑行和原横向位置到达", this::directionalRows);
+        scenario("空方向复合入口继续页脚而不截断", this::emptyDirectional);
+        scenario("方向跨行后同批文字进入实际新草稿", this::directionalEditing);
+        scenario("行内小动作显露后结束请求且不追随用户滚动", this::smallActionFocus);
+        scenario("无合法焦点的显式行请求结束有限准备", this::noFocusableRequest);
+    }
+
+    private void directionalRows() {
+        Page page = new Page(1000, 0, true);
+        page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+        require(page.focus() == page.nodes.get(0)[1], "外部向下没有进入当前可见首行");
+        page.session.navigation(SceneNavigationEvent.RIGHT); page.session.frame();
+        require(page.focus() == page.nodes.get(0)[2], "同行Right错误换行或离开集合");
+        for (int i = 1; i <= 14; i++) {
+            page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+            require(page.focus() == page.nodes.get(i)[2], "Down跨行未保留原横向位置: " + i);
+            require(page.mounted - page.released < 12, "方向准备保留了累计行树");
+        }
+        SceneGeometryView.Entry placed = page.entry(page.focus());
+        require(placed.box.y >= placed.clip.y && (long)placed.box.y + placed.box.height <= (long)placed.clip.y + placed.clip.height,
+                "屏外方向目标未在同批显露");
+        page.session.navigation(SceneNavigationEvent.UP); page.session.frame();
+        require(page.focus() == page.nodes.get(13)[2], "向上没有返回相邻逻辑行");
+        page.domain.execute(() -> page.list.focus(999)); page.session.frame();
+        SceneGeometryView.Entry last = page.entry(page.focus());
+        require(last.box.y >= last.clip.y && (long)last.box.y + last.box.height <= (long)last.clip.y + last.clip.height,
+                "显式末行准备在邻行校正后仍落于视口外");
+        page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+
+        require(page.focus() == page.after, "逻辑末行边界没有衔接同范围页脚");
+        page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+        require(page.focus() == page.after, "方向页脚边缘不应循环");
+    }
+
+    private void smallActionFocus() {
+        Page page = new Page(1000, 0, true, false, true);
+        page.domain.execute(() -> page.list.focus(20)); page.session.frame();
+        SceneGeometryView.Entry target = page.entry(page.nodes.get(20)[1]);
+        require(page.focus() == target.node && target.box.y >= target.clip.y
+                && (long)target.box.y + target.box.height <= (long)target.clip.y + target.clip.height, "行首小按钮未显露");
+        page.scroll(0);
+        require(page.entry(page.list.node()).scrollOffset == 0, "focus请求已显露小按钮后仍用整行条件追随用户滚动");
+    }
+
+    private void noFocusableRequest() {
+        Page page = new Page(1000, 2000, true);
+        page.domain.execute(() -> page.list.focus(20)); page.session.frame();
+        require(page.focus() == page.before, "无合法目标的focus请求创建了备用焦点");
+        require(page.nodes.get(20)[0].runtime() == null, "没有可聚焦项的行被未结束请求永久保留");
+    }
+
+    private void directionalEditing() {
+        Page page = new Page(1000, 0, true, true);
+        page.session.navigation(SceneNavigationEvent.DOWN);
+        page.session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text("首行")); page.session.frame();
+        require(page.read(() -> page.drafts.get(0).snapshot().get().text).equals("首行"), "方向后文字未进入首行");
+        page.session.navigation(SceneNavigationEvent.DOWN);
+        page.session.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.text("次行")); page.session.frame();
+        require(page.focus() == page.nodes.get(1)[1] && page.read(() -> page.drafts.get(1).snapshot().get().text).equals("次行"),
+                "跨行方向后的同批文字进入旧行");
+        require(page.read(() -> page.drafts.get(0).snapshot().get().text).equals("首行"), "跨行改变了旧草稿");
+    }
+
+    private void emptyDirectional() {
+        Page page = new Page(0, 0, true);
+        page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+        require(page.focus() == page.after, "空集合END截断了页脚几何候选");
+        Page noTargets = new Page(8, 20, true);
+        noTargets.session.navigation(SceneNavigationEvent.DOWN); noTargets.session.frame();
+        require(noTargets.focus() == noTargets.after, "全部无合法目标的集合截断页脚");
+        require(noTargets.mounted - noTargets.released < 12, "无目标方向搜索保留了无用行树");
     }
 
     private void bounded() {

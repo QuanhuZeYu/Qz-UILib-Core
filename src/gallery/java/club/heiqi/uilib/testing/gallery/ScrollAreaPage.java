@@ -34,7 +34,7 @@ public final class ScrollAreaPage {
         examples.add(dynamic(context, theme));
         examples.add(hidden(context, theme));
         content.add(examples);
-        content.add(GalleryStyle.label(context, () -> "拖动滑块可移出轨道后释放；Tab 可以到达内容按钮，聚焦滚动条后可用方向键、PageUp / PageDown、Home / End。", theme, 14, true));
+        content.add(GalleryStyle.label(context, () -> "Tab 按顺序到达内容按钮，方向键按位置移动；聚焦滚动条后，方向键、PageUp / PageDown、Home / End 调整滚动位置。", theme, 14, true));
         return SceneScrollArea.create(context, content, () -> new Options(), theme).node().size(Size.fill(1), Size.fill(1));
     }
 
@@ -67,7 +67,7 @@ public final class ScrollAreaPage {
 
     private static SceneNode both(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         Signal<String> selected = context.domain().signal("从左上角出发，滚动到右下角");
-        SceneNode card = section(context, theme, "双轴与 padding", "画布保留内边距，滚动区自身也有外部留白；拖动两条滑块查看各个角落。");
+        SceneNode card = section(context, theme, "双轴与 padding", "聚焦任务按钮后，用方向键浏览网格，按 Enter 打开任务；屏外目标会随焦点显露。");
         SceneNode canvas = new SceneNode().size(Size.natural(), Size.natural()).padding(24).gap(16);
         String[] rows = {"准备", "进行中", "已完成"};
         for (String row : rows) {

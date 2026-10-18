@@ -44,9 +44,29 @@ public final class SceneKeyInterpreter {
         return command == null ? null : SceneEditEvent.command(command, event.shift, event.clipboard);
     }
 
+    /** 设备提供中性方向，沿相同编辑语义；不建立键盘物理段或伪造宿主事实。 */
+    public static SceneKeyEvent direction(SceneNavigationEvent direction) {
+        switch (direction) {
+            case LEFT: return new SceneKeyEvent(SceneKey.LEFT, false, false, false, false, false, null);
+            case RIGHT: return new SceneKeyEvent(SceneKey.RIGHT, false, false, false, false, false, null);
+            case UP: return new SceneKeyEvent(SceneKey.UP, false, false, false, false, false, null);
+            case DOWN: return new SceneKeyEvent(SceneKey.DOWN, false, false, false, false, false, null);
+            default: throw new IllegalArgumentException("需要四方向意图");
+        }
+    }
+
     public static SceneNavigationEvent navigation(SceneKeyEvent event) {
         if (event.alt || event.extra) return null;
         if (event.key == SceneKey.TAB) return event.shift ? SceneNavigationEvent.PREVIOUS : SceneNavigationEvent.NEXT;
+        if (!event.primary) {
+            switch (event.key) {
+                case LEFT: return SceneNavigationEvent.LEFT;
+                case RIGHT: return SceneNavigationEvent.RIGHT;
+                case UP: return SceneNavigationEvent.UP;
+                case DOWN: return SceneNavigationEvent.DOWN;
+                default: break;
+            }
+        }
         if (!event.repeat && (event.key == SceneKey.ENTER || event.key == SceneKey.KEYPAD_ENTER || event.key == SceneKey.SPACE)) return SceneNavigationEvent.ACTIVATE;
         return null;
     }

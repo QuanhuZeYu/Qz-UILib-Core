@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** 唯一路由拥有的一次逻辑遍历；仅暂存现存树的普通目标及复合边界。 */
-final class SceneLogicalNavigation implements AutoCloseable {
+final class SceneLogicalNavigation implements SceneFocusTraversal.Cursor {
     private static final class Target {
         final SceneNode node;
         final SceneFocusTraversal traversal;
@@ -14,7 +14,7 @@ final class SceneLogicalNavigation implements AutoCloseable {
     }
     private final SceneRuntime runtime;
     private final List<Target> targets = new ArrayList<>();
-    private final boolean backward;
+    private final boolean backward, cyclic;
     private final int limit;
     private int index, visited;
     private SceneNode from;
@@ -22,7 +22,11 @@ final class SceneLogicalNavigation implements AutoCloseable {
     private SceneNode boundary;
 
     SceneLogicalNavigation(SceneRuntime runtime, List<SceneNode> roots, SceneNode current, boolean backward) {
-        this.runtime = runtime; this.backward = backward;
+        this(runtime, roots, current, backward, true);
+    }
+
+    SceneLogicalNavigation(SceneRuntime runtime, List<SceneNode> roots, SceneNode current, boolean backward, boolean cyclic) {
+        this.runtime = runtime; this.backward = backward; this.cyclic = cyclic;
         for (SceneNode root : roots) collect(root);
         int currentIndex = -1;
         boolean inside = false;
@@ -52,8 +56,8 @@ final class SceneLogicalNavigation implements AutoCloseable {
         return false;
     }
 
-    SceneFocusTraversal.Result prepare() {
-        while (visited < limit && !targets.isEmpty()) {
+    @Override public SceneFocusTraversal.Result prepare() {
+        while (visited < limit && index >= 0 && index < targets.size()) {
             Target target = targets.get(index);
             if (target.node.runtime() != runtime || !runtime.interactive(target.node)) { advance(); continue; }
             if (target.traversal == null) {
@@ -79,7 +83,7 @@ final class SceneLogicalNavigation implements AutoCloseable {
     }
 
     private int wrap(int value) {
-        if (targets.isEmpty()) return 0;
+        if (!cyclic || targets.isEmpty()) return value;
         return (value + targets.size()) % targets.size();
     }
 
