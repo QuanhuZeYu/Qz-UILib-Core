@@ -64,4 +64,7 @@ public final class SceneVirtualList<T, K> {
 
     /** 准备该行并请求其首个合法焦点，最终选择仍归唯一焦点路由。 */
     public boolean focus(K key) { return controller.request(key, true); }
+
+    /** 所属复合视图只选自己的主目标，不改变公开focus的首合法后代语义。 */
+    boolean focus(K key, Function<SceneNode, SceneNode> target) { return controller.request(key, true, target); }
 }

@@ -67,6 +67,7 @@ final class SceneIconGlyph {
             case CLOSE:p.line(6,6,18,18);p.line(18,6,6,18);break;
             case CHEVRON_LEFT:p.line(15,5,8,12);p.line(8,12,15,19);break;
             case CHEVRON_RIGHT:p.line(9,5,16,12);p.line(16,12,9,19);break;
+            case CHEVRON_DOWN:p.line(5,9,12,16);p.line(12,16,19,9);break;
             case INBOX:
                 p.polygon(false,3,5,21,5,21,20,3,20);p.line(3,14,8,14);p.line(8,14,10,17);
                 p.line(10,17,14,17);p.line(14,17,16,14);p.line(16,14,21,14);break;

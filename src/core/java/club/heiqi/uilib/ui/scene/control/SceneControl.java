@@ -180,6 +180,10 @@ public interface SceneControl {
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event,
             SceneGeometryView geometry) { return edit(node, event); }
 
+    /** 原目标与既有激活器未消费命令后，所属复合行为可接续；默认不参与，不接管组字来源。 */
+    default boolean editFallback(SceneNode node, SceneNode focused, club.heiqi.uilib.ui.scene.input.SceneEditEvent event,
+            SceneGeometryView geometry) { return false; }
+
     /** 只有需要DOWN定位的控件申请；普通按钮仍在UP聚焦。 */
     default boolean capturesPointer() {
         return false;

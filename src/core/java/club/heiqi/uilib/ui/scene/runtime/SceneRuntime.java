@@ -1017,12 +1017,12 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkWrite();
         command();
         composition.revalidate();
-        SceneNode node = focusRouter.focused().get();
+        SceneNode focused = focusRouter.focused().get(), node = focused;
         if (event.compositionSource != null) {
             node = composition.target(event, node);
             if (node == null) return true;
         } else node = editTarget(node, event);
-        return dispatchTargetEdit(node, event);
+        return dispatchTargetEdit(node, focused, event);
     }
 
     /** 普通命令可由复合控件接管；组字来源始终使用原联系，不遍历新的激活目标。 */
@@ -1037,13 +1037,23 @@ public final class SceneRuntime implements AutoCloseable {
         return focused;
     }
 
-    private boolean dispatchTargetEdit(SceneNode node, SceneEditEvent event) {
-        if (node == null || !interactive(node) || node.control() == null) return false;
-        focusRouter.keyboardInput();
+    private boolean dispatchTargetEdit(SceneNode node, SceneNode focused, SceneEditEvent event) {
+        if (node == null || !interactive(node)) return false;
+        if (node.control() != null) focusRouter.keyboardInput();
         boolean previous = routing;
         routing = true;
         try {
-            boolean consumed = node.control().edit(node, event, inputGeometry);
+            boolean consumed = node.control() != null && node.control().edit(node, event, inputGeometry);
+            // 保留原焦点而非重新选出的目标；无control只是未消费，普通可聚焦Node仍可由所属行为接续。
+            if (!consumed && event.compositionSource == null && event.command != null && focused != null
+                    && focusRouter.focused().get() == focused && interactive(focused)) {
+                for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
+                    if (interactive(ancestor) && ancestor.control() != null
+                            && ancestor.control().editFallback(ancestor, focused, event, inputGeometry)) { consumed = true; break; }
+                    if (focusRouter.focused().get() != focused || !interactive(focused)) break;
+                }
+            }
+            if (consumed && node.control() == null) focusRouter.keyboardInput();
             if (event.command == SceneEditEvent.Command.ESCAPE && consumed) composition.invalidate(null);
             return consumed;
         } finally {

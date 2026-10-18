@@ -66,6 +66,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private boolean anchorPending;
     private boolean focusRequest, requestIssued;
     private MountHandle requestTarget;
+    private Function<SceneNode, SceneNode> focusTarget;
     private club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.RangeHandle requestRange;
     private boolean dataChanged;
     private List<T> published;
@@ -270,7 +271,9 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             SceneGeometryView.Entry placed = row == null ? null : geometry.get(row.node);
             if (placed != null) {
                 if (!requestIssued) {
-                    SceneNode target = focusRequest ? firstFocusable(row.node) : row.node;
+                    SceneNode target = focusRequest ? focusTarget.apply(row.node) : row.node;
+                    if (focusRequest && target != null && (!target.focusable() || !contains(row.node, target)
+                            || target.runtime() != runtime || !runtime.interactive(target))) target = null;
                     if (target == null) { cancelRequest(); changed = true; }
                     else {
                         requestTarget = runtime.captureMount(target); requestIssued = true;
@@ -324,7 +327,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         pendingIntent = runtime.scrollIntentRevision(root); anchorPending = true;
     }
 
-    private void cancelRequest() { requested = null; requestRange = null; requestTarget = null; focusRequest = requestIssued = false; }
+    private void cancelRequest() { requested = null; requestRange = null; requestTarget = null; focusTarget = null; focusRequest = requestIssued = false; }
     private void cancelEnd() { endRequested = false; endRange = null; endTarget = null; }
 
     private SceneNode firstFocusable(SceneNode node) {
@@ -494,13 +497,16 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         } else cancelEnd();
     }
 
-    boolean request(K identity, boolean focus) {
+    boolean request(K identity, boolean focus) { return request(identity, focus, this::firstFocusable); }
+
+    boolean request(K identity, boolean focus, Function<SceneNode, SceneNode> focusTarget) {
         page.domain().checkWrite();
         Objects.requireNonNull(identity, "key");
         if (!active || !runtime.interactive(root) || !values.containsKey(identity)) return false;
         cancelEnd();
         requested = identity; requestRange = runtime.focusRouter().captureRange();
-        focusRequest = focus; requestIssued = false; requestTarget = null; viewRevision.set(++revision);
+        focusRequest = focus; this.focusTarget = Objects.requireNonNull(focusTarget, "焦点目标准备");
+        requestIssued = false; requestTarget = null; viewRevision.set(++revision);
         return true;
     }
 
