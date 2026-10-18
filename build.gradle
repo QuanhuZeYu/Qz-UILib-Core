@@ -1,0 +1,189 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+buildscript {
+    repositories { mavenCentral(); gradlePluginPortal() }
+    dependencies { classpath 'com.gradleup.shadow:shadow-gradle-plugin:9.2.2' }
+}
+plugins { id 'java-library'; id 'maven-publish' }
+apply plugin: 'com.gradleup.shadow'
+
+group = 'club.heiqi.uilib'
+version = providers.gradleProperty('uilibVersion').get()
+// 原RFG从此公共镜像取得ICU；保留相同坐标和缓存来源，仓库本身不引入MC依赖。
+repositories {
+    maven { url = uri('https://libraries.minecraft.net'); content { includeModule('com.ibm.icu', 'icu4j') } }
+    mavenCentral()
+}
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(21); withSourcesJar() }
+
+// 开发编译使用原始内容包；正式成品统一私有重定位，并保留全部动态资源。
+configurations { coreContent }
+dependencies {
+    coreContent 'com.ibm.icu:icu4j:76.1'
+    coreContent 'org.yaml:snakeyaml:2.4'
+    coreContent 'org.commonmark:commonmark:0.21.0'
+    coreContent 'org.commonmark:commonmark-ext-gfm-strikethrough:0.21.0'
+    coreContent 'org.commonmark:commonmark-ext-gfm-tables:0.21.0'
+    coreContent 'org.jsoup:jsoup:1.19.1'
+    coreContent 'org.nibor.autolink:autolink:0.10.0'
+}
+sourceSets {
+    main {
+        java.srcDirs = ['src/core/java']; resources.srcDirs = ['src/core/resources']
+        compileClasspath = configurations.coreContent
+        runtimeClasspath = output + compileClasspath
+    }
+    legacy {
+        java.srcDirs = ['src/core/java']; resources.srcDirs = ['src/core/resources']
+        compileClasspath = configurations.coreContent
+        runtimeClasspath = output + compileClasspath
+    }
+    gallery {
+        java.srcDirs = ['src/gallery/java']; resources.srcDirs = ['src/gallery/resources', 'src/mediaTest/resources']
+        compileClasspath = sourceSets.legacy.output
+        runtimeClasspath = output + compileClasspath
+    }
+    testSupport {
+        java.srcDirs = ['src/testSupport/java']
+        compileClasspath = files(); runtimeClasspath = output
+    }
+    testHost {
+        java.srcDirs = ['src/testHost/java']
+        compileClasspath = sourceSets.legacy.output; runtimeClasspath = output + compileClasspath
+    }
+    mediaCore {
+        java.srcDirs = ['src/mediaTest/java']
+        compileClasspath = sourceSets.legacy.output + sourceSets.testSupport.output
+        runtimeClasspath = output + compileClasspath
+    }
+    test {
+        compileClasspath = sourceSets.legacy.output + sourceSets.testSupport.output + sourceSets.gallery.output + configurations.coreContent
+        runtimeClasspath = output + compileClasspath
+    }
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'; options.compilerArgs += ['-proc:none']
+    options.release = name == 'compileJava' ? 21 : 8
+}
+tasks.named('compileTestJava') { dependsOn 'legacyClasses', 'testSupportClasses', 'galleryClasses' }
+tasks.named('jar', Jar) { archiveClassifier = 'development' }
+tasks.named('shadowJar') { enabled = false }
+def contentPackages = ['com.ibm.icu', 'org.yaml.snakeyaml', 'org.commonmark', 'org.jsoup', 'org.nibor.autolink']
+def coreArtifact = { String taskName, String classifier, String sourceName ->
+    tasks.register(taskName, ShadowJar) {
+        group = 'build'; archiveBaseName = 'qz_uilib'; archiveClassifier = classifier
+        from sourceSets[sourceName].output
+        configurations = [project.configurations.coreContent]
+        enableAutoRelocation = false
+        contentPackages.each { relocate it, 'club.heiqi.uilib.shadow.' + it }
+        exclude 'META-INF/versions/**', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'module-info.class'
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    }
+}
+def coreJar = coreArtifact('coreJar', 'core', 'main')
+def coreLegacyJar = coreArtifact('coreLegacyJar', 'core-java8', 'legacy')
+def legacyDevelopmentJar = tasks.register('legacyDevelopmentJar', Jar) {
+    archiveClassifier = 'development-java8'; from sourceSets.legacy.output
+}
+def galleryJar = tasks.register('galleryJar', Jar) {
+    group = 'verification'; archiveClassifier = 'gallery'; from sourceSets.gallery.output
+}
+// 其他仓只消费测试消费者，不能把它加入正式运行时或正式发行。
+def verificationJar = tasks.register('verificationJar', Jar) {
+    group = 'verification'; archiveClassifier = 'verification'
+    from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.test.output, sourceSets.mediaCore.output
+}
+tasks.named('assemble') { dependsOn coreJar, coreLegacyJar, legacyDevelopmentJar }
+tasks.named('test', Test) { maxHeapSize = '1g'; failOnNoDiscoveredTests = false }
+
+// Windows Java8 launcher不能可靠接收含中文的绝对-cp；相对路径仍消费原编译输出。
+tasks.withType(JavaExec).configureEach {
+    doFirst {
+        def entries = classpath.files.collect { workingDir.toPath().relativize(it.toPath()).toString() }
+        classpath = files()
+        jvmArgs '-cp', entries.join(File.pathSeparator)
+    }
+}
+
+def application = { String name, String mainClassName, int javaVersion = 8, Closure configure = {} ->
+    tasks.register(name, JavaExec) {
+        group = 'verification'; mainClass = mainClassName
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
+        dependsOn 'testClasses', 'testSupportClasses'
+        classpath = sourceSets.test.runtimeClasspath
+        jvmArgs '-Dfile.encoding=UTF-8'; maxHeapSize = '1g'
+        configure.delegate = delegate; configure.resolveStrategy = Closure.DELEGATE_FIRST; configure()
+    }
+}
+def scenarios = [
+    motionScenario:'MotionScenario', pointerInputScenario:'PointerInputScenario', sliderScenario:'SliderScenario',
+    tooltipScenario:'TooltipScenario', focusInputScenario:'FocusInputScenario', focusScopeScenario:'FocusScopeScenario',
+    focusNavigationScenario:'FocusNavigationScenario', escapeInputScenario:'EscapeInputScenario', pageSessionScenario:'PageSessionScenario',
+    dynamicStructureScenario:'DynamicStructureScenario', compositionIdentityScenario:'CompositionIdentityScenario',
+    localizationScenario:'LocalizationScenario', localizationResourceScenario:'LocalizationResourceScenario',
+    standardControlsScenario:'StandardControlsScenario', focusRevealScenario:'FocusRevealScenario', editingScenario:'EditingScenario',
+    multilineEditingScenario:'MultilineEditingScenario', coreLoopScenario:'SceneCoreLoopTest', configScenario:'ConfigScenario',
+    themeConfigurationScenario:'ThemeConfigurationScenario', settingsConfigurationScenario:'SettingsConfigurationScenario',
+    yamlObjectScenario:'YamlObjectScenario', fontConfigurationScenario:'FontConfigurationScenario', coreFontEngineScenario:'CoreFontEngineScenario',
+    hoverProjectionScenario:'HoverProjectionScenario', performanceSamplesScenario:'PerformanceSamplesScenario', typedParagraphScenario:'TypedParagraphScenario',
+    mathCatalogScenario:'MathCatalogScenario', mathMacroScenario:'MathMacroScenario'
+]
+def coreChecks = scenarios.collect { name, entry -> application(name, 'club.heiqi.uilib.ui.scene.integration.' + entry) }
+coreChecks += application('documentArrangementScenario', 'club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario')
+coreChecks += application('filePickerScenario', 'club.heiqi.uilib.ui.scene.control.FilePickerScenario')
+coreChecks += application('testApplicationScenario', 'club.heiqi.uilib.testing.TestApplicationScenario')
+coreChecks += application('mathStructureScenario', 'club.heiqi.uilib.ui.scene.text.math.MathStructureScenario')
+tasks.register('coreStateScenario') { group = 'verification'; dependsOn 'coreLoopScenario' }
+
+[8, 21].each { target ->
+    def artifact = target == 8 ? coreLegacyJar : coreJar
+    def taskName = target == 8 ? 'coreArtifactScenario' : 'coreArtifactJava21Scenario'
+    coreChecks += application(taskName, 'club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario', target) {
+        dependsOn artifact
+        classpath = sourceSets.test.output + sourceSets.testSupport.output
+        if (target == 21) jvmArgs '--limit-modules=java.base,java.logging,java.management,jdk.unsupported'
+        doFirst { args((target == 21 ? ['--java21'] : []) + [project.relativePath(artifact.get().archiveFile.get().asFile),
+                project.relativePath(sourceSets.test.output.classesDirs.singleFile),
+                project.relativePath(sourceSets.testSupport.output.classesDirs.singleFile)]) }
+    }
+    ['MediaCoreScenario':'mediaCore', 'MediaSourceScenario':'mediaSource', 'SceneVideoLayoutScenario':'mediaLayout'].each { entry, label ->
+        coreChecks += application(label + (target == 8 ? 'LegacyScenario' : 'Scenario'), 'club.heiqi.uilib.testing.media.' + entry, target) {
+            dependsOn 'mediaCoreClasses', artifact
+            classpath = sourceSets.mediaCore.output + sourceSets.testSupport.output + files(artifact)
+            if (target == 21) jvmArgs '--limit-modules=java.base,java.logging,java.management,jdk.unsupported'
+        }
+    }
+    coreChecks += application(target == 8 ? 'packagedUnicodeScenario' : 'packagedUnicodeJava21Scenario',
+            'club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario', target) {
+        dependsOn artifact; classpath = sourceSets.test.output + sourceSets.testSupport.output
+        doFirst { args project.relativePath(artifact.get().archiveFile.get().asFile) }
+    }
+}
+tasks.register('coreSceneCheck') { group = 'verification'; dependsOn coreChecks }
+tasks.named('check') { dependsOn 'coreSceneCheck' }
+
+publishing {
+    publications {
+        core(MavenPublication) {
+            artifactId = 'core'; artifact(coreJar) { classifier = null }
+            artifact(coreLegacyJar) { classifier = 'java8' }
+            artifact(tasks.named('jar')) { classifier = 'development' }
+            artifact(legacyDevelopmentJar) { classifier = 'development-java8' }
+            artifact(tasks.named('sourcesJar')) { classifier = 'sources' }
+        }
+        gallery(MavenPublication) { artifactId = 'gallery'; artifact(galleryJar) { classifier = null } }
+        verification(MavenPublication) { artifactId = 'core-verification'; artifact(verificationJar) { classifier = null } }
+    }
+    repositories {
+        maven {
+            name = 'Workspace'
+            url = uri(findProperty('uilibRepository') ?: layout.buildDirectory.dir('repository').get().asFile)
+            if (url.scheme != 'file') throw new GradleException('Workspace仅写入本地Maven目录')
+        }
+    }
+}
+tasks.register('publishWorkspace') {
+    group = 'publishing'; description = '把明确版本的核心、开发与测试消费者写入本地Maven仓'
+    dependsOn tasks.withType(PublishToMavenRepository).matching { it.repository.name == 'Workspace' }
+}
