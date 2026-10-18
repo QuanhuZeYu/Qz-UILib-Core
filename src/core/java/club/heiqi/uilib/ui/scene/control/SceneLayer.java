@@ -34,6 +34,11 @@ public final class SceneLayer {
     @FunctionalInterface public interface Placement {
         LayoutBox place(SceneNode node, LayoutBox sourceBox, LayoutBox viewport, MeasuredSize size);
     }
+    /** 框架内的拖动预览需把局部位移映射至页面；普通Placement保持world盒合同。 */
+    interface GeometryPlacement extends Placement {
+        LayoutBox placeGeometry(SceneNode node, SceneGeometryView.Entry source, LayoutBox viewport, MeasuredSize size);
+        default LayoutBox place(SceneNode node, LayoutBox source, LayoutBox viewport, MeasuredSize size) { return null; }
+    }
     private SceneLayer() {}
     /** 外部策略仍归声明者；visible/ownedChildren 表达打开与结束。 */
     public static SceneNode create(ScenePageContext context, ReadableSignal<Policy> policy) {
@@ -57,6 +62,10 @@ public final class SceneLayer {
         }
         public LayoutBox placeLayer(SceneNode node, LayoutBox source, LayoutBox viewport, MeasuredSize size) {
             return placement == null ? null : placement.place(node, source, viewport, size);
+        }
+        public LayoutBox placeLayer(SceneNode node, SceneGeometryView.Entry source, LayoutBox viewport, MeasuredSize size) {
+            return placement instanceof GeometryPlacement ? ((GeometryPlacement)placement).placeGeometry(node, source, viewport, size)
+                    : placeLayer(node, source.box, viewport, size);
         }
         public Policy layerPolicy(SceneNode node) {
             return Objects.requireNonNull(policy.get(), "layer policy value: node=" + node.id());

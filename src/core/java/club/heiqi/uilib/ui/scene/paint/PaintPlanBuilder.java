@@ -12,6 +12,10 @@ public final class PaintPlanBuilder {
         return this;
     }
 
+    public PaintPlanBuilder addTransformed(PaintPlan plan,club.heiqi.uilib.ui.scene.geometry.SceneTransform transform,club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip) {
+        commands.addAll(plan.transformed(transform,clip).commands());return this;
+    }
+
     public PaintPlan build() {
         return new PaintPlan(commands);
     }

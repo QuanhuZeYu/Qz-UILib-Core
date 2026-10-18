@@ -1,6 +1,9 @@
 package club.heiqi.uilib.ui.scene.paint;
 
 import club.heiqi.uilib.ui.scene.image.ImagePlacement;
+import club.heiqi.uilib.ui.scene.geometry.SceneTransform;
+import club.heiqi.uilib.ui.scene.geometry.SceneClipRegion;
+import club.heiqi.uilib.ui.scene.geometry.SceneMesh;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 
@@ -14,9 +17,16 @@ public final class PaintCommand {
         TEXT,
         IMAGE,
         VIDEO,
-        IMAGE_BRANCH_OVERLAY
+        IMAGE_BRANCH_OVERLAY,
+        PATH
     }
 
+    /** 新路径或正式几何的caller裁剪事实；矩阵归为单位值也保留，旧工厂的world调用条件保持。 */
+    public final boolean sceneGeometry;
+    public final SceneTransform transform;
+    public final SceneClipRegion shapeClip;
+    private final SceneClipRegion effectiveClip;
+    public final SceneMesh mesh;
     public final Kind kind;
     public final LayoutBox box, clip;
     public final int color;
@@ -127,6 +137,19 @@ public final class PaintCommand {
     private PaintCommand(Kind kind, LayoutBox box, LayoutBox clip, int color, TextLayout text,
             ImagePlacement image, PaintPlan pendingPaint, PaintPlan failedPaint, PaintPlan readyOverlay,
             PaintCommand branchSource, Line line, club.heiqi.uilib.ui.scene.video.VideoPlacement video) {
+        this(kind,box,clip,color,text,image,pendingPaint,failedPaint,readyOverlay,branchSource,line,video,null,SceneTransform.IDENTITY,SceneClipRegion.UNBOUNDED);
+    }
+
+    private PaintCommand(Kind kind, LayoutBox box, LayoutBox clip, int color, TextLayout text, ImagePlacement image,
+            PaintPlan pendingPaint, PaintPlan failedPaint, PaintPlan readyOverlay, PaintCommand branchSource, Line line,
+            club.heiqi.uilib.ui.scene.video.VideoPlacement video, SceneMesh mesh, SceneTransform transform, SceneClipRegion shapeClip) {
+        this(kind,box,clip,color,text,image,pendingPaint,failedPaint,readyOverlay,branchSource,line,video,mesh,transform,shapeClip,kind==Kind.PATH);
+    }
+    private PaintCommand(Kind kind, LayoutBox box, LayoutBox clip, int color, TextLayout text, ImagePlacement image,
+            PaintPlan pendingPaint, PaintPlan failedPaint, PaintPlan readyOverlay, PaintCommand branchSource, Line line,
+            club.heiqi.uilib.ui.scene.video.VideoPlacement video, SceneMesh mesh, SceneTransform transform, SceneClipRegion shapeClip,boolean sceneGeometry) {
+        this.sceneGeometry=sceneGeometry;this.mesh=mesh;this.transform=Objects.requireNonNull(transform);this.shapeClip=Objects.requireNonNull(shapeClip);
+        effectiveClip=clip==null?shapeClip:shapeClip.intersect(SceneClipRegion.rectangle(clip).transformed(transform));
         this.video = video;
         this.line = line;
         this.kind = kind;
@@ -139,6 +162,35 @@ public final class PaintCommand {
         this.failedPaint = failedPaint;
         this.readyOverlay = readyOverlay;
         this.branchSource = branchSource;
+    }
+
+    /** 当前命令的页面裁剪，包含原局部矩形clip经过实际矩阵后的精确区域。 */
+    public SceneClipRegion effectiveClip(){return effectiveClip;}
+    public PaintCommand withGeometry(SceneTransform outer,SceneClipRegion externalClip){
+        return withGeometry(outer,externalClip,new java.util.IdentityHashMap<>());
+    }
+    PaintCommand withGeometry(SceneTransform outer,SceneClipRegion externalClip,java.util.Map<PaintCommand,PaintCommand> mapped){
+        if(outer.identity()&&externalClip.unbounded()&&sceneGeometry)return this;
+        PaintCommand existing=mapped.get(this);if(existing!=null)return existing;
+        PaintPlan pending=pendingPaint==null?null:pendingPaint.transformed(outer,externalClip,mapped);
+        PaintPlan failed=failedPaint==pendingPaint?pending:failedPaint==null?null:failedPaint.transformed(outer,externalClip,mapped);
+        PaintPlan ready=readyOverlay==null?null:readyOverlay.transformed(outer,externalClip,mapped);
+        PaintCommand source=branchSource==null?null:branchSource.withGeometry(outer,externalClip,mapped);
+        SceneTransform combined=outer.multiply(transform);SceneClipRegion region=shapeClip.transformed(outer).intersect(externalClip);
+        LayoutBox localClip=clip;
+        // 原单位坐标+矩形裁剪继续原值型合同；普通节点不用新geometry载荷才能正确回放或平移。
+        if(combined.identity()&&(region.unbounded()||region.rectangular())){
+            if(!region.unbounded())localClip=clip==null?region.bounds():clip.intersect(region.bounds());
+            region=SceneClipRegion.UNBOUNDED;
+        }
+        PaintCommand result=new PaintCommand(kind,box,localClip,color,text,image,pending,failed,ready,source,line,video,mesh,combined,region,true);
+        mapped.put(this,result);return result;
+    }
+    /** 网格已按本次曲线精度准备，顶点与box均在当前命令的局部布局frame中。 */
+    public static PaintCommand path(SceneMesh mesh,LayoutBox clip,int color){
+        Objects.requireNonNull(mesh,"路径网格");LayoutBox bounds=SceneClipRegion.of(mesh).bounds();
+        if(bounds==null)throw new IllegalArgumentException("路径超出布局坐标范围");
+        return new PaintCommand(Kind.PATH,bounds,clip,color,null,null,null,null,null,null,null,null,mesh,SceneTransform.IDENTITY,SceneClipRegion.UNBOUNDED);
     }
 
     public static PaintCommand image(LayoutBox box, LayoutBox clip, ImagePlacement image) {
@@ -215,19 +267,23 @@ public final class PaintCommand {
             java.util.Map<PaintCommand, PaintCommand> mapped) {
         PaintCommand existing = mapped.get(this);
         if (existing != null) return existing;
-        LayoutBox moved = new LayoutBox(box.x + dx, box.y + dy, box.width, box.height);
-        LayoutBox clipped = clip == null ? null : new LayoutBox(clip.x + dx, clip.y + dy, clip.width, clip.height);
-        if (limit != null) clipped = clipped == null ? limit : clipped.intersect(limit);
+        boolean geometric=!transform.identity()||!shapeClip.unbounded();
+        LayoutBox moved = geometric?box:new LayoutBox(box.x + dx, box.y + dy, box.width, box.height);
+        LayoutBox clipped = geometric?clip:clip == null ? null : new LayoutBox(clip.x + dx, clip.y + dy, clip.width, clip.height);
+        if (!geometric && limit != null) clipped = clipped == null ? limit : clipped.intersect(limit);
         PaintPlan pending = pendingPaint == null ? null : pendingPaint.presented(dx, dy, opacity, limit, mapped);
         PaintPlan failed = failedPaint == pendingPaint ? pending
                 : failedPaint == null ? null : failedPaint.presented(dx, dy, opacity, limit, mapped);
         PaintPlan ready = readyOverlay == null ? null : readyOverlay.presented(dx, dy, opacity, limit, mapped);
         PaintCommand branch = branchSource == null ? null : branchSource.presented(dx, dy, opacity, limit, mapped);
-        Line movedLine = line == null ? null : new Line(line.x0 + dx, line.y0 + dy, line.x1 + dx, line.y1 + dy, line.thickness);
+        Line movedLine = geometric?line:line == null ? null : new Line(line.x0 + dx, line.y0 + dy, line.x1 + dx, line.y1 + dy, line.thickness);
         PaintCommand result = new PaintCommand(kind, moved, clipped,
                 club.heiqi.uilib.ui.scene.motion.SceneMotion.alpha(color, opacity),
-                text == null ? null : text.withOpacity(opacity), image == null ? null : image.translated(dx, dy),
-                pending, failed, ready, branch, movedLine, video == null ? null : video.translated(dx, dy));
+                text == null ? null : text.withOpacity(opacity), image == null || geometric ? image : image.translated(dx, dy),
+                pending, failed, ready, branch, movedLine, video == null || geometric ? video : video.translated(dx, dy),
+                mesh==null||geometric?mesh:mesh.transformed(SceneTransform.translation(dx,dy)),
+                geometric?SceneTransform.translation(dx,dy).multiply(transform):transform,
+                geometric?shapeClip.transformed(SceneTransform.translation(dx,dy)).intersect(SceneClipRegion.rectangle(limit)):shapeClip,sceneGeometry);
         mapped.put(this, result);
         return result;
     }

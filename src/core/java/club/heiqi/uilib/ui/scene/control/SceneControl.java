@@ -16,6 +16,9 @@ import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
+    /** 实际图形可声明自己的新命中轮廓；null继续普通分配盒。由共同几何按本批尺寸和像素精度解析。 */
+    default club.heiqi.uilib.ui.scene.geometry.SceneShape hitShape(SceneNode node) { return null; }
+
     /** 只读语义随实际Signal依赖更新；null透传普通布局孩子。 */
     default club.heiqi.uilib.ui.scene.semantics.SceneSemantics semantics(SceneNode node) { return null; }
 
@@ -30,6 +33,10 @@ public interface SceneControl {
     /** 所属层只声明位置；null 沿默认锚定，尺寸仍由正式测量决定，裁剪与范围仍归核心。 */
     default LayoutBox placeLayer(SceneNode node, LayoutBox sourceBox, LayoutBox viewport, MeasuredSize size) {
         return null;
+    }
+    /** 变换来源的正式当批事实；旧定位端口继续消费world包络。 */
+    default LayoutBox placeLayer(SceneNode node, SceneGeometryView.Entry source, LayoutBox viewport, MeasuredSize size) {
+        return placeLayer(node, source.box, viewport, size);
     }
 
     /** 主键释放前可更新位置意图；仅当前有效 owner 收到，框架结算变化并重新准备正式几何后才派 UP。

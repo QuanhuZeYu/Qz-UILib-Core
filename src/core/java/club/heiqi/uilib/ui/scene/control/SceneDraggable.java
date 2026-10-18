@@ -128,6 +128,7 @@ public final class SceneDraggable {
         private long pressedNanos;
         private Runnable cancelSession;
         private int startX, startY, pointerX, pointerY, grabX, grabY, keyboardX, keyboardY;
+        private double worldStartX, worldStartY, worldPointerX, worldPointerY;
         private final SceneDragSupport.AutoScroll scrolling = new SceneDragSupport.AutoScroll();
         private State(ReactiveDomain domain) { this.domain = domain; snapshot = domain.signal(INACTIVE); preferred = domain.signal(Offset.ZERO); view = snapshot::get; }
         public ReadableSignal<Snapshot> snapshot() { return view; }
@@ -196,7 +197,13 @@ public final class SceneDraggable {
         }
         void installOverlay(ScenePageContext context, SceneNode node) {
             layer = SceneLayer.create(context, () -> new SceneLayer.Policy(0, SceneLayer.Participation.PASSIVE),
-                    (self, sourceBox, viewport, measured) -> placement.overlay(node, sourceBox, viewport, measured),
+                    new SceneLayer.GeometryPlacement() {
+                        public LayoutBox placeGeometry(SceneNode self, SceneGeometryView.Entry source, LayoutBox viewport, MeasuredSize measured) {
+                            LayoutBox local = placement.overlay(node, source.layoutBox, viewport, measured);
+                            club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = source.transform;
+                            return new LayoutBox((int) Math.round(frame.x(local.x, local.y)), (int) Math.round(frame.y(local.x, local.y)), measured.width, measured.height);
+                        }
+                    },
                     Arrays.asList(state.snapshot, state.preferred, source, release.active));
             layer.bind(NodeBinding.value(() -> (state.snapshot.get().active || release.active.get()) && options().overlay != null, SceneNode::visible));
             layer.bind(NodeBinding.ownedChildren(() -> {
@@ -333,7 +340,7 @@ public final class SceneDraggable {
             if (!eligible(node)) return null;
             Options options = options();
             if (options.handles.length > 0) return SceneDragSupport.handle(node, options.handles, geometry, x, y);
-            return SceneDragSupport.inside(geometry.get(sourceContent()), x, y) ? bodyTarget : null;
+            return geometry.contains(sourceContent(), x, y) ? bodyTarget : null;
         }
         @Override public Object pointerActivator(SceneNode node, SceneNode hit, SceneGeometryView geometry, int x, int y) {
             SceneNode handle = SceneDragSupport.handle(node, options().handles, geometry, x, y);
@@ -355,8 +362,7 @@ public final class SceneDraggable {
         }
         private void pending(long now) {
             Options options = options();
-            long dx = (long) state.pointerX - state.startX, dy = (long) state.pointerY - state.startY;
-            double distance = Math.hypot(dx, dy);
+            double distance = Math.hypot(state.worldPointerX - state.worldStartX, state.worldPointerY - state.worldStartY);
             // OR 中先检测距离；超出 tolerance 只终止尚未满足的 delay 分支。
             if (options.distance > 0 && distance >= options.distance) { activate(now); return; }
             if (distance > options.tolerance) state.delayAllowed = false;
@@ -383,7 +389,7 @@ public final class SceneDraggable {
                 state.publish(true, false, preferred.x, preferred.y);
                 LayoutBox intent = new LayoutBox(SceneDragSupport.integer((long) drag.baseX + preferred.x),
                         SceneDragSupport.integer((long) drag.baseY + preferred.y), drag.width, drag.height);
-                if (observer != null) observer.update(node, geometry, state.keyboard, intent,
+                if (observer != null) notifyObserver(node, geometry, state.keyboard, intent,
                         state.keyboard ? SceneDragSupport.centerX(intent) : state.pointerX,
                         state.keyboard ? SceneDragSupport.centerY(intent) : state.pointerY);
             } else synchronize(node, geometry);
@@ -407,7 +413,7 @@ public final class SceneDraggable {
             // 反馈和接收只消费框架已发布的最终盒，不在这里重做所属层限位。
             state.publish(true, false, SceneDragSupport.integer((long) box.x - slot.box.x - node.padding()),
                     SceneDragSupport.integer((long) box.y - slot.box.y - node.padding()));
-            if (observer != null) observer.update(node, geometry, state.keyboard, box,
+            if (observer != null) notifyObserver(node, geometry, state.keyboard, box,
                     state.keyboard ? SceneDragSupport.centerX(box) : state.pointerX,
                     state.keyboard ? SceneDragSupport.centerY(box) : state.pointerY);
         }
@@ -433,7 +439,7 @@ public final class SceneDraggable {
             }
             void alignKeyboard() {
                 if (!state.keyboard || observer == null) return;
-                LayoutBox target = observer.keyboardTarget(node, geometry, null);
+                LayoutBox target = keyboardTarget(node, geometry, null);
                 if (target == null) return;
                 state.keyboardX = SceneDragSupport.integer((long) SceneDragSupport.centerX(target) - baseX - width / 2);
                 state.keyboardY = SceneDragSupport.integer((long) SceneDragSupport.centerY(target) - baseY - height / 2);
@@ -508,7 +514,7 @@ public final class SceneDraggable {
                 action = options().onDrop;
             }
             void receive() {
-                receiving = observer == null ? null : observer.normalDrop(node, geometry, state.keyboard, box,
+                receiving = observer == null ? null : normalDrop(node, geometry, state.keyboard, box,
                         state.keyboard ? SceneDragSupport.centerX(box) : state.pointerX,
                         state.keyboard ? SceneDragSupport.centerY(box) : state.pointerY);
             }
@@ -523,6 +529,8 @@ public final class SceneDraggable {
             }
         }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            geometry = dragFrame(node, geometry); event = event.in(geometry);
+            state.worldPointerX = event.worldX; state.worldPointerY = event.worldY;
             syncObserver(node, options());
             releaseEventTime = event.timeNanos;
             switch (event.kind) {
@@ -538,6 +546,7 @@ public final class SceneDraggable {
             release.begin();
             state.end(); state.keyboard = false; state.delayAllowed = true;
             state.startX = state.pointerX = event.x; state.startY = state.pointerY = event.y;
+            state.worldStartX = state.worldPointerX = event.worldX; state.worldStartY = state.worldPointerY = event.worldY;
             state.grabX = event.x - entry.box.x; state.grabY = event.y - entry.box.y;
             state.pressedNanos = runtime.inputNanos();
             Options options = options();
@@ -556,6 +565,8 @@ public final class SceneDraggable {
             Offset point = state.preferred.get(); release.sample(point.x, point.y, event.timeNanos);
         }
         @Override public void preparePointerRelease(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            geometry = dragFrame(node, geometry); event = event.in(geometry);
+            state.worldPointerX = event.worldX; state.worldPointerY = event.worldY;
             syncObserver(node, options());
             if (state.keyboard || !state.snapshot.get().active) return;
             state.pointerX = event.x; state.pointerY = event.y;
@@ -572,6 +583,7 @@ public final class SceneDraggable {
             drop(node, geometry);
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
+            if (geometry != null) geometry = dragFrame(node, geometry);
             if (!SceneDragSupport.dragCommand(event)) return false;
             try { return editDrag(node, event, geometry); }
             catch (RuntimeException | Error failure) {
@@ -622,7 +634,7 @@ public final class SceneDraggable {
             if (!state.snapshot.get().active || !state.keyboard) return false;
             if (observer == null || geometry == null) moveKeyboard(direction);
             else if (!navigationAllowed(direction)) return true;
-            else observer.keyboardTarget(node, geometry, direction);
+            else keyboardTarget(node, geometry, direction);
             if (geometry != null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             return true;
         }
@@ -636,6 +648,41 @@ public final class SceneDraggable {
             state.keyboardY = SceneDragSupport.integer((long) state.keyboardY
                     + (direction == SceneEditEvent.Command.UP ? -25 : direction == SceneEditEvent.Command.DOWN ? 25 : 0));
         }
+        private LayoutBox worldBox(SceneGeometryView geometry, LayoutBox box) {
+            return SceneGeometryView.bounds(club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(box.x, box.y, box.width, box.height)
+                    .transformed(geometry.coordinateTransform()));
+        }
+        private void notifyObserver(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.coordinateTransform();
+            observer.update(node, geometry.world(), keyboard, worldBox(geometry, box),
+                    (int) Math.round(frame.x(x, y)), (int) Math.round(frame.y(x, y)));
+        }
+        private Runnable normalDrop(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.coordinateTransform();
+            return observer.normalDrop(node, geometry.world(), keyboard, worldBox(geometry, box),
+                    (int) Math.round(frame.x(x, y)), (int) Math.round(frame.y(x, y)));
+        }
+        private LayoutBox keyboardTarget(SceneNode node, SceneGeometryView geometry, SceneEditEvent.Command direction) {
+            LayoutBox target = observer.keyboardTarget(node, geometry.world(), direction);
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = geometry.coordinateTransform().inverse();
+            return target == null || inverse == null ? target : SceneGeometryView.bounds(
+                    club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(target.x, target.y, target.width, target.height).transformed(inverse));
+        }
+        private SceneGeometryView dragFrame(SceneNode node, SceneGeometryView geometry) {
+            // 通用排序只发布世界预览意图，来源在合法迁移中换父，不能继承新父frame的旧grab。
+            if (options().preserveSlot && observer != null) return geometry.world();
+            // wrapper保留原槽，移动的是它的content；自身分配frame包含用户变换而不含预览位移。
+            return geometry.world().asControl(node);
+        }
+        private void remapPointer(SceneGeometryView geometry) {
+            if (state.keyboard) return;
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = geometry.coordinateTransform().inverse();
+            if (inverse == null) { state.end(); return; }
+            state.pointerX = (int) Math.round(inverse.x(state.worldPointerX, state.worldPointerY));
+            state.pointerY = (int) Math.round(inverse.y(state.worldPointerX, state.worldPointerY));
+            state.startX = (int) Math.round(inverse.x(state.worldStartX, state.worldStartY));
+            state.startY = (int) Math.round(inverse.y(state.worldStartX, state.worldStartY));
+        }
         @Override public long nextInputNanos(SceneNode node) {
             Snapshot current = state.snapshot.get(); Options options = options();
             if (current.active) return 0;
@@ -643,6 +690,7 @@ public final class SceneDraggable {
                     ? state.pressedNanos + options.delayMillis * 1_000_000L : Long.MAX_VALUE;
         }
         @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {
+            geometry = dragFrame(node, geometry); remapPointer(geometry);
             syncObserver(node, options());
             if (!valid(node, geometry)) { state.end(); return; }
             if (state.keyboard) {
@@ -654,13 +702,14 @@ public final class SceneDraggable {
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             if (!state.snapshot.get().active) return;
             Options options = options();
-            SceneNode scrollSource = observer == null ? node.parent() : observer.scrollSource(node, geometry);
+            SceneNode scrollSource = observer == null ? node.parent() : observer.scrollSource(node, geometry.world());
             if (!state.keyboard && options.autoScroll)
                 state.scrolling.advance(runtime, scrollSource, geometry, state.pointerX, state.pointerY, now,
                         options.axis != Axis.Y, options.axis != Axis.X, options.autoScrollSpeed);
             // 滚动已使正式几何失效；候选不能在旧 clip/box 上推算，由重排后的几何同步更新。
         }
         @Override public void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) {
+            geometry = dragFrame(node, geometry); remapPointer(geometry);
             Snapshot current = state.snapshot.get();
             if (!current.active && !current.pending) return;
             syncObserver(node, options());

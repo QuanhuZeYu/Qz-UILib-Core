@@ -101,8 +101,7 @@ final class SceneSemanticCoordinator {
             EnumSet<SceneSemantics.Action> actions=actions(node,s);
             if(!interactive)actions.clear();
             SceneGeometryView.Entry entry=next.get(node);LayoutBox box=entry==null?null:entry.box,clip=entry==null?null:entry.clip;
-            boolean offscreen=box==null||box.intersect(next.viewport()).width<=0||box.intersect(next.viewport()).height<=0
-                    ||clip!=null&&(box.intersect(clip).width<=0||box.intersect(clip).height<=0);
+            boolean offscreen=box==null||next.visibleRegion(node).empty();
             boolean isFocused=(focused==node||actual!=null&&focused==actual)
                     &&(!focusRepresentatives.containsKey(focused)||focusRepresentatives.get(focused)==node);
             if(isFocused)focusId=m.id;

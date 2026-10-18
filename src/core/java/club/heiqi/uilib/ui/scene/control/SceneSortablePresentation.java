@@ -46,8 +46,8 @@ final class SceneSortablePresentation<T, K, C> implements SceneControl {
     @Override public long nextInputNanos(SceneNode node) {
         return model.interaction.feedback.get() != null || model.motion.busy.get() ? 0 : Long.MAX_VALUE;
     }
-    @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) { model.motion.advance(geometry, now); }
-    @Override public void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) { model.motion.synchronize(geometry); }
+    @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) { model.motion.advance(geometry.world(), now); }
+    @Override public void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) { model.motion.synchronize(geometry.world()); }
     @Override public void inputFrameCancelled(SceneNode node) { model.interaction.clear(); model.motion.clear(); }
     @Override public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
     @Override public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text, SceneChildMeasurer children) {

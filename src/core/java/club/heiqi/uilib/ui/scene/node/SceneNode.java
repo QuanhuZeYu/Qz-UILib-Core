@@ -155,6 +155,22 @@ public final class SceneNode {
         if (runtime != null) runtime.invalidateBinding(this);
         return this;
     }
+    private club.heiqi.uilib.ui.scene.geometry.SceneTransform transform = club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
+    private club.heiqi.uilib.ui.scene.geometry.SceneShape shapeClip;
+    public club.heiqi.uilib.ui.scene.geometry.SceneTransform transform() { return transform; }
+    /** 相对当前分配外盒的呈现变换；不改变度量、占位和原滚动单位。 */
+    public SceneNode transform(club.heiqi.uilib.ui.scene.geometry.SceneTransform value) {
+        writable(); Objects.requireNonNull(value, "呈现矩阵");
+        if (!transform.equals(value)) { transform = value; if (runtime != null) runtime.invalidateGeometry(); }
+        return this;
+    }
+    public club.heiqi.uilib.ui.scene.geometry.SceneShape shapeClip() { return shapeClip; }
+    /** 局部外盒形状裁剪；与旧矩形clip及滚动视口取交集。null结束形状声明。 */
+    public SceneNode clip(club.heiqi.uilib.ui.scene.geometry.SceneShape value) {
+        writable();
+        if (shapeClip != value) { shapeClip = value; if (runtime != null) runtime.invalidateGeometry(); }
+        return this;
+    }
     private float opacity = 1, translationX, translationY;
     public float opacity() { return opacity; }
     public SceneNode opacity(float value) {

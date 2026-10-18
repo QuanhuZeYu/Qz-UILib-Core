@@ -46,7 +46,7 @@ final class SceneWheelRouting {
     /** 当前消费路径只向祖先；选区/联系保留与事件派发分开，回调失败仍保持旧联系已清理。 */
     private MountHandle consume(SceneNode start, SceneNode boundary, ScenePointerEvent event, SceneGeometryView geometry) {
         for (SceneNode node = start; node != null; node = node == boundary ? null : node.parent()) {
-            if (!runtime.interactive(node) || !inside(geometry.get(node), event.x, event.y)) continue;
+            if (!runtime.interactive(node) || !geometry.contains(node, event.x, event.y)) continue;
             // 控件可在回调中改变资格或树；消费前记录挂载，不能把迟到结果附到新挂载上。
             MountHandle consumer = runtime.captureMount(node);
             if (runtime.dispatchControlScroll(node, event, geometry).consumed || runtime.tryDispatchScroll(node, event.delta)) {

@@ -53,6 +53,7 @@ final class SceneSortableSelection<T, K, C> {
             if (container == null || !model.runtime.interactive(entry.node)) continue;
             LayoutBox box = SceneDragSupport.visibleBox(geometry, entry);
             if (box == null || box.width == 0 || box.height == 0) continue;
+            if (!entry.worldClip.unbounded() && !entry.worldClip.rectangular() && !geometry.clipContains(entry.node, x, y)) continue;
             double score = distance(box, x, y);
             if (score < best) { chosen = container; best = score; }
         }
@@ -66,8 +67,7 @@ final class SceneSortableSelection<T, K, C> {
     boolean occupies(SceneSortableModel.RowEntry<T, K, C> source, Position<T, K, C> position,
                      SceneGeometryView geometry, int x, int y) {
         if (!valid(source, position, geometry) || source.node.parent() != position.container.declaration.items) return false;
-        LayoutBox box = SceneDragSupport.visibleBox(geometry, geometry.get(source.node));
-        return box != null && box.contains(x, y);
+        return geometry.contains(source.node, x, y);
     }
     private List<SceneSortableModel.RowEntry<T, K, C>> rows(SceneSortableModel.ContainerEntry<T, K, C> container,
             SceneGeometryView geometry, SceneSortableModel.RowEntry<T, K, C> excluded) {
@@ -78,6 +78,9 @@ final class SceneSortableSelection<T, K, C> {
     }
     private Position<T, K, C> insertion(SceneSortableModel.RowEntry<T, K, C> source,
             SceneSortableModel.ContainerEntry<T, K, C> container, SceneGeometryView geometry, int x, int y) {
+        int localX = (int) Math.round(geometry.mapX(container.declaration.items, x, y));
+        int localY = (int) Math.round(geometry.mapY(container.declaration.items, x, y));
+        geometry = geometry.world().asControl(container.declaration.items); x = localX; y = localY;
         if (container.declaration.layout == SceneSortable.Layout.GRID) return gridInsertion(source, container, geometry, x, y);
         boolean horizontal = container.declaration.layout == SceneSortable.Layout.HORIZONTAL;
         for (SceneSortableModel.RowEntry<T, K, C> row : rows(container, geometry, source)) {
@@ -152,7 +155,8 @@ final class SceneSortableSelection<T, K, C> {
             positive = direction == SceneEditEvent.Command.RIGHT || direction == SceneEditEvent.Command.DOWN;
         }
         void consider(SceneSortableModel.ContainerEntry<T, K, C> container) {
-            boolean localAxis = container.declaration.layout == SceneSortable.Layout.GRID
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.get(container.declaration.items).transform;
+            boolean localAxis = !frame.identity() || container.declaration.layout == SceneSortable.Layout.GRID
                     || horizontal == (container.declaration.layout == SceneSortable.Layout.HORIZONTAL);
             if (container != current || localAxis) considerRows(container);
             if (container != current && rows(container, geometry, source).isEmpty())
@@ -168,7 +172,11 @@ final class SceneSortableSelection<T, K, C> {
         Position<T, K, C> position(Position<T, K, C> fallback) {
             if (destination == null) return fallback;
             if (chosen == null) return new Position<>(destination, null);
-            if (!positive) return new Position<>(destination, chosen.key);
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.get(destination.declaration.items).transform;
+            boolean row = destination.declaration.layout == SceneSortable.Layout.HORIZONTAL;
+            double along = horizontal ? (row ? frame.a : frame.c) : (row ? frame.b : frame.d);
+            boolean forward = (positive ? along : -along) > 0;
+            if (!forward) return new Position<>(destination, chosen.key);
             List<SceneSortableModel.RowEntry<T, K, C>> ordered = destination.displayed;
             int index = ordered.indexOf(chosen) + 1;
             while (index < ordered.size() && ordered.get(index) == source) index++;

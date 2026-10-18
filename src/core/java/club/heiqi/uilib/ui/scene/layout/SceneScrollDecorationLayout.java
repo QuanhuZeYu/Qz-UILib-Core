@@ -22,9 +22,8 @@ final class SceneScrollDecorationLayout {
     private static void append(SceneGeometryView.Entry host, SceneGeometryView facts, List<SceneGeometryView.Entry> entries) {
         if (host.node.runtime() == null) return;
         for (SceneNode bar : host.node.runtime().scrollDecorations(host.node)) {
-            LayoutBox box = bar.control().placeScrollDecoration(bar, facts);
-            LayoutBox clip = host.clip == null ? host.box : host.clip.intersect(host.box);
-            entries.add(new SceneGeometryView.Entry(bar, box, clip, null));
+            LayoutBox box = bar.control().placeScrollDecoration(bar, facts.asControl(host.node));
+            entries.add(new SceneGeometryView.Entry(bar, box, null, null).projected(host.transform, host.worldClip.intersect(club.heiqi.uilib.ui.scene.geometry.SceneClipRegion.rectangle(host.layoutBox).transformed(host.transform))));
         }
     }
     private static boolean within(SceneNode node, SceneNode ancestor) {

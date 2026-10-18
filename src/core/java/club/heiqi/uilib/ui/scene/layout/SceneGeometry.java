@@ -6,6 +6,9 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.geometry.SceneMesh;
+import club.heiqi.uilib.ui.scene.geometry.SceneTransform;
+import club.heiqi.uilib.ui.scene.geometry.SceneClipRegion;
 
 /** 已发布的几何条目不会被下次求解修改。 */
 public final class SceneGeometry implements SceneGeometryView {
@@ -17,6 +20,11 @@ public final class SceneGeometry implements SceneGeometryView {
     private final Map<SceneNode, Group> presentation;
     private final Map<SceneNode, Boolean> sources;
     private final SceneNode modal;
+    private final Map<SceneNode, SceneGeometryView> controls = new IdentityHashMap<>();
+    @Override public SceneGeometryView asControl(SceneNode node) {
+        Entry entry = get(node);
+        return entry == null || entry.transform.identity() && SceneGeometryView.sameBox(entry.box, entry.layoutBox) ? this : controls.computeIfAbsent(node, key -> new SceneControlGeometry(this, key));
+    }
 
     public SceneGeometry(List<Entry> entries) {
         this(entries, null);
@@ -60,8 +68,7 @@ public final class SceneGeometry implements SceneGeometryView {
             List<Entry> next = new ArrayList<>();
             for (Entry entry : group.entries) {
                 Entry updated = text.containsKey(entry.node)
-                        ? new Entry(entry.node, entry.box, entry.clip, text.get(entry.node),
-                                entry.scrollOffset, entry.scrollMaximum) : entry;
+                        ? entry.withText(text.get(entry.node)) : entry;
                 replaced.put(entry, updated);
                 next.add(updated);
             }
@@ -106,17 +113,36 @@ public final class SceneGeometry implements SceneGeometryView {
                 (int) Math.max(0L, (long) entry.box.height - 2L * padding));
     }
 
-    public static LayoutBox revealRegion(
-            SceneNode target, SceneNode ancestor, SceneGeometryView geometry) {
+    /** 原显露包络与同批可平移内容；subject不包含当前滚动祖先及更外层裁剪。 */
+    public static final class RevealRegion {
+        public final LayoutBox box;
+        public final SceneMesh subject;
+        private RevealRegion(LayoutBox box, SceneMesh subject) { this.box = box; this.subject = subject; }
+    }
+
+    /** 保留原包络入口；内部导航区域只在过大轴替换，实际填充另由subject表达。 */
+    public static LayoutBox revealRegion(SceneNode target, SceneNode ancestor, SceneGeometryView geometry) {
+        RevealRegion result = revealTarget(target, ancestor, geometry);
+        return result == null ? null : result.box;
+    }
+
+    public static RevealRegion revealTarget(SceneNode target, SceneNode ancestor, SceneGeometryView geometry) {
         SceneGeometryView.Entry entry = geometry.get(target);
         if (entry == null) return null;
+        SceneTransform inverse = geometry.coordinateTransform().inverse();
+        SceneMesh subject = inverse == null ? SceneMesh.EMPTY : entry.ownWorldClip.clip(entry.worldShape()).transformed(inverse);
         LayoutBox region = entry.box;
         LayoutBox window = revealWindow(ancestor, geometry);
         // 能放下的轴仍显露整盒；过大的编辑目标优先使用本次内部位置。
         if (target.control() != null
                 && (region.width > window.width || region.height > window.height)) {
-            LayoutBox focus = target.control().navigationRegion(target, geometry);
-            if (focus != null) {
+            SceneGeometryView local = geometry.asControl(target);
+            LayoutBox focus = target.control().navigationRegion(target, local);
+            if (focus != null && inverse != null) {
+                SceneTransform relative = geometry.coordinateTransform().equals(local.coordinateTransform())
+                        ? SceneTransform.IDENTITY : inverse.multiply(local.coordinateTransform());
+                SceneMesh focusShape = rectangle(focus).transformed(relative);
+                focus = SceneGeometryView.bounds(focusShape);
                 boolean oversizedX = region.width > window.width;
                 boolean oversizedY = region.height > window.height;
                 region = new LayoutBox(
@@ -124,19 +150,40 @@ public final class SceneGeometry implements SceneGeometryView {
                         oversizedY ? focus.y : region.y,
                         oversizedX ? focus.width : region.width,
                         oversizedY ? focus.height : region.height);
+                // 只选择过大轴时保留另一轴的整项；两轴均过大则保留导航区域的实际四角。
+                subject = subject.intersection(oversizedX && oversizedY ? focusShape : rectangle(region));
             }
         }
-        // 下层裁剪随当前祖先的内容一起移动，外层只能显露其中尚可见的部分。
+        // 下层裁剪随内容一起移动；不使用已被当前祖先mask裁空的visibleRegion。
         for (SceneNode node = target.parent(); node != ancestor; node = node.parent()) {
             if (node == null) return null;
             SceneGeometryView.Entry clip = geometry.get(node);
             if (clip == null) return null;
-            if (node.scrollable()) region = region.intersect(innerBox(clip));
-            else if (node.clip()) region = region.intersect(clip.box);
+            if (node.scrollable()) {
+                region = region.intersect(innerBox(clip, geometry));
+                subject = subject.intersection(innerShape(clip, geometry));
+            }
+            if (inverse != null && !clip.ownWorldClip.unbounded()) {
+                SceneClipRegion own = clip.ownWorldClip.transformed(inverse);
+                region = SceneGeometryView.bounds(own.clip(rectangle(region)));
+                subject = own.clip(subject);
+            }
         }
-        return region;
+        return new RevealRegion(region, subject);
     }
 
+    private static SceneMesh rectangle(LayoutBox box) { return SceneMesh.rectangle(box.x, box.y, box.width, box.height); }
+
+    private static SceneMesh innerShape(SceneGeometryView.Entry entry, SceneGeometryView geometry) {
+        LayoutBox raw = entry.layoutBox; int padding = entry.node.padding();
+        SceneMesh inner = SceneMesh.rectangle(raw.x + padding, raw.y + padding,
+                Math.max(0, raw.width - padding * 2), Math.max(0, raw.height - padding * 2));
+        SceneTransform inverse = geometry.coordinateTransform().inverse();
+        return inverse == null || inverse.equals(entry.inverse) ? inner : inner.transformed(inverse.multiply(entry.transform));
+    }
+    private static LayoutBox innerBox(SceneGeometryView.Entry entry, SceneGeometryView geometry) {
+        return SceneGeometryView.bounds(innerShape(entry, geometry));
+    }
     public static LayoutBox revealWindow(SceneNode ancestor, SceneGeometryView geometry) {
         LayoutBox window = innerBox(geometry.get(ancestor));
         boolean movableX = false, movableY = false;
@@ -146,16 +193,22 @@ public final class SceneGeometry implements SceneGeometryView {
                 node != null; node = node == boundary ? null : node.parent()) {
             // 外层只能修复自身滚动轴的遮挡；正交轴仍需约束内层窗口。
             // 某轴可由外层移动后，其自身及更上层当前clip不提前卡住屏外内层。
-            if (node.scrollable()) {
-                if (node.axis() == SceneNode.Axis.ROW) movableX = true;
-                else movableY = true;
-            }
             SceneGeometryView.Entry entry = geometry.get(node);
+            if (node.scrollable() && entry != null) {
+                club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = geometry.coordinateTransform().inverse();
+                if (inverse != null) {
+                    club.heiqi.uilib.ui.scene.geometry.SceneTransform relative = inverse.equals(entry.inverse)
+                            ? club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY : inverse.multiply(entry.transform);
+                    boolean row = node.axis() == SceneNode.Axis.ROW; double tolerance = Math.ulp(relative.maximumScale()) * 4;
+                    movableX |= Math.abs(row ? relative.a : relative.c) > tolerance;
+                    movableY |= Math.abs(row ? relative.b : relative.d) > tolerance;
+                }
+            }
             if (entry != null && (node.clip() || node.scrollable()))
                 window =
                         limitWindow(
                                 window,
-                                node.scrollable() ? innerBox(entry) : entry.box,
+                                node.scrollable() ? innerBox(entry, geometry) : entry.box,
                                 !movableX,
                                 !movableY);
         }

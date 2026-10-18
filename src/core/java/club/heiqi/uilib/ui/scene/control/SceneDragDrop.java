@@ -49,9 +49,10 @@ public final class SceneDragDrop<K> {
         final K key;
         final SceneNode node;
         final LayoutBox box, visibleBox;
+        final club.heiqi.uilib.ui.scene.geometry.SceneMesh visible;
         final int priority, order;
-        Candidate(K key, SceneNode node, LayoutBox box, LayoutBox visibleBox, int priority, int order) {
-            this.key = key; this.node = node; this.box = box; this.visibleBox = visibleBox;
+        Candidate(K key, SceneNode node, LayoutBox box, LayoutBox visibleBox, club.heiqi.uilib.ui.scene.geometry.SceneMesh visible, int priority, int order) {
+            this.key = key; this.node = node; this.box = box; this.visibleBox = visibleBox; this.visible = visible;
             this.priority = priority; this.order = order;
         }
     }
@@ -146,7 +147,7 @@ public final class SceneDragDrop<K> {
             if (visible.width == 0 || visible.height == 0) continue;
             SceneDroppable.Options<K> options = Objects.requireNonNull(target.options.get(), "drop options");
             // accepts 本身也可以读取 Signal；不能把谓词结果缓存到挂载期。
-            if (options.accepts.test(sourceKey)) result.add(new Candidate<>(target.key, target.node, entry.box, visible, options.priority, i));
+            if (options.accepts.test(sourceKey)) result.add(new Candidate<>(target.key, target.node, entry.box, visible, geometry.visibleRegion(target.node), options.priority, i));
         }
         return Collections.unmodifiableList(result);
     }
@@ -170,7 +171,7 @@ public final class SceneDragDrop<K> {
     private void update(SourceRegistration<K> source, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
         if (!valid(source, geometry)) { if (source != null) source.cancel.run(); return; }
         continueSession(source);
-        Candidate<K> chosen = collisionTarget(candidates(source.key, source.node, geometry), box, x, y);
+        Candidate<K> chosen = collisionTarget(candidates(source.key, source.node, geometry), box, x, y, sourceRegion(source, geometry, box));
         publish(new Snapshot<>(true, keyboard, source.key, chosen == null ? null : chosen.key, box, x, y));
     }
     private void continueSession(SourceRegistration<K> source) {
@@ -179,22 +180,27 @@ public final class SceneDragDrop<K> {
         if (old != null) old.cancel.run();
         session = source; keyboardTarget = null;
     }
-    private Candidate<K> collisionTarget(List<Candidate<K>> candidates, LayoutBox box, int x, int y) {
+    private club.heiqi.uilib.ui.scene.geometry.SceneMesh sourceRegion(SourceRegistration<K> source, SceneGeometryView geometry, LayoutBox box) {
+        SceneGeometryView.Entry entry = geometry.world().get(source.node);
+        if (entry == null || entry.transform.identity()) return club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(box.x, box.y, box.width, box.height);
+        return entry.worldClip.clip(entry.worldShape().transformed(club.heiqi.uilib.ui.scene.geometry.SceneTransform.translation(
+                box.x - entry.worldBounds.x, box.y - entry.worldBounds.y)));
+    }
+    private Candidate<K> collisionTarget(List<Candidate<K>> candidates, LayoutBox box, int x, int y, club.heiqi.uilib.ui.scene.geometry.SceneMesh sourceRegion) {
         Candidate<K> chosen = null;
         double best = Double.NEGATIVE_INFINITY;
         for (Candidate<K> candidate : candidates) {
-            double score = collisionScore(candidate, box, x, y);
+            double score = collisionScore(candidate, box, x, y, sourceRegion);
             if (score != Double.NEGATIVE_INFINITY && preferred(candidate, chosen, score, best)) { chosen = candidate; best = score; }
         }
         return chosen;
     }
-    private double collisionScore(Candidate<K> candidate, LayoutBox box, int x, int y) {
+    private double collisionScore(Candidate<K> candidate, LayoutBox box, int x, int y, club.heiqi.uilib.ui.scene.geometry.SceneMesh sourceRegion) {
         switch (collision) {
-            case POINTER: return candidate.visibleBox.contains(x, y) ? 0 : Double.NEGATIVE_INFINITY;
+            case POINTER: return candidate.visible.contains(x, y) ? 0 : Double.NEGATIVE_INFINITY;
             case INTERSECTION:
-                LayoutBox intersection = candidate.visibleBox.intersect(box);
-                return intersection.width == 0 || intersection.height == 0 ? Double.NEGATIVE_INFINITY
-                        : (double) intersection.width * intersection.height;
+                double area = candidate.visible.intersection(sourceRegion).area();
+                return area == 0 ? Double.NEGATIVE_INFINITY : area;
             case CLOSEST_CENTER:
                 double dx = (double) SceneDragSupport.centerX(candidate.box) - SceneDragSupport.centerX(box);
                 double dy = (double) SceneDragSupport.centerY(candidate.box) - SceneDragSupport.centerY(box);

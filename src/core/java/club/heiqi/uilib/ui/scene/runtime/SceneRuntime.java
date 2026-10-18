@@ -549,7 +549,7 @@ public final class SceneRuntime implements AutoCloseable {
             frame.participants.add(captureMount(node));
             boolean previous = routing;
             routing = true;
-            try { node.control().inputFrame(node, geometry, now); }
+            try { node.control().inputFrame(node, geometry.asControl(node), now); }
             finally { routing = previous; }
         }
     }
@@ -563,7 +563,7 @@ public final class SceneRuntime implements AutoCloseable {
             if (!target.active() || target.node().control() == null) continue;
             boolean previous = routing;
             routing = true;
-            try { target.node().control().inputGeometryChanged(target.node(), geometry); }
+            try { target.node().control().inputGeometryChanged(target.node(), geometry.asControl(target.node())); }
             finally { routing = previous; }
         }
     }
@@ -1176,8 +1176,9 @@ public final class SceneRuntime implements AutoCloseable {
                     keyContinuations.add(held); held.refresh();
                 }
             }
-            boolean consumed = fallback ? consumer.control().editFallback(consumer, focused, event, inputGeometry)
-                    : consumer.control().edit(consumer, event, inputGeometry);
+            SceneGeometryView local = inputGeometry == null ? null : inputGeometry.asControl(consumer);
+            boolean consumed = fallback ? consumer.control().editFallback(consumer, focused, event, local)
+                    : consumer.control().edit(consumer, event, local);
             if (consumed && held != null) { capture.accept(held); held = null; }
             return consumed;
         } finally { if (held != null) held.close(); }
@@ -1224,7 +1225,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (!interactive(node) || node.control() == null) return;
         boolean previous = routing;
         routing = true;
-        try { node.control().preparePointerRelease(node, event, geometry); }
+        try { node.control().preparePointerRelease(node, event.in(geometry.asControl(node)), geometry.asControl(node)); }
         finally { routing = previous; }
     }
 
@@ -1236,7 +1237,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (!pointerRouter.captureInteractive(node) || node.control() == null) return;
         routing = true;
         try {
-            node.control().pointer(node, event, geometry);
+            node.control().pointer(node, event.in(geometry.asControl(node)), geometry.asControl(node));
         } finally {
             routing = false;
         }
@@ -1266,7 +1267,7 @@ public final class SceneRuntime implements AutoCloseable {
         SceneScrollResult result;
         routing = true;
         try {
-            result = node.control().scrollResult(node, event, geometry);
+            result = node.control().scrollResult(node, event.in(geometry.asControl(node)), geometry.asControl(node));
         } finally {
             routing = false;
         }
@@ -1392,18 +1393,26 @@ public final class SceneRuntime implements AutoCloseable {
     public SceneScrollViewport.Snapshot scrollLayoutSnapshot(SceneNode node, SceneNode.Axis axis, SceneGeometryView geometry) {
         domain.checkAccess(); checkAlive();
         if (geometry == null) return null;
-        SceneGeometryView.Entry entry = geometry.get(node);
+        SceneGeometryView local = geometry.asControl(node);
+        SceneGeometryView.Entry entry = local.get(node);
         if (entry == null) return null;
-        if (node.control() != null) {
-            SceneScrollViewport.Snapshot own = node.control().scrollViewport(node, axis, geometry);
-            if (own != null) return own;
+        SceneScrollViewport.Snapshot own = node.control() == null ? null : node.control().scrollViewport(node, axis, local);
+        if (own == null) {
+            if (!node.scrollable() || node.axis() != axis) return null;
+            int padding = node.padding();
+            LayoutBox contentWindow = new LayoutBox(entry.box.x + padding, entry.box.y + padding,
+                    Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2));
+            own = new SceneScrollViewport.Snapshot(contentWindow, entry.clip, entry.scrollOffset, entry.scrollMaximum,
+                    axis == SceneNode.Axis.ROW ? entry.box.width : entry.box.height);
         }
-        if (!node.scrollable() || node.axis() != axis) return null;
-        int padding = node.padding();
-        LayoutBox contentWindow = new LayoutBox(
-                entry.box.x + padding, entry.box.y + padding, Math.max(0, entry.box.width - padding * 2), Math.max(0, entry.box.height - padding * 2));
-        return new SceneScrollViewport.Snapshot(contentWindow, entry.clip,
-                entry.scrollOffset, entry.scrollMaximum, axis == SceneNode.Axis.ROW ? entry.box.width : entry.box.height);
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = geometry.coordinateTransform().inverse();
+        if (inverse == null) return own;
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform relative = inverse.multiply(entry.transform);
+        if (relative.identity()) return own;
+        LayoutBox box = own.box, clip = own.clip;
+        box = SceneGeometryView.bounds(club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(box.x, box.y, box.width, box.height).transformed(relative));
+        if (clip != null) clip = SceneGeometryView.bounds(club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(clip.x, clip.y, clip.width, clip.height).transformed(relative));
+        return new SceneScrollViewport.Snapshot(box, clip, own.offset, own.maximum, own.extent);
     }
 
     /** 挂载扩展观察同批有效几何；只发布呈现意图，实际树更新仍在声明结算中完成。
@@ -1430,7 +1439,7 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkWrite(); checkAlive();
         SceneScrollViewport.Snapshot view = scrollSnapshot(node, axis, inputGeometry);
         if (view == null) return 0;
-        boolean specialized = node.control() != null && node.control().scrollViewport(node, axis, inputGeometry) != null;
+        boolean specialized = node.control() != null && node.control().scrollViewport(node, axis, inputGeometry.asControl(node)) != null;
         int current = specialized ? view.offset : scrollOffset(node);
         int applied = scrollByPixels(node, axis, Math.max(0, Math.min(view.maximum, offset)) - current);
         if (node.control() != null && interactive(node)) {
@@ -1445,12 +1454,12 @@ public final class SceneRuntime implements AutoCloseable {
     public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels) {
         domain.checkWrite(); checkAlive();
         if (!interactive(node) || inputGeometry == null) return 0;
-        if (node.control() == null || node.control().scrollViewport(node, axis, inputGeometry) == null)
+        if (node.control() == null || node.control().scrollViewport(node, axis, inputGeometry.asControl(node)) == null)
             return node.axis() == axis ? scrollByPixels(node, pixels) : 0;
         boolean previousRouting = routing;
         int applied;
         routing = true;
-        try { applied = node.control().scrollByPixels(node, axis, pixels, inputGeometry); }
+        try { applied = node.control().scrollByPixels(node, axis, pixels, inputGeometry.asControl(node)); }
         finally { routing = previousRouting; }
         if (applied != 0) invalidateArrangement();
         return applied;

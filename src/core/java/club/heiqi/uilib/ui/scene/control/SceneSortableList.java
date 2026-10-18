@@ -58,8 +58,10 @@ public final class SceneSortableList {
                 (node, source, viewport, measured) -> {
                     control.version.get();
                     Session<T, K> session = control.session;
-                    return new LayoutBox(session == null ? source.x : session.overlayX,
-                            session == null ? source.y : session.overlayY, measured.width, measured.height);
+                    if (session == null) return new LayoutBox(source.x, source.y, measured.width, measured.height);
+                    club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = session.frame;
+                    return new LayoutBox((int) Math.round(frame.x(session.overlayX, session.overlayY)),
+                            (int) Math.round(frame.y(session.overlayX, session.overlayY)), measured.width, measured.height);
                 }, Collections.singletonList(control.version));
         control.layer = layer;
         layer.bind(NodeBinding.value(() -> { control.version.get(); return control.session != null && control.session.active; }, SceneNode::visible));
@@ -114,6 +116,8 @@ public final class SceneSortableList {
         final RowControl<T, K> row;
         final boolean keyboard;
         final int startX, startY, grabY;
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
+        double worldStartX, worldStartY, worldX, worldY;
         final long pressed;
         final SceneDragSupport.AutoScroll scrolling = new SceneDragSupport.AutoScroll();
         boolean active;
@@ -163,6 +167,8 @@ public final class SceneSortableList {
             SceneGeometryView.Entry entry = geometry.get(row.node);
             if (entry == null) return;
             Session<T, K> next = new Session<>(row, keyboard, x, y, entry.box, runtime.inputNanos());
+            next.frame = geometry.coordinateTransform();
+            next.worldStartX = next.worldX = next.frame.x(x, y); next.worldStartY = next.worldY = next.frame.y(x, y);
             session = next;
             next.active = keyboard || row.row.handles.length > 0;
             List<RowControl<T, K>> all = rows(geometry);
@@ -176,7 +182,7 @@ public final class SceneSortableList {
             current.active = true; current.scrolling.reset(now); changed();
         }
         void pending(Session<T, K> current, long now) {
-            double distance = Math.hypot((long) current.pointerX - current.startX, (long) current.pointerY - current.startY);
+            double distance = Math.hypot(current.worldX - current.worldStartX, current.worldY - current.worldStartY);
             // 默认排序是距离或延时；距离先达到就已激活，不保留不可达的容差失效态。
             if (distance >= 5 || now - current.pressed >= 200_000_000L) activate(current, now);
         }
@@ -254,6 +260,10 @@ public final class SceneSortableList {
             Session<T, K> current = session;
             if (current == null) return;
             if (!valid(current, geometry)) { cancel(null); return; }
+            current.frame = geometry.coordinateTransform();
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = current.frame.inverse();
+            if (inverse == null) { cancel(null); return; }
+            if (!current.keyboard) { current.pointerX = (int) Math.round(inverse.x(current.worldX, current.worldY)); current.pointerY = (int) Math.round(inverse.y(current.worldX, current.worldY)); }
             if (current.keyboard) {
                 SceneNode focused = runtime.focusRouter().focused().get();
                 if (focused != current.row.node && !SceneDragSupport.handleFocus(current.row.node, current.row.row.handles, focused)) { cancel(null); return; }
@@ -313,7 +323,7 @@ public final class SceneSortableList {
         @Override public Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
             if (!SceneDragSupport.eligible(row.content, node)) return null;
             if (row.handles.length > 0) return SceneDragSupport.handle(node, row.handles, geometry, x, y);
-            return SceneDragSupport.inside(geometry.get(row.content), x, y) ? bodyTarget : null;
+            return geometry.contains(row.content, x, y) ? bodyTarget : null;
         }
         @Override public Object pointerActivator(SceneNode node, SceneNode hit, SceneGeometryView geometry, int x, int y) {
             SceneNode handle = SceneDragSupport.handle(node, row.handles, geometry, x, y);
@@ -329,12 +339,13 @@ public final class SceneSortableList {
             return SceneDragSupport.dragCommand(event) && SceneDragSupport.handleFocus(node, row.handles, focused);
         }
         @Override public void pointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
+            geometry = geometry.world().asControl(list.root); event = event.in(geometry);
             switch (event.kind) {
                 case DOWN: list.begin(this, false, event.x, event.y, geometry); break;
                 case MOVE:
                     Session<T, K> current = list.session;
                     if (current == null || current.row != this || current.keyboard) return;
-                    current.pointerX = event.x; current.pointerY = event.y;
+                    current.pointerX = event.x; current.pointerY = event.y; current.worldX = event.worldX; current.worldY = event.worldY;
                     if (!current.active) list.pending(current, list.runtime.inputNanos());
                     list.refresh(current, geometry, SceneDragSupport.AutoScroll.Shift.NONE); break;
                 case UP:
@@ -347,6 +358,7 @@ public final class SceneSortableList {
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
             if (!SceneDragSupport.dragCommand(event) || geometry == null) return false;
+            geometry = geometry.world().asControl(list.root);
             Session<T, K> current = list.session;
             switch (event.command) {
                 case ACTIVATE_ONLY: case SPACE:

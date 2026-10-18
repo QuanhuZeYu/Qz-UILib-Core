@@ -20,6 +20,8 @@ public final class ScenePointerEvent {
     public final int button;
 
     public final int x, y, delta;
+    public final double worldX, worldY, preciseX, preciseY;
+    private final club.heiqi.uilib.ui.scene.geometry.SceneTransform frame;
     /** 采集时刻；速度估计使用事件间隔，不以同帧结算间隔代替。 */
     public final long timeNanos;
     public enum ScrollPhase { DISCRETE, UPDATE, END, MOMENTUM }
@@ -29,15 +31,33 @@ public final class ScenePointerEvent {
         this(kind, button, x, y, delta, System.nanoTime(), ScrollPhase.DISCRETE);
     }
     private ScenePointerEvent(Kind kind, int button, int x, int y, int delta, long timeNanos, ScrollPhase phase) {
+        this(kind, button, x, y, delta, timeNanos, phase, x, y, club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY);
+    }
+    private ScenePointerEvent(Kind kind, int button, double x, double y, int delta, long timeNanos, ScrollPhase phase,
+            double worldX, double worldY, club.heiqi.uilib.ui.scene.geometry.SceneTransform frame) {
+        this.worldX = worldX; this.worldY = worldY; preciseX = x; preciseY = y; this.frame = frame;
         this.timeNanos = timeNanos; this.scrollPhase = java.util.Objects.requireNonNull(phase, "滚动输入阶段");
         this.kind = kind;
         this.button = button;
-        this.x = x;
-        this.y = y;
+        this.x = (int) Math.round(x);
+        this.y = (int) Math.round(y);
         this.delta = delta;
     }
 
-    public ScenePointerEvent at(long timeNanos) { return new ScenePointerEvent(kind, button, x, y, delta, timeNanos, scrollPhase); }
+    public ScenePointerEvent at(long timeNanos) { return new ScenePointerEvent(kind, button, preciseX, preciseY, delta, timeNanos, scrollPhase, worldX, worldY, frame); }
+    /** 从同一个world采样映射，不在祖先链逐级取整。 */
+    public ScenePointerEvent in(club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry) {
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform next = geometry.coordinateTransform();
+        if (next.equals(frame)) return this;
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = next.inverse();
+        if (inverse == null) throw new IllegalArgumentException("指针目标坐标系不可逆，必须先取消联系");
+        return new ScenePointerEvent(kind, button, inverse.x(worldX, worldY), inverse.y(worldX, worldY), delta,
+                timeNanos, scrollPhase, worldX, worldY, next);
+    }
+    public ScenePointerEvent world() {
+        return frame.identity() ? this : new ScenePointerEvent(kind, button, worldX, worldY, delta, timeNanos, scrollPhase,
+                worldX, worldY, club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY);
+    }
     /** 宿主明确提供直接滚动序列；MOMENTUM 表示已有动量，不能重复合成。 */
     public static ScenePointerEvent scrollGesture(int x, int y, int delta, ScrollPhase phase, long timeNanos) {
         return new ScenePointerEvent(Kind.SCROLL, -1, x, y, delta, timeNanos, phase);

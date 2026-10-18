@@ -49,7 +49,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private void publishHover(SceneGeometryView geometry) {
         hoverTarget.set(hovered(geometry));
         if(hoverInterests.isEmpty())return;
-        SceneNode target = closed || !positionKnown ? null : passive.within(geometry);
+        SceneNode target = closed || !positionKnown ? null : passive.within(geometry.world());
         for(HoverInterest interest:new java.util.ArrayList<>(hoverInterests)) {
             boolean inside=false;
             for(SceneNode cursor=target;cursor!=null;cursor=cursor.parent())
@@ -83,19 +83,19 @@ public final class ScenePointerRouter implements AutoCloseable {
     /** 悬停只是已有指针位置在当前范围的投影，不建立另一个输入owner。 */
     public SceneNode hovered(SceneGeometryView geometry) {
         runtime.domain().checkAccess();
-        return closed || !positionKnown ? null : hover.get(geometry, false);
+        return closed || !positionKnown ? null : hover.get(geometry.world(), false);
     }
 
     /** 与 click 命中分开；仅投影当前指针、范围及同代 geometry。 */
     public SceneNode passiveHovered(SceneGeometryView geometry) {
         runtime.domain().checkAccess();
-        return closed || !positionKnown ? null : passive.get(geometry, true);
+        return closed || !positionKnown ? null : passive.get(geometry.world(), true);
     }
 
     long positionRevision(){return positionRevision;}
     SceneNode tooltipHovered(SceneGeometryView geometry){
         if(closed||!positionKnown)return null;
-        return passive.within(geometry);
+        return passive.within(geometry.world());
     }
     /** 只观察已发布的提示矩形与连接走廊；不赋予输入资格，也不改变click/wheel命中。 */
     boolean observesTooltip(club.heiqi.uilib.ui.scene.layout.LayoutBox anchor,club.heiqi.uilib.ui.scene.layout.LayoutBox popup){
@@ -141,10 +141,11 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     /** 即使本帧没有事件，也检查来源更新后的owner资格；失活后本段不再恢复。 */
     public void prepare(SceneGeometryView geometry) {
+        geometry = geometry.world();
         checkAccess();
         if (preparedGeometry != geometry) { hover.clear(); passive.clear(); preparedGeometry = geometry; }
         revalidate();
-        if (owner != null && geometry.get(owner.node()) == null && !ownedCaptureScope(owner.node())) cancelOwner();
+        if (owner != null && (geometry.get(owner.node()) == null ? !ownedCaptureScope(owner.node()) : geometry.get(owner.node()).inverse == null)) cancelOwner();
         wheel.prepare(geometry, runtime.inputNanos());
         publishHover(geometry);
     }
@@ -186,6 +187,7 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     /** 按采集顺序准备当前范围并分派事件，所有阶段共用本路由器的唯一手势状态。 */
     public void route(ScenePointerEvent event, SceneGeometryView geometry) {
+        geometry = geometry.world(); event = event.world();
         checkAccess();
         prepare(geometry);
         if (event.kind == ScenePointerEvent.Kind.DOWN || event.kind == ScenePointerEvent.Kind.CANCEL) runtime.cancelScrollMotions();
@@ -267,7 +269,8 @@ public final class ScenePointerRouter implements AutoCloseable {
             if (!runtime.interactive(ancestor) || ancestor.control() == null) continue;
             SceneNode candidate = ancestor;
             Object delegated = runtime.domain().readOnly(() ->
-                    candidate.control().pointerActivator(candidate, target.node, geometry, x, y));
+                    candidate.control().pointerActivator(candidate, target.node, geometry.asControl(candidate),
+                            (int) Math.round(geometry.mapX(candidate, x, y)), (int) Math.round(geometry.mapY(candidate, x, y))));
             if (delegated != null && runtime.pointerTargetValid(candidate, delegated)) {
                 hit = candidate;
                 identity = delegated;
@@ -331,10 +334,10 @@ public final class ScenePointerRouter implements AutoCloseable {
     private void blurOutsideFocus(SceneGeometryView geometry) {
         if (!geometry.viewport().contains(x, y)) return;
         SceneNode modal = runtime.activeModal();
-        if (modal != null && !inside(geometry.get(modal))) {
+        if (modal != null && !geometry.contains(modal, x, y)) {
             boolean owned = false;
             for (SceneGeometryView.Entry entry : geometry.ordered())
-                if (geometry.layerBoundary(entry.node) != null && runtime.interactive(entry.node) && inside(entry)) {
+                if (geometry.layerBoundary(entry.node) != null && runtime.interactive(entry.node) && geometry.contains(entry.node, x, y)) {
                     owned = true;
                     break;
                 }
@@ -342,7 +345,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         }
         runtime.focusRouter().pointerInput();
         SceneNode focused = runtime.focusRouter().focused().get();
-        if (focused != null && !inside(geometry.get(focused))) runtime.focusRouter().clear();
+        if (focused != null && !geometry.contains(focused, x, y)) runtime.focusRouter().clear();
     }
 
     private boolean inside(SceneGeometryView.Entry entry) {

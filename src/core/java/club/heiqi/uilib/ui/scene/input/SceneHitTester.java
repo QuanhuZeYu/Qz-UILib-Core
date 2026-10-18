@@ -29,7 +29,7 @@ public final class SceneHitTester {
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
-            if (!entry.box.contains(x, y) || entry.clip != null && !entry.clip.contains(x, y)
+            if (!geometry.contains(entry.node, x, y)
                     || !runtime.interactive(entry.node)) continue;
             boolean control = entry.node.clickAction() != null
                     || entry.node.control() != null && entry.node.control().passiveHover();
@@ -54,14 +54,14 @@ public final class SceneHitTester {
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
-            if (!runtime.interactive(entry.node)
-                    || entry.clip != null && !entry.clip.contains(x, y)) continue;
+            if (!runtime.interactive(entry.node) || !geometry.clipContains(entry.node, x, y)) continue;
             Object internal =
                     entry.node.control() == null
                             ? null
-                            : entry.node.control().pointerTarget(entry.node, geometry, x, y);
+                            : entry.node.control().pointerTarget(entry.node, geometry.asControl(entry.node),
+                                    (int) Math.round(geometry.mapX(entry.node, x, y)), (int) Math.round(geometry.mapY(entry.node, x, y)));
             if (internal != null) return new Target(entry.node, internal);
-            if (entry.box.contains(x, y) && entry.node.clickAction() != null)
+            if (geometry.contains(entry.node, x, y) && entry.node.clickAction() != null)
                 return new Target(entry.node, entry.node);
         }
         return null;
@@ -76,8 +76,8 @@ public final class SceneHitTester {
         List<SceneGeometryView.Entry> entries = geometry.ordered();
         for (int i = entries.size() - 1; i >= 0; i--) {
             SceneGeometryView.Entry entry = entries.get(i);
-            if (entry.clip != null && !entry.clip.contains(x, y)) continue;
-            if (entry.box.contains(x, y) && runtime.interactive(entry.node)
+            if (!geometry.contains(entry.node, x, y)) continue;
+            if (runtime.interactive(entry.node)
                     && geometry.layerBoundary(entry.node) != null) {
                 SceneNode boundary = geometry.layerBoundary(entry.node);
                 for (SceneNode node = entry.node; node != null; node = node.parent()) {

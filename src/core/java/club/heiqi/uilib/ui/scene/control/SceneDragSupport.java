@@ -26,8 +26,7 @@ final class SceneDragSupport {
 
     static LayoutBox visibleBox(SceneGeometryView geometry, SceneGeometryView.Entry entry) {
         if (entry == null) return null;
-        LayoutBox box = entry.box.intersect(geometry.viewport());
-        return entry.clip == null ? box : box.intersect(entry.clip);
+        return SceneGeometryView.bounds(geometry.visibleRegion(entry.node));
     }
     static int centerX(LayoutBox box) { return integer((long) box.x + box.width / 2); }
     static int centerY(LayoutBox box) { return integer((long) box.y + box.height / 2); }
@@ -47,15 +46,11 @@ final class SceneDragSupport {
         return entry != null && entry.box.contains(x, y) && (entry.clip == null || entry.clip.contains(x, y));
     }
     static boolean visible(SceneGeometryView geometry, SceneNode node) {
-        SceneGeometryView.Entry entry = geometry.get(node);
-        if (entry == null) return false;
-        LayoutBox box = entry.box.intersect(geometry.viewport());
-        if (entry.clip != null) box = box.intersect(entry.clip);
-        return box.width > 0 && box.height > 0;
+        return !geometry.visibleRegion(node).empty();
     }
     static SceneNode handle(SceneNode root, SceneNode[] handles, SceneGeometryView geometry, int x, int y) {
         for (SceneNode handle : handles)
-            if (eligible(handle, root) && inside(geometry.get(handle), x, y)) return handle;
+            if (eligible(handle, root) && geometry.contains(handle, x, y)) return handle;
         return null;
     }
     static boolean handleFocus(SceneNode root, SceneNode[] handles, SceneNode focused) {
@@ -114,7 +109,20 @@ final class SceneDragSupport {
             if (source == null || !runtime.interactive(source) || speed == 0) { horizontal.reset(); vertical.reset(); return Shift.NONE; }
             int dx = horizontal.advance(runtime, source, geometry, x, y, elapsed, speed, allowX);
             int dy = vertical.advance(runtime, source, geometry, x, y, elapsed, speed, allowY);
-            return dx == 0 && dy == 0 ? Shift.NONE : new Shift(horizontal.previous, vertical.previous, -dx, -dy);
+            if (dx == 0 && dy == 0) return Shift.NONE;
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = geometry.coordinateTransform().inverse();
+            if (inverse == null) return Shift.NONE;
+            double wx = 0, wy = 0;
+            if (horizontal.previous != null) {
+                club.heiqi.uilib.ui.scene.geometry.SceneTransform m = geometry.world().get(horizontal.previous).transform;
+                wx -= m.a * dx; wy -= m.b * dx;
+            }
+            if (vertical.previous != null) {
+                club.heiqi.uilib.ui.scene.geometry.SceneTransform m = geometry.world().get(vertical.previous).transform;
+                wx -= m.c * dy; wy -= m.d * dy;
+            }
+            return new Shift(horizontal.previous, vertical.previous,
+                    (int) Math.round(inverse.a * wx + inverse.c * wy), (int) Math.round(inverse.b * wx + inverse.d * wy));
         }
         private long sample(long now) {
             long elapsed = sampled ? Math.max(0L, Math.min(50_000_000L, now - last)) : 0;
@@ -131,11 +139,15 @@ final class SceneDragSupport {
                     int x, int y, long elapsed, double speed, boolean allowed) {
                 SceneNode scroller = allowed ? nearest(runtime, source, geometry) : null;
                 if (scroller == null) { reset(); return 0; }
-                SceneScrollViewport.Snapshot view = runtime.scrollSnapshot(scroller, axis, geometry);
+                double worldX = geometry.coordinateTransform().x(x, y), worldY = geometry.coordinateTransform().y(x, y);
+                SceneGeometryView local = geometry.world().asControl(scroller);
+                SceneScrollViewport.Snapshot view = runtime.scrollSnapshot(scroller, axis, local);
                 if (view == null) { reset(); return 0; }
-                LayoutBox window = view.box.intersect(geometry.viewport());
+                LayoutBox window = view.box.intersect(local.viewport());
                 if (view.clip != null) window = window.intersect(view.clip);
-                double strength = strength(window, x, y);
+                int px = (int) Math.round(geometry.world().mapX(scroller, worldX, worldY));
+                int py = (int) Math.round(geometry.world().mapY(scroller, worldX, worldY));
+                double strength = strength(window, px, py);
                 return integrate(runtime, scroller, strength, elapsed, speed);
             }
             private SceneNode nearest(SceneRuntime runtime, SceneNode source, SceneGeometryView geometry) {

@@ -167,6 +167,7 @@ public final class SceneLayoutEngine {
                 arrange(root, new LayoutBox(0, 0, w, h), null, entries);
             }
             LayoutBox viewport = new LayoutBox(0, 0, width, height);
+            entries = SceneGeometryProjection.project(entries, viewport);
             Map<SceneNode, SceneGeometryView.Entry> index = new IdentityHashMap<>();
             for (SceneGeometryView.Entry entry : entries) index.put(entry.node, entry);
             Map<SceneNode, Boolean> sources = new IdentityHashMap<>();
@@ -208,8 +209,8 @@ public final class SceneLayoutEngine {
                 if (previous == null || !previous.sameLayout(node.style()))
                     throw new IllegalStateException("文字几何样式变化必须先重新布局: node=" + node.id());
                 textCache.remove(node);
-                int innerWidth = Math.max(0, entry.box.width - node.padding() * 2);
-                int innerHeight = Math.max(0, entry.box.height - node.padding() * 2);
+                int innerWidth = Math.max(0, entry.layoutBox.width - node.padding() * 2);
+                int innerHeight = Math.max(0, entry.layoutBox.height - node.padding() * 2);
                 TextLayout lines = node.control() == null
                         ? textFor(node).layout(node.text(), node.style(), innerWidth, node.textPolicy())
                         : node.control().layoutText(node, textFor(node), innerWidth, positionedChildrenFor(node));
@@ -238,7 +239,7 @@ public final class SceneLayoutEngine {
                 if (!available || !child.visible()) continue;
                 int[] desired = measure(child, viewport.width, viewport.height);
                 int w = cross(child.width(), desired[0], viewport.width), h = cross(child.height(), desired[1], viewport.height);
-                LayoutBox preferred = child.control().placeLayer(child, source.box, viewport, new MeasuredSize(w, h));
+                LayoutBox preferred = child.control().placeLayer(child, source, viewport, new MeasuredSize(w, h));
                 if (preferred != null && (preferred.width != w || preferred.height != h))
                     throw new IllegalArgumentException("所属层定位不能替换测量尺寸: node=" + child.id());
                 // 自定义端口与默认锚定都只给首选位置；统一以正式测量尺寸限位后发布共同几何。
@@ -247,7 +248,10 @@ public final class SceneLayoutEngine {
                 LayoutBox placed = new LayoutBox(x, y, w, h);
                 int begin = entries.size();
                 arrange(child, placed, viewport, entries);
-                for (int i = begin; i < entries.size(); i++) index.put(entries.get(i).node, entries.get(i));
+                List<SceneGeometryView.Entry> projected = SceneGeometryProjection.project(new ArrayList<>(entries.subList(begin, entries.size())), viewport);
+                for (int i = 0; i < projected.size(); i++) {
+                    entries.set(begin + i, projected.get(i)); index.put(projected.get(i).node, projected.get(i));
+                }
             }
             if (index.containsKey(child)) projectLayers(child, viewport, entries, index, sources);
         }
@@ -255,9 +259,8 @@ public final class SceneLayoutEngine {
     private static boolean sourceVisible(SceneNode node, SceneGeometryView.Entry entry, LayoutBox viewport) {
         for (SceneNode cursor = node; cursor != null; cursor = cursor.parent())
             if (!cursor.visible() || !cursor.enabled() || cursor.destroyed()) return false;
-        LayoutBox visible = entry.box.intersect(viewport);
-        if (entry.clip != null) visible = visible.intersect(entry.clip);
-        return visible.width > 0 && visible.height > 0;
+        return entry.inverse != null && entry.worldClip.intersect(club.heiqi.uilib.ui.scene.geometry.SceneClipRegion.rectangle(viewport))
+                .intersects(entry.worldShape());
     }
     private static int anchored(long preferred, int size, int start, int available) {
         return size > available ? start : (int) Math.max(start, Math.min((long) start + available - size, preferred));
@@ -367,6 +370,23 @@ public final class SceneLayoutEngine {
     /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。 */
     public SceneGeometry captureSubtree(
             SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
+        return captureSubtree(root, allocated, ancestorClip, viewport,
+                club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY,
+                club.heiqi.uilib.ui.scene.geometry.SceneClipRegion.rectangle(ancestorClip), viewport);
+    }
+    /** 离屏备用仍发布世界事实；调用方在嵌入图像前统一回到图像frame。 */
+    public SceneGeometry captureSubtree(SceneNode root, LayoutBox allocated, LayoutBox viewport,
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inherited,
+            club.heiqi.uilib.ui.scene.geometry.SceneClipRegion externalWorldClip) {
+        club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = inherited.inverse();
+        LayoutBox localClip = inverse == null ? null : externalWorldClip.transformed(inverse).bounds();
+        LayoutBox localViewport = inverse == null ? viewport : SceneGeometryView.bounds(
+                club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(viewport.x, viewport.y, viewport.width, viewport.height).transformed(inverse));
+        return captureSubtree(root, allocated, localClip, localViewport, inherited, externalWorldClip, viewport);
+    }
+    private SceneGeometry captureSubtree(SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport,
+            club.heiqi.uilib.ui.scene.geometry.SceneTransform inherited,
+            club.heiqi.uilib.ui.scene.geometry.SceneClipRegion externalWorldClip, LayoutBox worldViewport) {
         rejectContentLayers(root, root, "paint capture");
         allocatedBoxes.clear();
         arrangementViewport = viewport;
@@ -375,7 +395,8 @@ public final class SceneLayoutEngine {
         try {
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             arrange(root, allocated, ancestorClip, entries, true);
-            return new SceneGeometry(SceneScrollDecorationLayout.project(entries, viewport), viewport);
+            entries = SceneGeometryProjection.project(entries, worldViewport, inherited, externalWorldClip);
+            return new SceneGeometry(SceneScrollDecorationLayout.project(entries, worldViewport), worldViewport);
         } finally {
             endTextRequests();
         }

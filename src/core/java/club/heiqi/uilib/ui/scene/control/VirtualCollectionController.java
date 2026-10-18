@@ -251,7 +251,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         return new ChildPlacements(result, new MeasuredSize(allocated.width, (int)extent));
     }
 
-    private void geometry(SceneGeometryView geometry) {
+    private void geometry(SceneGeometryView worldGeometry) {
+        SceneGeometryView geometry = worldGeometry == null ? null : worldGeometry.asControl(root);
         if (!active || root.runtime() != runtime) return;
         if (geometry == null) { stableGeometry = null; cancelRequest(); cancelEnd(); return; }
         SceneGeometryView.Entry view = geometry.get(root);
@@ -439,8 +440,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         K initial = null;
         for (Row<T, K> row : rows.values()) if (contains(row.node, from)) { initial = row.key; break; }
         final K fromKey = initial;
-        final boolean vertical = direction == SceneNavigationEvent.UP || direction == SceneNavigationEvent.DOWN;
-        final int step = direction == SceneNavigationEvent.UP || direction == SceneNavigationEvent.LEFT ? -1 : 1;
+        final boolean layoutVertical = direction == SceneNavigationEvent.UP || direction == SceneNavigationEvent.DOWN;
         return new SceneFocusTraversal.DirectionalCursor() {
             int position = fromKey == null ? Math.min(heights.size() - 1, heights.at(offset)) : heights.position(fromKey);
             K candidate;
@@ -448,18 +448,23 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             SceneFocusTraversal.DirectionalCursor nested;
             club.heiqi.uilib.ui.scene.runtime.MountHandle nestedBoundary;
             final Set<SceneNode> exhausted = new java.util.HashSet<>(), ordinary = new java.util.HashSet<>();
-            public SceneFocusTraversal.Result prepare(SceneGeometryView geometry) {
+            public SceneFocusTraversal.Result prepare(SceneGeometryView worldGeometry) {
+                SceneGeometryView geometry = worldGeometry.world();
                 if (closed || !active || !runtime.interactive(root)) return SceneFocusTraversal.Result.cancelled();
                 if (fromKey != null && !values.containsKey(fromKey)) return SceneFocusTraversal.Result.cancelled();
-                if (geometry != stableGeometry) return SceneFocusTraversal.Result.waiting();
+                if (geometry.asControl(root) != stableGeometry) return SceneFocusTraversal.Result.waiting();
+                club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.get(root).transform;
+                double projection = direction == SceneNavigationEvent.UP ? -frame.d : direction == SceneNavigationEvent.DOWN ? frame.d
+                        : direction == SceneNavigationEvent.LEFT ? -frame.c : frame.c;
+                boolean vertical = frame.identity() ? layoutVertical : Math.abs(projection) > Math.ulp(frame.maximumScale()) * 4;
+                int step = projection < 0 ? -1 : 1;
                 LayoutBox start = geometry.get(from) == null ? origin : geometry.get(from).box;
                 if (first && fromKey == null) {
                     // 外部入口先比较当前呈现区域内的真实目标，不把不可见预取行当作默认入口。
                     List<SceneNode> visible = new ArrayList<>();
                     for (Row<T, K> row : rows.values()) {
                         SceneGeometryView.Entry entry = geometry.get(row.node);
-                        if (entry != null && entry.box.y < (long)entry.clip.y + entry.clip.height
-                                && (long)entry.box.y + entry.box.height > entry.clip.y) collectFocusable(row.node, visible);
+                        if (entry != null && !geometry.visibleRegion(row.node).empty()) collectFocusable(row.node, visible);
                     }
                     List<SceneNode> ordered = SceneFocusGeometry.ordered(geometry, start, direction, visible);
                     if (!ordered.isEmpty()) return SceneFocusTraversal.Result.ready(ordered.get(0));

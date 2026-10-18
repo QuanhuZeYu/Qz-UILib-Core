@@ -14,28 +14,28 @@ final class SceneSortableFlights<T, K, C> {
     private static final class Flight {
         final SceneSortableTrack x, y;
         private SceneNode anchor;
-        private int baseX, baseY, worldX, worldY;
+        private double baseX, baseY, worldX, worldY;
+        private club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
         Flight(int x, int y, SceneSortableTrack.Strategy strategy, long now) {
             this.x = new SceneSortableTrack(x, 0, 0, strategy, now);
             this.y = new SceneSortableTrack(y, 0, 0, strategy, now);
         }
         void locate(SceneNode nextAnchor, SceneGeometryView geometry, LayoutBox slot, long now, boolean rebase) {
             SceneGeometryView.Entry parent = geometry.get(nextAnchor);
-            int nextBaseX = slot.x - parent.box.x + scrollX(parent);
-            int nextBaseY = slot.y - parent.box.y + scrollY(parent);
+            inverse = parent.inverse;
+            if (inverse == null) return;
+            double nextBaseX = inverse.x(slot.x, slot.y) - parent.layoutBox.x + scrollX(parent);
+            double nextBaseY = inverse.y(slot.x, slot.y) - parent.layoutBox.y + scrollY(parent);
             if (rebase) {
                 x.advance(now); y.advance(now);
-                double dx = (double) baseX - nextBaseX, dy = (double) baseY - nextBaseY;
-                if (anchor != nextAnchor) {
-                    SceneGeometryView.Entry previousParent = geometry.get(anchor);
-                    double previousX = worldX, previousY = worldY;
-                    if (previousParent != null) {
-                        previousX = (double) previousParent.box.x - scrollX(previousParent) + baseX;
-                        previousY = (double) previousParent.box.y - scrollY(previousParent) + baseY;
-                    }
-                    dx = previousX - slot.x; dy = previousY - slot.y;
+                SceneGeometryView.Entry previousParent = geometry.get(anchor);
+                double previousX = worldX, previousY = worldY;
+                if (previousParent != null) {
+                    double px = previousParent.layoutBox.x - scrollX(previousParent) + baseX;
+                    double py = previousParent.layoutBox.y - scrollY(previousParent) + baseY;
+                    previousX = previousParent.transform.x(px, py); previousY = previousParent.transform.y(px, py);
                 }
-                x.shift(dx); y.shift(dy);
+                x.shift(previousX - slot.x); y.shift(previousY - slot.y);
             }
             anchor = nextAnchor; baseX = nextBaseX; baseY = nextBaseY; worldX = slot.x; worldY = slot.y;
         }
@@ -43,6 +43,8 @@ final class SceneSortableFlights<T, K, C> {
             x.retarget(0, strategy, now); y.retarget(0, strategy, now);
         }
         boolean active() { return x.active() || y.active(); }
+        int localX() { return inverse == null ? 0 : (int) Math.round(inverse.a * x.value() + inverse.c * y.value()); }
+        int localY() { return inverse == null ? 0 : (int) Math.round(inverse.b * x.value() + inverse.d * y.value()); }
     }
     private final SceneSortableModel<T, K, C> model;
     private final Map<SceneSortableModel.RowEntry<T, K, C>, Flight> flights = new IdentityHashMap<>();
@@ -73,7 +75,7 @@ final class SceneSortableFlights<T, K, C> {
             // 原有限让位保留相对偏移，响应布局直接采用新槽；显式运动才续接布局目标变化。
             flight.locate(row.placed.get().declaration.items, geometry, slot, now, reordering || strategy.explicit);
             flight.retarget(strategy, now);
-            offset(row, flight.x.integer(), flight.y.integer());
+            offset(row, flight.localX(), flight.localY());
             if (!flight.active()) iterator.remove();
         }
     }
@@ -105,7 +107,7 @@ final class SceneSortableFlights<T, K, C> {
         while (iterator.hasNext()) {
             Map.Entry<SceneSortableModel.RowEntry<T, K, C>, Flight> entry = iterator.next(); Flight flight = entry.getValue();
             flight.retarget(strategy, now);
-            offset(entry.getKey(), flight.x.integer(), flight.y.integer());
+            offset(entry.getKey(), flight.localX(), flight.localY());
             if (!flight.active()) iterator.remove();
         }
     }

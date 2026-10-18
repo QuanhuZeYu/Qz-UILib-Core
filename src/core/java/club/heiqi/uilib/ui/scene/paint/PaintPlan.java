@@ -15,6 +15,26 @@ public final class PaintPlan {
         return commands;
     }
 
+    /** 外层仿射只组合一次；同一映射还覆盖备用片段与延后overlay的主图身份。 */
+    public PaintPlan transformed(club.heiqi.uilib.ui.scene.geometry.SceneTransform transform,club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip){
+        return transformation(transform,clip).apply(this);
+    }
+    public static Transformation transformation(club.heiqi.uilib.ui.scene.geometry.SceneTransform transform,club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip){
+        return new Transformation(java.util.Objects.requireNonNull(transform),java.util.Objects.requireNonNull(clip));
+    }
+    public static final class Transformation {
+        private final club.heiqi.uilib.ui.scene.geometry.SceneTransform transform;
+        private final club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip;
+        private final java.util.Map<PaintCommand,PaintCommand> mapped=new java.util.IdentityHashMap<>();
+        private Transformation(club.heiqi.uilib.ui.scene.geometry.SceneTransform transform,club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip){this.transform=transform;this.clip=clip;}
+        public PaintPlan apply(PaintPlan plan){return plan.transformed(transform,clip,mapped);}
+    }
+    PaintPlan transformed(club.heiqi.uilib.ui.scene.geometry.SceneTransform transform,club.heiqi.uilib.ui.scene.geometry.SceneClipRegion clip,java.util.Map<PaintCommand,PaintCommand> mapped){
+        if(transform.identity()&&clip.unbounded()){boolean marked=true;for(PaintCommand command:commands)if(!command.sceneGeometry){marked=false;break;}if(marked)return this;}
+        List<PaintCommand> result=new ArrayList<>();
+        for(PaintCommand command:commands)result.add(command.withGeometry(transform,clip,mapped));return new PaintPlan(result);
+    }
+
     /** 不可变呈现片段复用原资源与分支身份；只改变坐标、裁剪和合法 alpha。 */
     public PaintPlan presented(int dx, int dy, float opacity, club.heiqi.uilib.ui.scene.layout.LayoutBox clip) {
         if (!Float.isFinite(opacity) || opacity < 0 || opacity > 1) throw new IllegalArgumentException("片段透明度须在0到1之间");
