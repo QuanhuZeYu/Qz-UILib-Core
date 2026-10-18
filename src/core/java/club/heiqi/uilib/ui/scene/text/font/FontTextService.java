@@ -344,9 +344,28 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         ink.clear();
         failures.clear();
         obfuscationPools.clear();
-        for (FontFace face : faces.values()) face.close();
+        // 先结束旧映射；按字体规格5.2继续其余所属释放与失效通知，最后原样暴露首错。
+        List<FontFace> retiredFaces = new ArrayList<>(faces.values());
         faces.clear();
-        for (Runnable listener : new ArrayList<Runnable>(invalidation)) listener.run();
+        Throwable failure = null;
+        for (FontFace face : retiredFaces) {
+            try {
+                face.close();
+            } catch (RuntimeException | Error error) {
+                if (failure == null) failure = error;
+                else if (error != failure) failure.addSuppressed(error);
+            }
+        }
+        for (Runnable listener : new ArrayList<Runnable>(invalidation)) {
+            try {
+                listener.run();
+            } catch (RuntimeException | Error error) {
+                if (failure == null) failure = error;
+                else if (error != failure) failure.addSuppressed(error);
+            }
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
     /** 默认数学声明使用具名 math；显式候选完整覆盖它，不向普通文本链添加数学字体。 端口仅持有服务和样式；LRU/reload 后每次重新取得当前 source/face。 */
