@@ -52,6 +52,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     private final Map<SceneNode, ScrollPosition> scrolling = new IdentityHashMap<>();
+    private final List<SceneKeyContinuation> keyContinuations = new ArrayList<>();
     private final SceneShortcuts shortcuts = new SceneShortcuts(this);
     private final SceneScrollObservers scrollObservers = new SceneScrollObservers();
     private final SceneScrollDecorations scrollDecorations;
@@ -844,13 +845,13 @@ public final class SceneRuntime implements AutoCloseable {
         throwFailure(failure);
     }
 
-    private static Throwable collectFailure(Throwable failure, Throwable error) {
+    static Throwable collectFailure(Throwable failure, Throwable error) {
         if (failure == null) return error;
         if (failure != error) failure.addSuppressed(error);
         return failure;
     }
 
-    private static void throwFailure(Throwable failure) {
+    static void throwFailure(Throwable failure) {
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
         if (failure instanceof Error) throw (Error) failure;
     }
@@ -994,14 +995,17 @@ public final class SceneRuntime implements AutoCloseable {
     /** KEY首段只走既有编辑/ESC链；应用命令等待本事件Effect成功结算。 */
     public enum KeyResult { IGNORED, EDITED, RESERVED }
 
-    public KeyResult dispatchKeyEdit(SceneKeyEvent event) {
+    public KeyResult dispatchKeyEdit(SceneKeyEvent event) { return dispatchKeyEdit(event, null); }
+
+    /** KEY首段可取得实际消费方许可；旧入口不登记续段。 */
+    public KeyResult dispatchKeyEdit(SceneKeyEvent event, java.util.function.Consumer<SceneKeyContinuation> continuation) {
         domain.checkWrite(); command();
         if (event.key == SceneKey.ESCAPE)
             return event.repeat || dispatchEscape() ? KeyResult.RESERVED : KeyResult.IGNORED;
         if ((event.applicationChord() || SceneKeyInterpreter.navigation(event) != null)
                 && composition.reservesShortcut()) return KeyResult.RESERVED;
         SceneEditEvent edit = SceneKeyInterpreter.edit(event);
-        return edit != null && dispatchEdit(edit) ? KeyResult.EDITED : KeyResult.IGNORED;
+        return edit != null && dispatchEdit(edit, continuation) ? KeyResult.EDITED : KeyResult.IGNORED;
     }
 
     /** 调用者已准备Effect后的当前范围；命令动作受同一routing写入保护。 */
@@ -1013,7 +1017,9 @@ public final class SceneRuntime implements AutoCloseable {
         finally { routing = previous; }
     }
 
-    public boolean dispatchEdit(SceneEditEvent event) {
+    public boolean dispatchEdit(SceneEditEvent event) { return dispatchEdit(event, null); }
+
+    private boolean dispatchEdit(SceneEditEvent event, java.util.function.Consumer<SceneKeyContinuation> continuation) {
         domain.checkWrite();
         command();
         composition.revalidate();
@@ -1022,7 +1028,8 @@ public final class SceneRuntime implements AutoCloseable {
             node = composition.target(event, node);
             if (node == null) return true;
         } else node = editTarget(node, event);
-        return dispatchTargetEdit(node, focused, event);
+        SceneFocusRouter.RangeHandle range = continuation == null ? null : focusRouter.captureRange();
+        return dispatchTargetEdit(node, focused, event, range, continuation);
     }
 
     /** 普通命令可由复合控件接管；组字来源始终使用原联系，不遍历新的激活目标。 */
@@ -1037,19 +1044,20 @@ public final class SceneRuntime implements AutoCloseable {
         return focused;
     }
 
-    private boolean dispatchTargetEdit(SceneNode node, SceneNode focused, SceneEditEvent event) {
+    private boolean dispatchTargetEdit(SceneNode node, SceneNode focused, SceneEditEvent event,
+            SceneFocusRouter.RangeHandle range, java.util.function.Consumer<SceneKeyContinuation> continuation) {
         if (node == null || !interactive(node)) return false;
         if (node.control() != null) focusRouter.keyboardInput();
         boolean previous = routing;
         routing = true;
         try {
-            boolean consumed = node.control() != null && node.control().edit(node, event, inputGeometry);
+            boolean consumed = node.control() != null && dispatchConsumerEdit(node, focused, event, false, range, continuation);
             // 保留原焦点而非重新选出的目标；无control只是未消费，普通可聚焦Node仍可由所属行为接续。
             if (!consumed && event.compositionSource == null && event.command != null && focused != null
                     && focusRouter.focused().get() == focused && interactive(focused)) {
                 for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
                     if (interactive(ancestor) && ancestor.control() != null
-                            && ancestor.control().editFallback(ancestor, focused, event, inputGeometry)) { consumed = true; break; }
+                            && dispatchConsumerEdit(ancestor, focused, event, true, range, continuation)) { consumed = true; break; }
                     if (focusRouter.focused().get() != focused || !interactive(focused)) break;
                 }
             }
@@ -1060,6 +1068,42 @@ public final class SceneRuntime implements AutoCloseable {
             try { composition.finish(event); }
             finally { routing = previous; }
         }
+    }
+
+    private boolean dispatchConsumerEdit(SceneNode consumer, SceneNode focused, SceneEditEvent event, boolean fallback,
+            SceneFocusRouter.RangeHandle range, java.util.function.Consumer<SceneKeyContinuation> capture) {
+        SceneKeyContinuation held = null;
+        try {
+            if (capture != null && event.command != null && event.compositionSource == null) {
+                club.heiqi.uilib.ui.scene.input.SceneEditContinuation action = domain.readOnly(
+                        () -> consumer.control().editContinuation(consumer, focused, event));
+                if (action != null) {
+                    held = new SceneKeyContinuation(this, consumer, range, action, event.command, owner.child());
+                    keyContinuations.add(held); held.refresh();
+                }
+            }
+            boolean consumed = fallback ? consumer.control().editFallback(consumer, focused, event, inputGeometry)
+                    : consumer.control().edit(consumer, event, inputGeometry);
+            if (consumed && held != null) { capture.accept(held); held = null; }
+            return consumed;
+        } finally { if (held != null) held.close(); }
+    }
+
+    void forgetKeyContinuation(SceneKeyContinuation held) { keyContinuations.remove(held); }
+    Throwable keyFocusChanged(SceneNode actual) {
+        Throwable failure = null;
+        for (SceneKeyContinuation held : new ArrayList<>(keyContinuations)) {
+            try { held.focusChanged(actual); }
+            catch (RuntimeException | Error error) { failure = collectFailure(failure, error); }
+        }
+        return failure;
+    }
+    boolean continueKeyEdit(club.heiqi.uilib.ui.scene.input.SceneEditContinuation action, SceneEditEvent event) {
+        domain.checkWrite(); command();
+        if (composition.reservesShortcut()) return false;
+        boolean previous = routing; routing = true;
+        try { focusRouter.keyboardInput(); return action.repeat(event); }
+        finally { routing = previous; }
     }
 
     /** 焦点离开及已生效只读资格变化只结束组字，不提交或取消独立草稿。 */

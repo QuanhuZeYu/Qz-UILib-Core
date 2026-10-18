@@ -226,10 +226,16 @@ public final class SceneFocusRouter {
             runtime.invalidateComposition(before);
         }
         owner = target;
-        publishRetained();
-        value.set(after);
-        notifyControls();
+        // 资格扩展失败不能截断已完成的owner转换；先结束许可、发布同一事实并通知，再传播原首错。
+        Throwable failure = runtime.keyFocusChanged(after);
+        try { publishRetained(); }
+        catch (RuntimeException | Error error) { failure = SceneRuntime.collectFailure(failure, error); }
+        try { value.set(owner == null ? null : owner.node()); }
+        catch (RuntimeException | Error error) { failure = SceneRuntime.collectFailure(failure, error); }
+        try { notifyControls(); }
+        catch (RuntimeException | Error error) { failure = SceneRuntime.collectFailure(failure, error); }
         if (before != after) runtime.invalidatePaint();
+        SceneRuntime.throwFailure(failure);
     }
 
     private void notifyControls() {

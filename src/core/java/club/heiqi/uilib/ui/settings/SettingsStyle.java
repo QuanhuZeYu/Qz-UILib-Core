@@ -89,9 +89,10 @@ final class SettingsStyle {
         return button.control(new NavigationSurface(p,selected,button)).add(row(12).add(icon).add(label));
     }
     static SceneNode toggle(ScenePageContext ctx,ReadableSignal<Boolean> checked,ReadableSignal<Palette> p,Runnable action) {
-        SceneNode button=SceneButton.create(ctx,() -> checked.get()?"关闭接管原版文字绘制":"开启接管原版文字绘制",
-                () -> p.get().theme(14,0,0,true),action).size(Size.fixed(42),Size.fixed(26));
-        return column(0).size(Size.fixed(44),Size.fixed(28)).control(new SwitchSurface(p,checked,button)).add(button);
+        SceneNode button=club.heiqi.uilib.ui.scene.control.SceneSwitch.create(ctx,checked,
+                () -> checked.get()?"关闭接管原版文字绘制":"开启接管原版文字绘制",
+                () -> p.get().theme(14,p.get().text,0,true),next -> action.run(),false).size(Size.fixed(42),Size.fixed(26));
+        return column(0).size(Size.fixed(44),Size.fixed(28)).padding(1).add(button);
     }
     static SceneNode surface(SceneNode content,ReadableSignal<Palette> p,boolean muted) {
         return column(0).control(new Surface(p,false,false,null,8,muted)).add(content);
@@ -157,18 +158,6 @@ final class SettingsStyle {
     private static void rounded(PaintPlanBuilder p,SceneGeometryView.Entry e,int edge,int fill,int radius) {
         ScenePaintShapes.rounded(p,e.box,e.clip,edge,radius);
         ScenePaintShapes.rounded(p,new LayoutBox(e.box.x+1,e.box.y+1,Math.max(0,e.box.width-2),Math.max(0,e.box.height-2)),e.clip,fill,Math.max(0,radius-1));
-    }
-    private static final class SwitchSurface extends Arrangement {
-        final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> checked;final SceneNode button;
-        SwitchSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> checked,SceneNode button){colors=p;this.checked=checked;this.button=button;}
-        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,checked);}
-        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){m.measureChild(button,new Constraints(42,26));return new Result(44,28,Collections.singletonList(new ChildPlacements.Entry(button,new LayoutBox(1,1,42,26))));}
-        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint){
-            SceneGeometryView.Entry e=g.get(n);Palette p=colors.get();
-            boolean focus=button.runtime()!=null&&button.runtime().focusRouter().focusVisible(button);
-            rounded(paint,e,focus?p.accent:checked.get()?p.primary:p.border,checked.get()?p.primary:p.hover,14);
-            ScenePaintShapes.rounded(paint,new LayoutBox(e.box.x+(checked.get()?22:4),e.box.y+4,20,20),e.clip,checked.get()?p.onPrimary:p.muted,10);
-        }
     }
     private static final class ThemePreview extends Arrangement {
         final boolean dark;final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> selected;

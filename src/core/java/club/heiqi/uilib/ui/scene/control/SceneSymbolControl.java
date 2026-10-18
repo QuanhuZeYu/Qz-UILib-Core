@@ -48,14 +48,15 @@ abstract class SceneSymbolControl implements SceneControl {
         return new SceneNode().control(control).size(Size.natural(),Size.natural())
                 .bind(NodeBinding.value(control.theme,(n,t) -> n.style(t.textStyle)));
     }
-    private int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
-    private int labelOffset(SceneNode node) { return symbolSize(node) + node.gap(); }
+    int symbolSize(SceneNode node) { return Math.max(1,(int)Math.ceil(node.style().logicalEm * 1.15f)); }
+    int symbolWidth(SceneNode node) { return symbolSize(node); }
+    private int labelOffset(SceneNode node) { return symbolWidth(node) + node.gap(); }
     @Override public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width) {
         return text.layout(showLabel ? node.text() : "",node.style(),Math.max(0,width - (showLabel ? labelOffset(node) : 0)),node.textPolicy());
     }
     @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
         TextLayout label = layoutText(node,text,limits.availableWidth);
-        return new MeasuredSize(showLabel ? labelOffset(node) + label.width : symbolSize(node),Math.max(symbolSize(node),label.height));
+        return new MeasuredSize(showLabel ? labelOffset(node) + label.width : symbolWidth(node),Math.max(symbolSize(node),label.height));
     }
     @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
         return new ChildPlacements(Collections.emptyList());
@@ -73,7 +74,8 @@ abstract class SceneSymbolControl implements SceneControl {
         if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.border(target,e.box,e.clip,style.focus);
         LayoutBox inner = SceneControlPaint.inner(e.box,node.padding());
         int side = Math.min(symbolSize(node),Math.min(inner.width,inner.height));
-        LayoutBox mark = new LayoutBox(inner.x+(showLabel?0:(inner.width-side)/2),inner.y + (inner.height-side)/2,side,side);
+        int markWidth = Math.min(inner.width, Math.max(0, Math.round((float)side * symbolWidth(node) / symbolSize(node))));
+        LayoutBox mark = new LayoutBox(inner.x+(showLabel?0:(inner.width-markWidth)/2),inner.y + (inner.height-side)/2,markWidth,side);
         symbol(mark,target,e.clip,enabled ? style.textStyle.color : style.disabledText);
         if (showLabel) {
             LayoutBox label = new LayoutBox(inner.x+labelOffset(node),inner.y,Math.max(0,inner.width-labelOffset(node)),inner.height);

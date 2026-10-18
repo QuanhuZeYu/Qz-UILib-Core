@@ -62,6 +62,8 @@ public final class SceneFramePipeline implements AutoCloseable {
         final SceneFocusRouter.RangeHandle range;
         final MountHandle editing;
         Use use = Use.RESERVED;
+        club.heiqi.uilib.ui.scene.runtime.SceneKeyContinuation continuation;
+        void close() { if (continuation != null) { continuation.close(); continuation = null; } }
         KeySequence(SceneFocusRouter.RangeHandle range, MountHandle editing) { this.range = range; this.editing = editing; }
     }
 
@@ -285,7 +287,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         SceneGeometryView geometry = prepare(batch.frameNanos).geometry;
         switch (event.kind) {
             case FOCUS_LOST:
-                keySequences.clear();
+                clearKeySequences();
                 try { router.route(ScenePointerEvent.cancel(), geometry); }
                 finally { runtime.focusRouter().clear(); }
                 break;
@@ -312,12 +314,19 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
+    private void clearKeySequences() {
+        for (KeySequence sequence : keySequences.values()) sequence.close();
+        keySequences.clear();
+    }
+
     private void routeKey(QueuedInput event) {
         if (event.key.repeat) {
             KeySequence sequence = keySequences.get(event.key.key);
             event.keySequence = sequence;
             event.consumed = true;
-            if (sequence == null || !sequence.range.current()) return;
+            if (sequence == null) return;
+            if (!sequence.range.current()) { sequence.close(); return; }
+            if (sequence.continuation != null) { sequence.continuation.repeat(event.key); return; }
             if (sequence.use == KeySequence.Use.NAVIGATION) { event.consumed = false; return; }
             if (sequence.use != KeySequence.Use.EDIT || sequence.editing == null || !sequence.editing.active()
                     || runtime.focusRouter().focused().get() != sequence.editing.node()) return;
@@ -327,8 +336,10 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
         club.heiqi.uilib.ui.scene.node.SceneNode focused = runtime.focusRouter().focused().get();
         KeySequence sequence = new KeySequence(runtime.focusRouter().captureRange(), focused == null ? null : runtime.captureMount(focused));
-        event.keySequence = sequence; keySequences.put(event.key.key, sequence);
-        SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key);
+        KeySequence previous = keySequences.put(event.key.key, sequence);
+        if (previous != null) previous.close();
+        event.keySequence = sequence;
+        SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key, held -> sequence.continuation = held);
         event.consumed = result != SceneRuntime.KeyResult.IGNORED;
         if (result == SceneRuntime.KeyResult.EDITED) sequence.use = KeySequence.Use.EDIT;
     }
@@ -378,7 +389,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void failBatch(InputBatch batch, int firstDiscard) {
         batch.failed = true;
-        keySequences.clear();
+        clearKeySequences();
         if (batch.independent) release(batch);
         ScenePointerRouter router = runtime.pointerRouter();
         // 导航后的Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
@@ -457,7 +468,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         runtime.domain()
                 .execute(
                         () -> {
-                            keySequences.clear();
+                            clearKeySequences();
                             ScenePointerRouter router = runtime.pointerRouter();
                             // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
                             try {
