@@ -147,6 +147,22 @@ public final class SceneNode {
 
     private int padding, gap, scrollOffset, background;
     private boolean authorStyle, authorPadding, authorGap;
+    private boolean defaultStyle, defaultPadding, defaultGap;
+    public club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source styleSource() {
+        return authorStyle ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.AUTHOR
+                : defaultStyle ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.CONTROL_DEFAULT
+                : club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.INITIAL;
+    }
+    public club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source paddingSource() {
+        return authorPadding ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.AUTHOR
+                : defaultPadding ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.CONTROL_DEFAULT
+                : club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.INITIAL;
+    }
+    public club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source gapSource() {
+        return authorGap ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.AUTHOR
+                : defaultGap ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.CONTROL_DEFAULT
+                : club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.INITIAL;
+    }
     private int scrollStep = 20;
     private club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion;
     public club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion() { return feedbackMotion; }
@@ -162,14 +178,14 @@ public final class SceneNode {
     /** 相对当前分配外盒的呈现变换；不改变度量、占位和原滚动单位。 */
     public SceneNode transform(club.heiqi.uilib.ui.scene.geometry.SceneTransform value) {
         writable(); Objects.requireNonNull(value, "呈现矩阵");
-        if (!transform.equals(value)) { transform = value; if (runtime != null) runtime.invalidateGeometry(); }
+        if (!transform.equals(value)) { transform = value; if (runtime != null) runtime.invalidateGeometry(this); }
         return this;
     }
     public club.heiqi.uilib.ui.scene.geometry.SceneShape shapeClip() { return shapeClip; }
     /** 局部外盒形状裁剪；与旧矩形clip及滚动视口取交集。null结束形状声明。 */
     public SceneNode clip(club.heiqi.uilib.ui.scene.geometry.SceneShape value) {
         writable();
-        if (shapeClip != value) { shapeClip = value; if (runtime != null) runtime.invalidateGeometry(); }
+        if (shapeClip != value) { shapeClip = value; if (runtime != null) runtime.invalidateGeometry(this); }
         return this;
     }
     private float opacity = 1, translationX, translationY;
@@ -177,7 +193,7 @@ public final class SceneNode {
     public SceneNode opacity(float value) {
         writable();
         if (!Float.isFinite(value) || value < 0 || value > 1) throw new IllegalArgumentException("透明度须在0到1之间");
-        if (opacity != value) { opacity = value; if (runtime != null) runtime.invalidatePaint(); }
+        if (opacity != value) { opacity = value; if (runtime != null) runtime.invalidatePaint(this); }
         return this;
     }
     public float translationX() { return translationX; }
@@ -188,7 +204,7 @@ public final class SceneNode {
         if (!Float.isFinite(x) || !Float.isFinite(y)) throw new IllegalArgumentException("呈现位移必须有限");
         if (translationX != x || translationY != y) {
             translationX = x; translationY = y;
-            if (runtime != null) runtime.invalidateGeometry();
+            if (runtime != null) runtime.invalidateGeometry(this);
         }
         return this;
     }
@@ -362,6 +378,7 @@ public final class SceneNode {
     /** 控件主题的低优先默认；同值的公共setter也明确拥有该属性。 */
     public SceneNode defaultStyle(TextStyle value) {
         writable(); Objects.requireNonNull(value, "默认字体");
+        defaultStyle = true;
         if (!authorStyle) applyStyle(value);
         return this;
     }
@@ -370,7 +387,7 @@ public final class SceneNode {
         TextStyle previous = style;
         if (previous.equals(value)) return;
         style = value;
-        if (runtime != null && previous.sameLayout(value)) runtime.invalidatePaint();
+        if (runtime != null && previous.sameLayout(value)) runtime.invalidatePaint(this);
         else changed();
     }
 
@@ -385,6 +402,7 @@ public final class SceneNode {
     public SceneNode defaultPadding(int value) {
         writable();
         if (value < 0) throw new IllegalArgumentException("内边距不能为负");
+        defaultPadding = true;
         if (!authorPadding && padding != value) { padding = value; changed(); }
         return this;
     }
@@ -400,6 +418,7 @@ public final class SceneNode {
     public SceneNode defaultGap(int value) {
         writable();
         if (value < 0) throw new IllegalArgumentException("间距不能为负");
+        defaultGap = true;
         if (!authorGap && gap != value) { gap = value; changed(); }
         return this;
     }
@@ -438,7 +457,7 @@ public final class SceneNode {
     public SceneNode background(int value) {
         writable();
         background = value;
-        if (runtime != null) runtime.invalidatePaint();
+        if (runtime != null) runtime.invalidatePaint(this);
         return this;
     }
 

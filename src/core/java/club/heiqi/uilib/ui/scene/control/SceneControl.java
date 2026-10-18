@@ -16,6 +16,9 @@ import java.util.List;
 
 /** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
 public interface SceneControl {
+    /** 现有有限集合的只读计数；-1表示不提供逻辑集合。检查不得为此实例化内容。 */
+    default int inspectionLogicalItemCount(SceneNode node) { return -1; }
+    default int inspectionInstantiatedItemCount(SceneNode node) { return -1; }
     /** 实际图形可声明自己的新命中轮廓；null继续普通分配盒。由共同几何按本批尺寸和像素精度解析。 */
     default club.heiqi.uilib.ui.scene.geometry.SceneShape hitShape(SceneNode node) { return null; }
 

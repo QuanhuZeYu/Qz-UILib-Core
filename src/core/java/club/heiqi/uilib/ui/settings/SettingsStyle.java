@@ -86,7 +86,10 @@ final class SettingsStyle {
         SceneNode icon=SceneIconButton.graphic(ctx,() -> symbol,() -> p.get().theme(14,p.get().text,0,true))
                 .size(Size.fixed(18),Size.fixed(20));
         SceneNode label=SceneLabel.create(ctx,text,() -> p.get().theme(SettingsTypography.style(14,p.get().text,selected.get()?600:400),0,true));
-        return button.control(new NavigationSurface(p,selected,button)).add(row(12).add(icon).add(label));
+        return button.control(new NavigationSurface(p,selected,button))
+                .bind(NodeBinding.semantics(() -> club.heiqi.uilib.ui.scene.semantics.SceneSemantics.builder(
+                        club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role.BUTTON).name(text.get()).selected(selected.get()).build()))
+                .add(row(12).add(icon).add(label));
     }
     static SceneNode toggle(ScenePageContext ctx,ReadableSignal<Boolean> checked,ReadableSignal<Palette> p,Runnable action) {
         SceneNode button=club.heiqi.uilib.ui.scene.control.SceneSwitch.create(ctx,checked,
@@ -111,6 +114,8 @@ final class SettingsStyle {
         SceneNode mark=SceneIconButton.graphic(ctx,() -> SceneIconButton.Symbol.CHECK,() -> p.get().theme(14,p.get().text,0,true))
                 .size(Size.fixed(16),Size.fixed(20)).bind(NodeBinding.value(selected,SceneNode::visible));
         return button.control(new NavigationSurface(p,selected,button))
+                .bind(NodeBinding.semantics(() -> club.heiqi.uilib.ui.scene.semantics.SceneSemantics.builder(
+                        club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role.BUTTON).name(label).selected(selected.get()).build()))
                 .add(column(10).add(preview).add(row(8).add(label(ctx,() -> label,p,14,false).size(Size.fill(1),Size.natural())).add(mark)));
     }
     private static class Surface extends Arrangement {

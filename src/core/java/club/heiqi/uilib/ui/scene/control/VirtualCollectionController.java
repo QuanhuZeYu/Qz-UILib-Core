@@ -60,6 +60,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private SceneSemantics.Role semanticRole = SceneSemantics.Role.LIST, itemSemanticRole = SceneSemantics.Role.LIST_ITEM;
     private final Map<SceneNode, Integer> measured = new HashMap<>();
     private List<K> order = Collections.emptyList();
+    @Override public int inspectionLogicalItemCount(SceneNode node) { return order.size(); }
+    @Override public int inspectionInstantiatedItemCount(SceneNode node) { return rows.size(); }
     private SceneNode root;
     private int width, height, offset, estimate, gap;
     private long metrics = Long.MIN_VALUE, revision;

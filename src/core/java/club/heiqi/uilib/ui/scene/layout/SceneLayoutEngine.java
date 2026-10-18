@@ -35,6 +35,9 @@ public final class SceneLayoutEngine {
     private boolean metricsKnown;
     private long metricsRevision, measureRevision;
     private int measuredWidth, measuredHeight;
+    private Runnable measuredWork, arrangedWork;
+    /** 只报告实际执行；旧独立布局入口不要求装配检查器。 */
+    public void inspectionWork(Runnable measured, Runnable arranged) { measuredWork = measured; arrangedWork = arranged; }
 
     private BatchTextMeasurer textFor(SceneNode node) {
         BatchTextMeasurer batch =
@@ -316,6 +319,7 @@ public final class SceneLayoutEngine {
 
     private int[] measureUncached(SceneNode node, int availableWidth, int availableHeight) {
         if (!node.visible()) return new int[] {0, 0};
+        if (measuredWork != null) measuredWork.run();
         int measuredWidth =
                 size(node, SceneNode.Axis.ROW).mode == Size.Mode.FIXED
                         ? size(node, SceneNode.Axis.ROW).constrain(size(node, SceneNode.Axis.ROW).value)
@@ -417,6 +421,7 @@ public final class SceneLayoutEngine {
             List<SceneGeometryView.Entry> entries,
             boolean captureRoot) {
         if (!captureRoot && !node.visible()) return;
+        if (arrangedWork != null) arrangedWork.run();
         if (presentation != null) box = presentation.place(node, box);
         box = new LayoutBox(box.x + Math.round(node.translationX()), box.y + Math.round(node.translationY()), box.width, box.height);
         allocatedBoxes.put(node, box);

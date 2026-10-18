@@ -52,12 +52,16 @@ final class SceneTextControl implements SceneControl {
     }
     static SceneNode create(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
             SceneTextPolicy policy, boolean button, ReadableSignal<SceneIconButton.Symbol> leadingIcon) {
+        return create(text, new SceneTextControl(theme, policy, button, leadingIcon));
+    }
+
+    private static SceneNode create(ReadableSignal<String> text, SceneTextControl control) {
         Objects.requireNonNull(text, "text");
-        Objects.requireNonNull(theme, "theme");
-        Objects.requireNonNull(policy, "policy");
+        ReadableSignal<SceneTheme> theme = Objects.requireNonNull(control.theme, "theme");
+        SceneTextPolicy policy = Objects.requireNonNull(control.policy, "policy");
         SceneNode node =
                 new SceneNode()
-                        .control(new SceneTextControl(theme, policy, button, leadingIcon))
+                        .control(control)
                         .textPolicy(
                                 policy == SceneTextPolicy.WRAP
                                         ? TextPolicy.NORMAL
@@ -67,13 +71,12 @@ final class SceneTextControl implements SceneControl {
                 NodeBinding.value(
                         theme,
                         (target, value) -> {
-                            SceneTextControl control = (SceneTextControl) target.control();
+                            // 绑定属于工厂声明；作者可在挂载前替换节点的测量/外观扩展。
                             SceneControlMetrics metrics = value.metrics(control.kind());
                             target.defaultStyle(metrics.textStyle);
-                            if (button) target.defaultPadding(metrics.padding).defaultGap(metrics.iconGap);
+                            if (control.button) target.defaultPadding(metrics.padding).defaultGap(metrics.iconGap);
                         }));
-        if (button) {
-            SceneTextControl control = (SceneTextControl) node.control();
+        if (control.button) {
             control.motion.install(node, () -> theme.get().feedbackMotion,
                     self -> control.modernSurface == null ? SceneControlMotion.target(self, theme.get())
                             : control.modernSurface.fill(self));
@@ -83,17 +86,18 @@ final class SceneTextControl implements SceneControl {
 
     static SceneNode createTrailing(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
             SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon) {
-        SceneNode node = create(text, theme, policy, true, Objects.requireNonNull(icon, "尾部图标"));
-        ((SceneTextControl) node.control()).trailingIcon = true;
-        return node;
+        SceneTextControl control = new SceneTextControl(theme, policy, true, Objects.requireNonNull(icon, "尾部图标"));
+        control.trailingIcon = true;
+        return create(text, control);
     }
 
     static SceneNode createModern(ReadableSignal<String> text,ReadableSignal<SceneAppearance.Palette> colors,
             SceneAppearance.Role role,ReadableSignal<SceneIconButton.Symbol> icon){
-        SceneNode node=create(text,()->colors.get().defaultTheme(1,
+        SceneTextControl control = new SceneTextControl(()->colors.get().defaultTheme(1,
                 role==SceneAppearance.Role.PRIMARY?colors.get().onPrimary:colors.get().text,10),
                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE,true,icon);
-        ((SceneTextControl)node.control()).modernSurface=new SceneAppearance.Surface(colors,role,node,()->false);
+        SceneNode node = create(text, control);
+        control.modernSurface = new SceneAppearance.Surface(colors,role,node,()->false);
         return node;
     }
     @Override public SceneSemantics semantics(SceneNode node) {

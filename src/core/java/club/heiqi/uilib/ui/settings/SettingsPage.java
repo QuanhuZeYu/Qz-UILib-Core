@@ -1,6 +1,9 @@
 package club.heiqi.uilib.ui.settings;
 
 import club.heiqi.uilib.ui.scene.control.SceneCommand;
+import club.heiqi.uilib.ui.scene.control.SceneSelect;
+import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
+import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneShortcut;
 
@@ -63,7 +66,7 @@ public final class SettingsPage implements ScenePage {
     private final class View {
         final ScenePageContext ctx;
         final SettingsModel model;
-        final SceneCommand save;
+        final SceneCommand save,apply,discard;
         final Signal<Boolean> fileSource,fontPicking;
         final Signal<Section> section;
         final Signal<Dialog> dialog;
@@ -77,6 +80,8 @@ public final class SettingsPage implements ScenePage {
         View(ScenePageContext ctx) {
             this.ctx=ctx;model=new SettingsModel(configuration,ctx.scope());
             save=SceneCommand.of(() -> !model.dirty().get()&&model.unsaved().get(), model::save);
+            apply=SceneCommand.of(model.dirty(),model::apply);
+            discard=SceneCommand.of(model.dirty(),model::discard);
             fileSource=ctx.domain().signal(false);fontPicking=ctx.domain().signal(false);
             compact=ctx.domain().computed(ctx.scope(),() -> ctx.viewportWidth().get()<SettingsLayout.COMPACT_WIDTH);
             navigationOpen=ctx.domain().signal(false);
@@ -233,7 +238,8 @@ public final class SettingsPage implements ScenePage {
                     .add(done.view);
             return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,720))
                     .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM).modal(true).onEscape(() -> {cancelDialog();return true;})
-                    .add(SettingsStyle.card(content,palette)).initialFocus(done.target);
+                    .add(SettingsStyle.card(content,palette)).initialFocus(done.target)
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name("管理字体来源").build()));
         }
         club.heiqi.uilib.ui.scene.control.SceneSortableList.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
             SceneNode handle=text("::",20,true).size(Size.fixed(28),Size.natural()).padding(4);
@@ -261,11 +267,14 @@ public final class SettingsPage implements ScenePage {
             return SettingsStyle.column(0).add(SettingsLayout.sourceRow(info,buttons)).add(SettingsStyle.line(palette));
         }
         SceneNode sampleCard() {
+            SceneNode label=text("文字样本",14,false).size(Size.fill(1),Size.natural());
+            SceneNode description=text("使用当前生效字体。可编辑预览文字；样本文字不会保存。",12,true);
             ReadableSignal<SceneTheme> theme=() -> palette.get().theme(
                     new club.heiqi.uilib.ui.scene.text.TextStyle("default",18,palette.get().text),14,false);
             SceneNode editor=SceneTextArea.create(ctx,sample,theme,() -> false,s -> sample.accept(s,s.text),
                     SceneTextField.SubmitPolicy.CONFIRM,() -> SceneTextArea.TabMode.NAVIGATE,false)
-                    .size(Size.fill(1),Size.fixed(96));
+                    .size(Size.fill(1),Size.fixed(96))
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(label).describedBy(description).build()));
             SceneNode field=SettingsStyle.field(editor,palette);
             SceneNode unavailable=text("未配置生效字体来源，当前没有可用的文字样本。",14,true);
             ctx.own(field::destroy);ctx.own(unavailable::destroy);
@@ -273,10 +282,10 @@ public final class SettingsPage implements ScenePage {
             SceneNode preview=SettingsStyle.column(0).bind(NodeBinding.children(() -> Collections.singletonList(
                     configuration.current().candidates().isEmpty()?unavailable:field)));
             return SettingsStyle.column(8).add(SettingsStyle.row(12)
-                    .add(text("文字样本",14,false).size(Size.fill(1),Size.natural()))
+                    .add(label)
                     .add(button(() -> "重置",() -> sample.reset(defaultSample),false,true)))
                     .add(preview)
-                    .add(text("使用当前生效字体。可编辑预览文字；样本文字不会保存。",12,true));
+                    .add(description);
         }
         SceneNode minecraftPage() {
             SceneNode card=SettingsStyle.column(16).add(text("原版文字接入",16,false)).add(text("控制 Minecraft 原版文字是否使用 UILib 字体服务。",13,true));
@@ -315,9 +324,9 @@ public final class SettingsPage implements ScenePage {
             SceneNode status=SettingsStyle.column(5).add(text(this::state,13,false)).add(feedback);
             status.add(text(() -> model.dirty().get()?"应用全部分类的更改后，才能保存到文件。":model.unsaved().get()?"当前运行使用新的配置；保存后用于下次启动。":"可以继续编辑；应用与保存分别执行。",12,true));
             status.add(error(model.error()));
-            SceneNode controls=actions(enabledButton(() -> "放弃编辑",model::discard,false,true,model.dirty()),
+            SceneNode controls=actions(enabledButton(() -> "放弃编辑",discard::tryExecute,false,true,discard.executable()),
                     enabledButton("保存到文件",save::tryExecute,save.executable()),
-                    enabledButton(() -> "应用全部更改",model::apply,true,false,model.dirty()));
+                    enabledButton(() -> "应用全部更改",apply::tryExecute,true,false,apply.executable()));
             return SettingsStyle.column(14).add(SettingsStyle.line(palette))
                     .add(SettingsStyle.column(0).control(new SettingsLayout.Footer()).add(status).add(controls));
         }
@@ -354,20 +363,35 @@ public final class SettingsPage implements ScenePage {
             content.add(actions(cancel.view,button(() -> kind==Dialog.CLOSE?"不保存并离开":"放弃更改并加载",() -> {
                 if(kind==Dialog.CLOSE){discardAndLeave();}else{dialog.set(Dialog.NONE);model.reload();}
             },true,false)));
-            return modal(content).initialFocus(cancel.target);
+            return modal(content).initialFocus(cancel.target).bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP)
+                    .name(kind==Dialog.CLOSE?"离开配置工作区":"重新加载配置").build()));
         }
         SceneNode addDialog() {
             SceneNode content=SettingsStyle.column(14).add(text("添加字体来源",20,false))
                     .add(text("选择内置字体，或填写宿主可读取的字体文件路径。",13,true));
-            content.add(actions(button(() -> fileSource.get()?"内置来源":"● 内置来源",() -> fileSource.set(false),false,false),
-                    button(() -> fileSource.get()?"● 本地字体文件":"本地字体文件",() -> fileSource.set(true),false,false)));
-            SceneNode builtins=SettingsStyle.column(5).size(Size.fill(1),Size.fixed(220)).scrollable(true).clip(true);
-            for(String declaration:configuration.builtinCandidates())builtins.add(button(() -> (selectedBuiltin.get().equals(declaration)?"● ":"")+sourceName(declaration),() -> selectedBuiltin.set(declaration),false,true).size(Size.fill(1),Size.natural()));
+            ReadableSignal<SceneTheme> choiceTheme=() -> palette.get().theme(14,palette.get().text,8,false);
+            SceneNode sourceType=text("来源类型",13,false);
+            SceneRadioGroup<Boolean> kinds=SceneRadioGroup.create(ctx,() -> java.util.Arrays.asList(
+                    new SceneRadioGroup.Option<>(false,() -> "内置来源"),
+                    new SceneRadioGroup.Option<>(true,() -> "本地字体文件")),fileSource,fileSource::set,choiceTheme);
+            kinds.node().bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(sourceType).build()));
+            content.add(sourceType).add(kinds.node());
+            SceneNode builtinLabel=text("内置字体",13,false);
+            SceneNode select=SceneSelect.create(ctx,() -> {
+                java.util.ArrayList<SceneSelect.Option<String>> options=new java.util.ArrayList<>();
+                for(String declaration:configuration.builtinCandidates())options.add(new SceneSelect.Option<>(declaration,() -> sourceName(declaration)));
+                return options;
+            },selectedBuiltin,selectedBuiltin::set,() -> "选择内置字体",choiceTheme)
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(builtinLabel).build()));
+            SceneNode builtins=SettingsStyle.column(8).add(builtinLabel).add(select);
             builtins.bind(NodeBinding.value(fileSource,(n,file) -> n.visible(!file)));content.add(builtins);
             SceneNode field=SceneTextField.create(ctx,path,() -> palette.get().theme(SettingsTypography.pathStyle(14,palette.get().text),9,false),
                     () -> false,this::addFile,SceneTextField.SubmitPolicy.CONFIRM,() -> "C:/Fonts/Example.ttf",false);
-            SceneNode file=SettingsStyle.column(8).add(actions(text("文件路径",13,false),button("浏览字体文件",()->fontPicking.set(true)))).add(SettingsStyle.field(field,palette))
-                    .add(text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true));
+            SceneNode pathLabel=text("字体文件路径",13,false);
+            SceneNode pathHelp=text("例如 C:/Fonts/Example.ttf；应用前会检查字体来源。",12,true);
+            field.bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(pathLabel).describedBy(pathHelp).build()));
+            SceneNode file=SettingsStyle.column(8).add(actions(pathLabel,button("浏览字体文件",()->fontPicking.set(true))))
+                    .add(SettingsStyle.field(field,palette)).add(pathHelp);
             file.bind(NodeBinding.value(fileSource,SceneNode::visible));content.add(file);
             content.add(error(() -> path.snapshot().get().error==null?model.fontError().get():path.snapshot().get().error));
             SettingsStyle.Button cancel=SettingsStyle.button(ctx,() -> "取消",palette,this::cancelDialog,false,false);
@@ -375,7 +399,8 @@ public final class SettingsPage implements ScenePage {
                 if(fileSource.get())addFile(path.request(true));
                 else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.FONTS);}
             },true,false)));
-            SceneNode result=modal(content).initialFocus(cancel.target);
+            SceneNode result=modal(content).initialFocus(cancel.target)
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name("添加字体来源").build()));
             SceneNode pickerOwner=new SceneNode().size(Size.fill(1),Size.fill(1)).bind(NodeBinding.repeat(()->fontPicking.get()?java.util.Collections.singletonList(true):java.util.Collections.emptyList(),value->value,item->
                     club.heiqi.uilib.ui.scene.control.SceneFilePicker.create(ctx,fontDirectory(),()->palette.get().theme(14,palette.get().text,10,false),new club.heiqi.uilib.ui.scene.control.SceneFilePicker.Options().filter("字体文件","ttf,otf,ttc,woff,woff2"),selected->{path.reset(selected.toString());fontPicking.set(false);},()->fontPicking.set(false))));
             result.add(pickerOwner);return result;

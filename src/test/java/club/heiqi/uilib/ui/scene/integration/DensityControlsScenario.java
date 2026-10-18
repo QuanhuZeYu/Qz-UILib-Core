@@ -32,6 +32,7 @@ public final class DensityControlsScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("默认角色往返不累乘，旧明确主题保持精确样式", this::themeValues);
         scenario("密度和尺寸更新正式控件，局部值及编辑联系保持", this::controls);
+        scenario("替换标准文字控件的外观后绑定仍更新原工厂默认", this::replacementControls);
     }
     private void themeValues() {
         SceneTheme base = SceneTheme.light();
@@ -150,6 +151,66 @@ public final class DensityControlsScenario extends TestApplication {
             session.pointer(ScenePointerEvent.down(0, hit[0].x + 1, hit[0].y + 1));
             session.pointer(ScenePointerEvent.up(0, hit[0].x + 1, hit[0].y + 1)); session.frame();
             require(clicks[0] == 1, "角色变化后的可见按钮无法沿正式输入激活");
+        }
+    }
+    private void replacementControls() {
+        ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
+        Signal<SceneDensity>[] density = new Signal[1]; Signal<String>[] text = new Signal[1];
+        SceneNode[] nodes = new SceneNode[4]; SceneControl[] surfaces = new SceneControl[4]; int[] clicks = {0};
+        try (ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            page.motionPolicy(() -> MotionPolicy.OFF);
+            density[0] = domain.signal(SceneDensity.COMFORTABLE); text[0] = domain.signal("替换外观");
+            ReadableSignal<SceneTheme> theme = domain.computed(page.scope(),
+                    () -> SceneTheme.light().withDensity(density[0].get()));
+            nodes[0] = SceneButton.create(page, text[0], theme, () -> clicks[0]++);
+            nodes[1] = SceneLabel.create(page, text[0], theme);
+            nodes[2] = SceneAppearance.button(page, text[0], theme, () -> clicks[0]++, SceneAppearance.Role.OUTLINE);
+            SceneNode select = SceneSelect.create(page, () -> java.util.Collections.singletonList(
+                    new SceneSelect.Option<>("a", text[0])), () -> "a", ignored -> {}, theme);
+            nodes[3] = select.children().get(0);
+            for (int i = 0; i < nodes.length; i++) {
+                surfaces[i] = new ReplacementSurface();
+                nodes[i].control(surfaces[i]);
+            }
+            page.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).gap(5)
+                    .add(nodes[0]).add(nodes[1]).add(nodes[2]).add(select));
+        })) {
+            session.frame();
+            domain.execute(() -> {
+                require(nodes[0].padding() == 8 && nodes[1].padding() == 0 && nodes[2].padding() == 10 && nodes[3].padding() == 8,
+                        "替换外观改变原工厂的默认内距");
+                density[0].set(SceneDensity.COMPACT); text[0].set("当前文案");
+            });
+            session.frame();
+            domain.execute(() -> {
+                for (int i = 0; i < nodes.length; i++) {
+                    require(nodes[i].control() == surfaces[i] && nodes[i].text().equals("当前文案")
+                            && nodes[i].style().logicalEm < 18, "替换外观后工厂绑定未继续消费当前来源");
+                }
+                require(nodes[0].padding() < 8 && nodes[1].padding() == 0 && nodes[2].padding() < 10 && nodes[3].padding() < 8,
+                        "替换外观后密度没有沿原工厂角色更新");
+            });
+            LayoutBox[] hit = new LayoutBox[1]; domain.execute(() -> hit[0] = box(session, nodes[0]));
+            session.pointer(ScenePointerEvent.down(0, hit[0].x + 1, hit[0].y + 1));
+            session.pointer(ScenePointerEvent.up(0, hit[0].x + 1, hit[0].y + 1)); session.frame();
+            require(clicks[0] == 1, "替换外观破坏原标准按钮动作");
+        }
+    }
+    private static final class ReplacementSurface implements SceneControl {
+        public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node,
+                club.heiqi.uilib.ui.scene.layout.Constraints constraints, SceneTextMeasurer text) {
+            TextLayout body = text.layout(node.text(), node.style(), constraints.availableWidth, node.textPolicy());
+            return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(body.width, body.height);
+        }
+        public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node, LayoutBox box,
+                club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+            return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(java.util.Collections.emptyList());
+        }
+        public void paint(SceneNode node, SceneGeometryView geometry, club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder target) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            LayoutBox inner = new LayoutBox(entry.box.x + node.padding(), entry.box.y + node.padding(),
+                    Math.max(0, entry.box.width - node.padding() * 2), Math.max(0, entry.box.height - node.padding() * 2));
+            target.add(club.heiqi.uilib.ui.scene.paint.PaintCommand.text(inner, entry.clip, entry.text));
         }
     }
     private static int automaticWidth(ScenePageSession page, SceneNode host) {

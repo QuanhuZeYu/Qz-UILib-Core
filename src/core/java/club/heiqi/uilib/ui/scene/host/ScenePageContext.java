@@ -23,6 +23,12 @@ public final class ScenePageContext {
     private final club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews;
     private LocalizationSource localizationSource;
     private LocalizationBinding localization;
+    private java.util.function.Supplier<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspection;
+    void inspection(java.util.function.Supplier<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> request) { inspection = request; }
+    public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> inspect() {
+        domain.checkAccess(); return inspection.get();
+    }
+    public void inspectionRecording(ReadableSignal<Boolean> enabled) { runtime.inspectionRecording(enabled); }
     private final ReadableSignal<ThemeMode> themeMode;
     private final ReadableSignal<SceneTheme> theme;
     private final Signal<ReadableSignal<SceneDensity>> densitySource;

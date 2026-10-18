@@ -21,6 +21,13 @@ public final class ScenePointerRouter implements AutoCloseable {
     private final Set<Integer> buttons = new HashSet<>();
     private MountHandle owner;
     private Object ownerTarget;
+    private boolean capturedContact;
+    SceneNode inspectionPressed() { return owner != null && owner.active() ? owner.node() : null; }
+    SceneNode inspectionCaptured() { return capturedContact ? inspectionPressed() : null; }
+    SceneNode inspectionHovered() { return hoverTarget.get(); }
+    java.util.List<Integer> inspectionButtons() {
+        java.util.List<Integer> result = new java.util.ArrayList<>(buttons); java.util.Collections.sort(result); return result;
+    }
     private int x, y;
     private boolean closed, positionKnown;
     private long positionRevision;
@@ -128,7 +135,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (owner == target) return;
         owner = target;
         pressedTarget.set(target == null ? null : target.node());
-        if (target == null) ownerTarget = null;
+        if (target == null) { ownerTarget = null; capturedContact = false; }
         runtime.invalidatePaint();
     }
 
@@ -284,6 +291,7 @@ public final class ScenePointerRouter implements AutoCloseable {
 
     private void dispatchCapturedDown(SceneNode captured, ScenePointerEvent event, SceneGeometryView geometry) {
         if (captured.control() == null || !captured.control().capturesPointer()) return;
+        capturedContact = true;
         if (captured.clickFocus() && captured.focusable())
             runtime.focusRouter().request(runtime.captureMount(captured));
         runtime.dispatchControlPointer(captured, event, geometry);

@@ -45,6 +45,7 @@ final class SceneSemanticCoordinator {
     private long factRevision=Long.MIN_VALUE;
     private boolean changed;
     SceneSemanticCoordinator(SceneRuntime runtime){this.runtime=runtime;}
+    SceneSemanticId id(SceneNode node) { Mounted m = mounted.get(node); return m == null ? null : m.id; }
     void mount(SceneNode node){Mounted m=new Mounted(node,runtime);mounted.put(node,m);byId.put(m.id,m);changed=true;}
     BindingActivation observe(SceneNode node,Owner owner){
         Mounted m=mounted.get(node);

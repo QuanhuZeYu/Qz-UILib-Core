@@ -17,6 +17,7 @@ public final class ScenePageSession implements AutoCloseable {
     private volatile SceneFramePipeline pipeline;
     private Owner scope;
     private final java.util.Set<SceneSemanticCompletion> semanticRequests = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    private final java.util.Set<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspections = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     private ScenePageSession(ReactiveDomain domain) {
         this.domain = domain;
@@ -36,11 +37,14 @@ public final class ScenePageSession implements AutoCloseable {
                     session.runtime = new SceneRuntime(domain);
                     session.runtime.prepareViewport(host.width(), host.height());
                     session.pipeline = new SceneFramePipeline(session.runtime, host, text);
-                    page.build(new ScenePageContext(domain, session.scope, session.runtime, host.themeConfiguration(), host.mediaViews()));
+                    ScenePageContext context = new ScenePageContext(domain, session.scope, session.runtime, host.themeConfiguration(), host.mediaViews());
+                    context.inspection(session::inspect);
+                    page.build(context);
                 },
                 failure -> {
                     session.ended = true;
                     session.finishSemanticRequests(failure);
+                    session.finishInspections(failure);
                     session.release();
                 });
         return session;
@@ -105,6 +109,29 @@ public final class ScenePageSession implements AutoCloseable {
         for(SceneSemanticCompletion result:pending)try{result.finish(failure==null?club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED:null,failure);}
         catch(RuntimeException|Error next){if(first==null)first=next;else if(first!=next)first.addSuppressed(next);}
         if(failure==null){if(first instanceof Error)throw (Error)first;if(first instanceof RuntimeException)throw (RuntimeException)first;}
+    }
+
+    /** 沿原准备边界读取当前一致事实；稳定请求不推进时间或重放。 */
+    public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> inspect() {
+        domain.checkDispatch();
+        java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result = new java.util.concurrent.CompletableFuture<>();
+        inspections.add(result); result.whenComplete((value, failure) -> inspections.remove(result));
+        Runnable request = () -> {
+            if (ended) result.complete(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED);
+            else pipeline().inspect(result);
+        };
+        if (pipeline == null && !ended) domain.enqueue(request, result::completeExceptionally); else request.run();
+        return result;
+    }
+    public void inspectionRecording(club.heiqi.uilib.ui.reactive.ReadableSignal<Boolean> source) {
+        Objects.requireNonNull(source, "检查记录来源");
+        dispatch(() -> domain.execute(() -> { if (!ended) runtime().inspectionRecording(source); }));
+    }
+    private void finishInspections(Throwable failure) {
+        java.util.List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> pending;
+        synchronized (inspections) { pending = new java.util.ArrayList<>(inspections); inspections.clear(); }
+        for (java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result : pending)
+            if (failure == null) result.complete(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED); else result.completeExceptionally(failure);
     }
 
     public void pointer(ScenePointerEvent event) {
@@ -177,6 +204,7 @@ public final class ScenePageSession implements AutoCloseable {
         domain.checkDispatch();
         if (ended) return;
         ended = true;
+        finishInspections(null);
         // 先立即关闭输入队列，清理树延到handler之后；即使handler/Effect失败也执行。
         Throwable failure = null;
         try { finishSemanticRequests(null); } catch (RuntimeException | Error next) { failure = next; }

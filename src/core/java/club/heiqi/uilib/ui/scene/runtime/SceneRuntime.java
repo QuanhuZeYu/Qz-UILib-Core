@@ -150,6 +150,20 @@ public final class SceneRuntime implements AutoCloseable {
     private boolean logicalModalKnown;
     private final SceneComposition composition = new SceneComposition(this);
     private final SceneSemanticCoordinator semantics = new SceneSemanticCoordinator(this);
+    private final SceneInspection inspection = new SceneInspection(this);
+    Owner inspectionOwner() { return owner; }
+    club.heiqi.uilib.ui.scene.semantics.SceneSemanticId inspectionId(SceneNode node) { return node == null ? null : semantics.id(node); }
+    public void inspectionRecording(ReadableSignal<Boolean> source) { command(); inspection.recording(Objects.requireNonNull(source, "检查记录来源")); }
+    public void inspectionBegin() { inspection.begin(); }
+    public void inspectionEnd(boolean success, long generation) { inspection.end(success, generation); }
+    public void inspectionMeasured() { inspection.measured(); }
+    public void inspectionArranged() { inspection.arranged(); }
+    public void inspectionPaintCollected() { inspection.collected(); }
+    public void inspectionReason(SceneNode source, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category category) { inspection.record(source, category); }
+    public club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot inspect(ScenePresentation presentation, long metrics) {
+        domain.checkAccess(); return domain.readOnly(() -> inspection.snapshot(presentation, metrics));
+    }
+
 
     public SceneRuntime(ReactiveDomain domain) {
         this.domain = domain;
@@ -174,7 +188,10 @@ public final class SceneRuntime implements AutoCloseable {
     public ReadableSignal<Long> metricsRevision() { return metricsGeneration::get; }
     public void prepareMetricsRevision(long revision) {
         command();
-        if (metricsGeneration.get() != revision) metricsGeneration.set(revision);
+        if (metricsGeneration.get() != revision) {
+            inspection.record(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.RESOURCE);
+            metricsGeneration.set(revision);
+        }
     }
 
     /** 仅由宿主帧管线发布；声明结算前更新，不从只读布局回写。 */
@@ -182,6 +199,8 @@ public final class SceneRuntime implements AutoCloseable {
         checkAlive();
         domain.checkWrite();
         if (width < 0 || height < 0) throw new IllegalArgumentException("宿主尺寸不能为负");
+        if (viewportWidth.get() != width || viewportHeight.get() != height)
+            inspection.record(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.VIEWPORT);
         viewportWidth.set(width);
         viewportHeight.set(height);
     }
@@ -260,6 +279,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 无来源通知保留整体测量语义，供不能报告来源的扩展使用。 */
     public void invalidate() {
         domain.checkAccess();
+        inspection.record(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.MEASURE);
         wholeMeasureRevision++;
         measureRevision++;
         invalidateArrangement();
@@ -268,6 +288,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 局部内容变更影响来源及祖先；共同几何仍由下一批完整控件回调建立。 */
     public void invalidate(SceneNode origin) {
         domain.checkAccess();
+        inspection.record(origin, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.MEASURE);
         semantics.invalidate(origin);
         if (origin == null || !mounts.containsKey(origin)) {
             invalidate();
@@ -281,7 +302,7 @@ public final class SceneRuntime implements AutoCloseable {
             mount.measureRevision = next;
         }
         measureRevision++;
-        invalidateArrangement();
+        invalidateArrangement(origin);
     }
 
     public long wholeMeasureRevision() {
@@ -297,10 +318,13 @@ public final class SceneRuntime implements AutoCloseable {
         return mount.measureRevision;
     }
 
-    public void invalidateGeometry() { invalidateArrangement(); }
+    public void invalidateGeometry() { invalidateGeometry(null); }
+    public void invalidateGeometry(SceneNode origin) { invalidateArrangement(origin); }
 
-    private void invalidateArrangement() {
+    private void invalidateArrangement() { invalidateArrangement(null); }
+    private void invalidateArrangement(SceneNode origin) {
         domain.checkAccess();
+        inspection.record(origin, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.ARRANGE);
         clearLogicalModal();
         revision++;
         geometryRevision++;
@@ -313,6 +337,7 @@ public final class SceneRuntime implements AutoCloseable {
     /** 结构/显隐/启用/模态变化才重验范围；普通文案和布局不触发重新选择。 */
     public void invalidateRange() {
         domain.checkAccess();
+        inspection.record(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.RANGE);
         interactionRevision.set(++interactionClock);
         focusRouter.rangeChanged();
         invalidate();
@@ -320,6 +345,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     public void invalidateRange(SceneNode origin) {
         domain.checkAccess();
+        inspection.record(origin, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.RANGE);
         semantics.invalidate(origin);
         interactionRevision.set(++interactionClock);
         focusRouter.rangeChanged();
@@ -337,13 +363,16 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    public void invalidatePaint() {
+    public void invalidatePaint() { invalidatePaint(null); }
+    public void invalidatePaint(SceneNode origin) {
         domain.checkAccess();
+        inspection.record(origin, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.PAINT);
         revision++;
     }
 
     public void invalidateBinding(SceneNode node) {
         domain.checkAccess();
+        inspection.record(node, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.BINDING);
         dirtyBindings.add(node);
     }
 
@@ -438,8 +467,8 @@ public final class SceneRuntime implements AutoCloseable {
         }
         if (node.control() != null) {
             observeControl(node, mount, () -> node.control().measureDependencies(node), () -> invalidate(node));
-            observeControl(node, mount, () -> node.control().arrangementDependencies(node), this::invalidateArrangement);
-            observeControl(node, mount, () -> node.control().paintDependencies(node), this::invalidatePaint);
+            observeControl(node, mount, () -> node.control().arrangementDependencies(node), () -> invalidateGeometry(node));
+            observeControl(node, mount, () -> node.control().paintDependencies(node), () -> invalidatePaint(node));
             Observation input = domain.observe(mount.owner, () -> {
                 if (node.control().nextInputNanos(node) == Long.MAX_VALUE) inputFrames.remove(node);
                 else inputFrames.add(node);
@@ -1272,7 +1301,7 @@ public final class SceneRuntime implements AutoCloseable {
             routing = false;
         }
         // 滚动只更新视图位置；唯一分发负责发布同代几何，保留不变的字体与内容度量。
-        if (result.viewChanged && geometryRevision == previousGeometry) invalidateArrangement();
+        if (result.viewChanged && geometryRevision == previousGeometry) invalidateArrangement(node);
         return result;
     }
 
@@ -1347,7 +1376,7 @@ public final class SceneRuntime implements AutoCloseable {
         ScrollPosition position = scrolling.get(node);
         if (position == null || !mounts.containsKey(node) || position.intentRevision != expectedIntent) return false;
         int next = Math.max(0, Math.min(position.maximum, pixels));
-        if (next != position.value) { position.value = next; invalidateArrangement(); }
+        if (next != position.value) { position.value = next; invalidateArrangement(node); }
         return true;
     }
 
@@ -1461,7 +1490,7 @@ public final class SceneRuntime implements AutoCloseable {
         routing = true;
         try { applied = node.control().scrollByPixels(node, axis, pixels, inputGeometry.asControl(node)); }
         finally { routing = previousRouting; }
-        if (applied != 0) invalidateArrangement();
+        if (applied != 0) invalidateArrangement(node);
         return applied;
     }
 
@@ -1479,7 +1508,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (position == null) return 0;
         int next = (int) Math.max(0L, Math.min(position.maximum, (long) position.value + pixels));
         int applied = next - position.value;
-        if (applied != 0) { position.value = next; position.intentRevision++; invalidateArrangement(); }
+        if (applied != 0) { position.value = next; position.intentRevision++; invalidateArrangement(node); }
         return applied;
     }
 
@@ -1498,7 +1527,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (next == position.value) return false;
         position.value = next;
         position.intentRevision++;
-        invalidateArrangement();
+        invalidateArrangement(node);
         return true;
     }
 
@@ -1558,7 +1587,7 @@ public final class SceneRuntime implements AutoCloseable {
                 if (next != position.value) {
                     position.value = next;
                     position.intentRevision++;
-                    invalidateArrangement();
+                    invalidateArrangement(node);
                     consumed = true;
                 }
             }
@@ -1615,6 +1644,7 @@ public final class SceneRuntime implements AutoCloseable {
             motionChannels.clear();
             semantics.clear();
             scrollObservers.clear();
+            inspection.close();
             disposed = true;
         }
         if (failure instanceof Error) throw (Error) failure;

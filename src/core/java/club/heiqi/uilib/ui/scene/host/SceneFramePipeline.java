@@ -144,16 +144,39 @@ public final class SceneFramePipeline implements AutoCloseable {
         final SceneRuntime.InputFrame activeInput = new SceneRuntime.InputFrame();
         final List<QueuedInput> events;
         final boolean independent;
-        final long frameNanos = System.nanoTime();
+        final long frameNanos;
         boolean failed, released;
 
-        InputBatch(List<QueuedInput> events, boolean independent) {
+        InputBatch(List<QueuedInput> events, boolean independent, long frameNanos) {
             this.events = events;
-            this.independent = independent;
+            this.independent = independent; this.frameNanos = frameNanos;
         }
     }
 
     private int pendingIndependent;
+    private final java.util.Set<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspections = new java.util.LinkedHashSet<>();
+    private boolean inspectionScheduled;
+
+    void inspect(java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result) {
+        synchronized (inputs) {
+            if (closed) { result.complete(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED); return; }
+            inspections.add(result);
+            if (inspectionScheduled) return;
+            inspectionScheduled = true;
+        }
+        runtime.domain().enqueue(() -> {
+            synchronized (inputs) { inspectionScheduled = false; if (closed || inspections.isEmpty()) return; }
+            frame(false);
+        }, failure -> finishInspections(null, failure));
+    }
+
+    private void finishInspections(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot snapshot, Throwable failure) {
+        java.util.List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> pending;
+        synchronized (inputs) { pending = new ArrayList<>(inspections); inspections.clear(); }
+        for (java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result : pending) {
+            if (failure != null) result.completeExceptionally(failure); else result.complete(snapshot);
+        }
+    }
 
     private void release(InputBatch batch) {
         synchronized (inputs) {
@@ -176,6 +199,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         this.text=measurer;
         this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset, runtime::nodeMeasureRevision);
         this.paint = new ScenePaintCollector(runtime, layout, measurer);
+        this.layout.inspectionWork(runtime::inspectionMeasured, runtime::inspectionArranged);
     }
 
     /** 宿主在域外按采集顺序递交typed输入，所有物理按钮均需递交。 */
@@ -253,12 +277,14 @@ public final class SceneFramePipeline implements AutoCloseable {
      * 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
      * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。
      */
-    public void frame() {
+    public void frame() { frame(true); }
+
+    private void frame(boolean replay) {
         synchronized (inputs) {
             checkOpen();
         }
         host.prepareResources();
-        InputBatch batch = takeBatch();
+        InputBatch batch = takeBatch(!replay);
         for (int i = 0; i < batch.events.size(); i++) {
             final int index = i;
             QueuedInput event = batch.events.get(index);
@@ -274,11 +300,11 @@ public final class SceneFramePipeline implements AutoCloseable {
                         ? club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.CLOSED : event.semanticOutcome, null); },
                         failure -> failBatch(batch, index + 1, failure));
         }
-        Runnable replay = () -> replay(batch);
-        submit(batch.independent, replay, failure -> failBatch(batch, batch.events.size(), failure));
+        Runnable finish = () -> replay(batch, replay);
+        submit(batch.independent, finish, failure -> failBatch(batch, batch.events.size(), failure));
     }
 
-    private InputBatch takeBatch() {
+    private InputBatch takeBatch(boolean inspecting) {
         List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) {
             checkOpen();
@@ -289,7 +315,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             boolean independent = pendingIndependent > 0
                     || events.stream().anyMatch(QueuedInput::requiresTopLevelSettlement);
             if (independent) pendingIndependent++;
-            return new InputBatch(events, independent);
+            return new InputBatch(events, independent, inspecting && presentation != null ? preparedNanos : System.nanoTime());
         }
     }
 
@@ -306,6 +332,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             return;
         }
         SceneGeometryView geometry = prepare(batch.frameNanos).geometry;
+        runtime.inspectionReason(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.INPUT);
         switch (event.kind) {
             case SEMANTIC:
                 event.semanticOutcome = runtime.dispatchSemantic(event.semantic, geometry)
@@ -446,6 +473,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void failBatch(InputBatch batch, int firstDiscard, Throwable cause) {
         batch.failed = true;
+        finishInspections(null, cause);
         for (QueuedInput input : batch.events) if (input.semanticCompletion != null) input.semanticCompletion.finish(null, cause);
         clearKeySequences();
         if (batch.independent) release(batch);
@@ -478,9 +506,16 @@ public final class SceneFramePipeline implements AutoCloseable {
         if (cleanupFailure instanceof RuntimeException) throw (RuntimeException) cleanupFailure;
     }
 
-    private void replay(InputBatch batch) {
+    private void replay(InputBatch batch, boolean replay) {
         try {
-            if (!batch.failed && !isClosed() && runtime.alive()) host.replay(prepare(batch.frameNanos, batch.activeInput).paint);
+            if (!batch.failed && !isClosed() && runtime.alive()) {
+                ScenePresentation current = replay ? prepare(batch.frameNanos, batch.activeInput) : prepare(batch.frameNanos);
+                if (replay) host.replay(current.paint);
+                synchronized (inputs) {
+                    if (inspections.isEmpty()) return;
+                }
+                finishInspections(runtime.inspect(current, metrics), null);
+            } else if (!batch.failed) finishInspections(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
         } finally {
             if (batch.independent) release(batch);
         }
@@ -523,6 +558,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             closed = true;
             while (!inputs.isEmpty()) pending.add(inputs.remove());
         }
+        finishInspections(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
         runtime.domain()
                 .execute(
                         () -> {
@@ -575,6 +611,15 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private ScenePresentation prepare(long frameNanos, SceneRuntime.InputFrame activeInput, boolean advanceInput) {
+        runtime.inspectionBegin();
+        boolean success = false;
+        try {
+            ScenePresentation result = prepareCurrent(frameNanos, activeInput, advanceInput);
+            success = true; return result;
+        } finally { runtime.inspectionEnd(success, generation); }
+    }
+
+    private ScenePresentation prepareCurrent(long frameNanos, SceneRuntime.InputFrame activeInput, boolean advanceInput) {
         preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
@@ -649,6 +694,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         boolean semanticChanged = presentation == null || presentation.semantics != semantic;
         boolean changedPaint = paintDirty(geometry, w, h, nextMetrics);
         if (!changedPaint && !semanticChanged) return;
+        if (changedPaint) runtime.inspectionPaintCollected();
         PaintPlan plan = changedPaint ? runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics)) : presentation.paint;
         if (changedPaint) runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
         presentation = new ScenePresentation(++generation, geometry, plan, semantic);
