@@ -78,6 +78,7 @@
 
 | 目标或设计输入 | 文档 | 所属范围 |
 | --- | --- | --- |
+| 通用桌面/游戏 UI 的持续完善 | [成熟度路线](<proposals/2026-10-18-uilib-maturity-roadmap.md>) | 已认可推进顺序、各阶段可用结果与首阶段交付范围 |
 | 局部失效与有效文字请求复用 | [增量更新目标](<proposals/2026-10-14-uilib-incremental-update-spec.md>) | 有限增量任务及其验收，不替代正式状态/布局合同 |
 | 大列表更新和滚动性能 | [大列表性能目标](<proposals/2026-10-14-uilib-large-list-performance-spec.md>) | 证据驱动的热点选择与收益验收 |
 | 可交互长集合的候选机制 | [虚拟集合专题](<proposals/2026-10-14-uilib-virtual-list-spec.md>) | 离屏、可变行高、导航和生命周期的设计输入 |
