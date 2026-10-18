@@ -48,6 +48,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private final Function<T, K> key;
     private final Function<ReadableSignal<T>, SceneNode> declaration;
     private final ReadableSignal<SceneVirtualList.Options> options;
+    private final ReadableSignal<?> measurementCondition;
+    private Object measuredCondition;
     private final VirtualHeightIndex<K> heights = new VirtualHeightIndex<>();
     private final Map<K, T> values = new HashMap<>();
     private final Map<K, Row<T, K>> rows = new LinkedHashMap<>();
@@ -75,9 +77,10 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.RangeHandle endRange;
 
     VirtualCollectionController(ScenePageContext page, ReadableSignal<List<T>> source, Function<T, K> key,
-            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<SceneVirtualList.Options> options) {
+            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<SceneVirtualList.Options> options,
+            ReadableSignal<?> measurementCondition) {
         this.page = page; runtime = page.runtime(); this.source = source; this.key = key;
-        this.declaration = declaration; this.options = options;
+        this.declaration = declaration; this.options = options; this.measurementCondition = measurementCondition;
         viewRevision = page.domain().signal(0L);
     }
 
@@ -112,7 +115,9 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         long nextMetrics = runtime.metricsRevision().get();
         List<T> current = Objects.requireNonNull(source.get(), "集合数据");
         boolean changed = current != published;
-        boolean reset = nextMetrics != metrics || estimate != nextEstimate || measuredWidth != width;
+        Object nextCondition = measurementCondition.get();
+        boolean conditionChanged = !Objects.equals(measuredCondition, nextCondition);
+        boolean reset = nextMetrics != metrics || estimate != nextEstimate || measuredWidth != width || conditionChanged;
         if (changed) {
             List<K> next = new ArrayList<>(current.size());
             Map<K, T> nextValues = new HashMap<>();
@@ -132,7 +137,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         if (changed || reset || gap != root.gap()) {
             if (!dataChanged && (reset || gap != root.gap())) beginAnchor();
             heights.reconcile(order, nextEstimate, root.gap(), reset);
-            metrics = nextMetrics; estimate = nextEstimate; gap = root.gap(); measuredWidth = width;
+            metrics = nextMetrics; estimate = nextEstimate; gap = root.gap(); measuredWidth = width; measuredCondition = nextCondition;
+            if (conditionChanged) viewRevision.set(++revision);
         }
         if (requested != null && (!values.containsKey(requested) || !runtime.interactive(root)
                 || requestRange == null || !requestRange.active())) cancelRequest();

@@ -31,8 +31,8 @@ public final class SceneVirtualList<T, K> {
     private final SceneScrollViewport viewport;
 
     private SceneVirtualList(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
-            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options) {
-        controller = new VirtualCollectionController<>(page, items, key, declaration, options);
+            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition) {
+        controller = new VirtualCollectionController<>(page, items, key, declaration, options, measurementCondition);
         node = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true).scrollable(true).control(controller);
         controller.attach(node);
         viewport = SceneScrollViewport.of(page, node, SceneNode.Axis.COLUMN);
@@ -47,7 +47,13 @@ public final class SceneVirtualList<T, K> {
             Function<T, K> key, Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options) {
         Objects.requireNonNull(page, "page").domain().checkWrite();
         return new SceneVirtualList<>(page, Objects.requireNonNull(items, "items"), Objects.requireNonNull(key, "key"),
-                Objects.requireNonNull(declaration, "declaration"), Objects.requireNonNull(options, "options"));
+                Objects.requireNonNull(declaration, "declaration"), Objects.requireNonNull(options, "options"), () -> null);
+    }
+
+    /** 复合数据视图的列条件只结束旧高度事实；既有公开入口没有新增依赖前提。 */
+    static <T, K> SceneVirtualList<T, K> measured(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
+            Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition) {
+        return new SceneVirtualList<>(page, items, key, declaration, options, measurementCondition);
     }
 
     public SceneNode node() { return node; }
