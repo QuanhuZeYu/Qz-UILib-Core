@@ -349,7 +349,22 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private SceneFocusTraversal.Cursor beginTraversal(SceneNode from, boolean backward) {
         K initialKey = null;
         for (Row<T, K> row : rows.values()) if (contains(row.node, from)) { initialKey = row.key; break; }
-        final K fromKey = initialKey;
+        return beginTraversal(from, backward, initialKey);
+    }
+
+    SceneFocusTraversal.Cursor beginAt(K key, boolean backward) {
+        SceneFocusTraversal.Cursor delegate = beginTraversal(null, backward, Objects.requireNonNull(key, "起点键"));
+        return new SceneFocusTraversal.Cursor() {
+            public SceneFocusTraversal.Result prepare() {
+                SceneFocusTraversal.Result result = delegate.prepare();
+                if (result.status == SceneFocusTraversal.Result.Status.READY) runtime.requestInputReveal(result.target);
+                return result;
+            }
+            public void close() { delegate.close(); }
+        };
+    }
+
+    private SceneFocusTraversal.Cursor beginTraversal(SceneNode from, boolean backward, K fromKey) {
         return new SceneFocusTraversal.Cursor() {
             int position;
             SceneNode after = from;

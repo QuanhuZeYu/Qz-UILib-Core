@@ -128,6 +128,8 @@ public final class SceneFocusRouter {
         keyboardInput();
         if (closed) return false;
         revalidate();
+        SceneNode scope = top().modal == null ? pagePolicy() : top().modal.node();
+        if (runtime.dispatchScopeNavigation(scope, backward)) { cancelPending(); return true; }
         SceneNode from = owner == null ? null : owner.node();
         cancelPending();
         beginNavigation(from, backward, true);

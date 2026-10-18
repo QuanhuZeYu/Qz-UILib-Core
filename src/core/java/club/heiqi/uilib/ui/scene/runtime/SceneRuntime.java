@@ -986,6 +986,14 @@ public final class SceneRuntime implements AutoCloseable {
         return new SceneLogicalNavigation(this, java.util.Collections.singletonList(boundary), from, backward, false);
     }
 
+    boolean dispatchScopeNavigation(SceneNode node, boolean backward) {
+        domain.checkWrite(); command();
+        if (node == null || !interactive(node) || node.control() == null) return false;
+        boolean previous = routing; routing = true;
+        try { return node.control().navigateScope(node, backward); }
+        finally { routing = previous; }
+    }
+
     public AutoCloseable bindShortcuts(SceneNode anchor, SceneShortcut.Scope scope,
             SceneShortcut... entries) {
         domain.checkWrite(); checkAlive();

@@ -67,4 +67,7 @@ public final class SceneVirtualList<T, K> {
 
     /** 所属复合视图只选自己的主目标，不改变公开focus的首合法后代语义。 */
     boolean focus(K key, Function<SceneNode, SceneNode> target) { return controller.request(key, true, target); }
+
+    /** 弹出复合内容按明确起点准备并显露，普通初始遍历仍保留原条件。 */
+    club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor beginAt(K key, boolean backward) { return controller.beginAt(key, backward); }
 }

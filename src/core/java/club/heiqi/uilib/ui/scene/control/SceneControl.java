@@ -50,6 +50,9 @@ public interface SceneControl {
         return null;
     }
 
+    /** 当前范围的显式NEXT/PREVIOUS可被消费；默认与返回选焦不调用，旧范围保持原导航。 */
+    default boolean navigateScope(SceneNode node, boolean backward) { return false; }
+
     /** 显式子 activator 的键盘委派，不建立通用编辑冒泡。 */
     default boolean editActivator(SceneNode node, SceneNode focused,
             club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }

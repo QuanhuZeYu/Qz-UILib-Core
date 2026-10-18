@@ -3,6 +3,8 @@ package club.heiqi.uilib.testing.gallery;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneCommand;
+import club.heiqi.uilib.ui.scene.control.SceneSelect;
+import club.heiqi.uilib.ui.scene.control.SceneMenu;
 import club.heiqi.uilib.ui.scene.control.SceneTabs;
 import club.heiqi.uilib.ui.scene.control.SceneTextArea;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
@@ -28,6 +30,7 @@ public final class ProjectDetailsPage {
         Signal<String> active = page.domain().signal("overview"), projectName = page.domain().signal("界面资源整理"),
                 savedNotes = page.domain().signal("核对各个界面资源，整理本周交付清单。"), feedback = page.domain().signal("查看项目概览，或切到备注编辑。");
         Signal<Boolean> historyAvailable = page.domain().signal(true);
+        Signal<String> assignee = page.domain().signal("lin");
         Signal<List<Activity>> events = page.domain().signal(Collections.singletonList(new Activity(0, "已创建项目")));
         SceneEditState name = new SceneEditState(page.domain(), projectName.get());
         SceneEditState notes = new SceneEditState(page.domain(), savedNotes.get(), SceneEditState.Mode.MULTI_LINE);
@@ -66,12 +69,25 @@ public final class ProjectDetailsPage {
         });
         Signal<List<SceneTabs.Tab<String>>> tabs = page.domain().signal(Arrays.asList(overview, edit, history));
         SceneTabs<String> details = SceneTabs.create(page, tabs, active, next -> { active.set(next); feedback.set("已切换到" + (next.equals("overview") ? "概览。" : next.equals("notes") ? "名称与备注。" : "活动记录。")); }, theme);
+        SceneCommand resetCommand = SceneCommand.of(() -> !name.snapshot().get().text.equals(projectName.get())
+                || !notes.snapshot().get().text.equals(savedNotes.get()), () -> {
+            name.cancel(); notes.cancel(); feedback.set("名称和备注已恢复到上次保存。");
+        });
+        SceneNode assignment = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
+        assignment.add(GalleryStyle.label(page, () -> "负责人", theme, 14, true));
+        assignment.add(SceneSelect.create(page, () -> Arrays.asList(new SceneSelect.Option<>("lin", () -> "林岚"),
+                new SceneSelect.Option<>("zhou", () -> "周宁"), new SceneSelect.Option<>("guest", () -> "访客（不可分配）", () -> false)),
+                assignee, next -> { assignee.set(next); feedback.set("负责人已改为" + (next.equals("lin") ? "林岚。" : "周宁。")); }, theme)
+                .size(Size.fixed(180), Size.natural()));
+        assignment.add(SceneMenu.create(page, () -> "更多操作", () -> Arrays.asList(
+                new SceneMenu.Item<>("save", () -> "保存项目", saveCommand), new SceneMenu.Item<>("reset", () -> "撤销未保存编辑", resetCommand)), theme)
+                .size(Size.fixed(160), Size.natural()));
         SceneNode tools = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);
         tools.add(GalleryStyle.button(page, () -> historyAvailable.get() ? "暂停活动入口" : "启用活动入口", theme, () -> historyAvailable.set(!historyAvailable.get())));
         tools.add(GalleryStyle.button(page, () -> "反转标签顺序", theme, () -> { List<SceneTabs.Tab<String>> next = new ArrayList<>(tabs.get()); Collections.reverse(next); tabs.set(next); }));
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(18);
         root.add(GalleryStyle.header(page, theme, "项目详情", "切换内容、编辑备注并保存。草稿在标签之间保留。", back));
-        return root.add(tools).add(GalleryStyle.frame(details.node(), theme).size(Size.fill(1), Size.fill(1)))
+        return root.add(assignment).add(tools).add(GalleryStyle.frame(details.node(), theme).size(Size.fill(1), Size.fill(1)))
                 .add(GalleryStyle.label(page, feedback, theme, 14, true));
     }
 }
