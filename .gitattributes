@@ -1,0 +1,57 @@
+* text eol=lf
+
+*.[jJ][aA][rR]          binary
+
+*.[pP][nN][gG]          binary
+*.[jJ][pP][gG]          binary
+*.[jJ][pP][eE][gG]      binary
+*.[gG][iI][fF]          binary
+*.[tT][iI][fF]          binary
+*.[tT][iI][fF][fF]      binary
+*.[iI][cC][oO]          binary
+*.[sS][vV][gG]          text
+*.[eE][pP][sS]          binary
+*.[xX][cC][fF]          binary
+
+*.[kK][aA][rR]          binary
+*.[mM]4[aA]             binary
+*.[mM][iI][dD]          binary
+*.[mM][iI][dD][iI]      binary
+*.[mM][pP]3             binary
+*.[oO][gG][gG]          binary
+*.[rR][aA]              binary
+
+*.7[zZ]                 binary
+*.[gG][zZ]              binary
+*.[tT][aA][rR]          binary
+*.[tT][gG][zZ]          binary
+*.[zZ][iI][pP]          binary
+
+*.[tT][cC][nN]          binary
+*.[sS][oO]              binary
+*.[dD][lL][lL]          binary
+*.[dD][yY][lL][iI][bB]  binary
+*.[pP][sS][dD]          binary
+*.[tT][tT][fF]          binary
+*.[oO][tT][fF]          binary
+
+*.[pP][aA][tT][cC][hH]  -text
+
+*.[bB][aA][tT]          text eol=crlf
+*.[cC][mM][dD]          text eol=crlf
+*.[pP][sS]1             text eol=crlf
+
+*[aA][uU][tT][oO][gG][eE][nN][eE][rR][aA][tT][eE][dD]* binary
+
+# Preserve the upstream license byte-for-byte, including its intentional trailing spaces.
+src/core/resources/assets/qz_uilib/fonts/math/OFL.txt -text -whitespace
+
+# 数学正文资源与官方 SHA 清单保持原字节；许可原有空格不可重写。
+src/core/resources/assets/qz_uilib/fonts/math-text/** -text
+src/core/resources/assets/qz_uilib/fonts/math-text/**/OFL.txt -whitespace
+
+# TSV 尾部 Tab 表示最后一个空字段，保留列数与固定原始事实。
+src/test/resources/math/reference/coverage-corpus.tsv whitespace=-blank-at-eol
+
+# MPEG-TS 验证样片保持二进制原字节，不能套用默认的文本换行归一化。
+src/mediaTest/resources/uilib-media/segment.ts binary

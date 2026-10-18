@@ -100,7 +100,11 @@ tasks.named('test', Test) { maxHeapSize = '1g'; failOnNoDiscoveredTests = false 
 // Windows Java8 launcher不能可靠接收含中文的绝对-cp；相对路径仍消费原编译输出。
 tasks.withType(JavaExec).configureEach {
     doFirst {
-        def entries = classpath.files.collect { workingDir.toPath().relativize(it.toPath()).toString() }
+        def base = workingDir.toPath()
+        def entries = classpath.files.collect {
+            def entry = it.toPath()
+            entry.root == base.root ? base.relativize(entry).toString() : entry.toString()
+        }
         classpath = files()
         jvmArgs '-cp', entries.join(File.pathSeparator)
     }
