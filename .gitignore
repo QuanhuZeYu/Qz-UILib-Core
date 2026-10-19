@@ -31,6 +31,8 @@ whitelist.json
 *.DS_Store
 *.png
 !src/gallery/resources/assets/**/*.png
+# 共享验证样本随独立 Maven 测试产物分发。
+!src/galleryVerification/resources/assets/**/*.png
 !gradlew.bat
 .factorypath
 addon.local.gradle
