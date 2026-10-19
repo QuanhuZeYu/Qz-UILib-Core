@@ -4,8 +4,6 @@ import club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter;
 
 import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.input.SceneKeyEvent;
-import club.heiqi.uilib.ui.scene.input.SceneKey;
-import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.input.SceneKeyInterpreter;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
@@ -30,6 +28,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     private final SceneLayoutEngine layout;
     private final ScenePaintCollector paint;
     private final SceneTextMeasurer text;
+    private final SceneKeyboardInput keyboard;
 
     private enum InputKind { POINTER, NAVIGATION, EDIT, KEY, FOCUS_LOST, ESCAPE, SEMANTIC }
 
@@ -50,21 +49,11 @@ public final class SceneFramePipeline implements AutoCloseable {
             return new FollowUp(Kind.HOST, Objects.requireNonNull(action, "fallback"), null);
         }
 
-        static FollowUp key(Runnable fallback) { return new FollowUp(Kind.KEY, fallback, null); }
+        static FollowUp key() { return new FollowUp(Kind.KEY, null, null); }
 
         static FollowUp navigation(SceneNavigationEvent event) {
             return new FollowUp(Kind.NAVIGATION, null, Objects.requireNonNull(event, "fallback"));
         }
-    }
-
-    private static final class KeySequence {
-        enum Use { RESERVED, EDIT, NAVIGATION, PRESS }
-        final SceneFocusRouter.RangeHandle range;
-        MountHandle editing;
-        Use use = Use.RESERVED;
-        club.heiqi.uilib.ui.scene.runtime.SceneKeyContinuation continuation;
-        void close() { use = Use.RESERVED; if (continuation != null) { continuation.close(); continuation = null; } }
-        KeySequence(SceneFocusRouter.RangeHandle range, MountHandle editing) { this.range = range; this.editing = editing; }
     }
 
     private static final class QueuedInput {
@@ -72,8 +61,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         final ScenePointerEvent pointer;
         final SceneNavigationEvent navigation;
         final SceneEditEvent edit;
-        final SceneKeyEvent key;
-        KeySequence keySequence;
+        final SceneKeyboardInput.Input key;
         SceneFocusRouter.RangeHandle directionRange;
         final FollowUp followUp;
         boolean consumed;
@@ -82,7 +70,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result semanticOutcome;
 
         private QueuedInput(InputKind kind, ScenePointerEvent pointer, SceneNavigationEvent navigation,
-                            SceneEditEvent edit, FollowUp followUp, SceneKeyEvent key) {
+                            SceneEditEvent edit, FollowUp followUp, SceneKeyboardInput.Input key) {
             this.kind = kind;
             this.pointer = pointer;
             this.navigation = navigation;
@@ -105,7 +93,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
 
         static QueuedInput key(SceneKeyEvent event, Runnable fallback) {
-            return new QueuedInput(InputKind.KEY, null, null, null, FollowUp.key(fallback), Objects.requireNonNull(event, "event"));
+            return new QueuedInput(InputKind.KEY, null, null, null, FollowUp.key(), new SceneKeyboardInput.Input(event, fallback));
         }
 
         static QueuedInput focusLost() {
@@ -137,8 +125,6 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
-    // 每个中性物理键至多一项；fresh覆盖，失焦/失败/关闭结束，不另持输入或焦点权威。
-    private final java.util.Map<SceneKey, KeySequence> keySequences = new java.util.EnumMap<>(SceneKey.class);
 
     private static final class InputBatch {
         final SceneRuntime.InputFrame activeInput = new SceneRuntime.InputFrame();
@@ -197,6 +183,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         this.runtime = runtime;
         this.host = host;
         this.text=measurer;
+        this.keyboard = new SceneKeyboardInput(runtime);
         this.layout = new SceneLayoutEngine(measurer, runtime::scrollOffset, runtime::nodeMeasureRevision);
         this.paint = new ScenePaintCollector(runtime, layout, measurer);
         this.layout.inspectionWork(runtime::inspectionMeasured, runtime::inspectionArranged);
@@ -340,12 +327,12 @@ public final class SceneFramePipeline implements AutoCloseable {
                         : club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result.REJECTED;
                 break;
             case FOCUS_LOST:
-                clearKeySequences();
+                keyboard.clear();
                 try { router.route(ScenePointerEvent.cancel(), geometry); }
                 finally { runtime.focusRouter().clear(); }
                 break;
             case KEY:
-                routeKey(event);
+                event.consumed = keyboard.route(event.key);
                 break;
             case EDIT:
                 if (event.followUp != null && event.followUp.navigation != null && event.followUp.navigation.directional())
@@ -359,7 +346,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                 if (event.navigation.directional()) {
                     event.directionRange = runtime.focusRouter().captureRange();
                     event.consumed = runtime.dispatchKeyEdit(SceneKeyInterpreter.direction(event.navigation)) != SceneRuntime.KeyResult.IGNORED;
-                } else navigate(event.navigation);
+                } else keyboard.navigate(event.navigation);
                 break;
             case ESCAPE:
                 event.consumed = runtime.dispatchEscape();
@@ -367,87 +354,14 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    private void clearKeySequences() {
-        for (KeySequence sequence : keySequences.values()) sequence.close();
-        keySequences.clear();
-    }
-
-    private void routeKey(QueuedInput event) {
-        if (event.key.phase == SceneKeyEvent.Phase.UP) {
-            event.consumed = true;
-            KeySequence sequence = keySequences.remove(event.key.key);
-            if (sequence == null) return;
-            try {
-                if (sequence.use == KeySequence.Use.PRESS && sequence.range.current() && sequence.continuation != null)
-                    sequence.continuation.release();
-            } finally { sequence.close(); }
-            return;
-        }
-        if (event.key.repeat) {
-            KeySequence sequence = keySequences.get(event.key.key);
-            event.keySequence = sequence;
-            event.consumed = true;
-            if (sequence == null) return;
-            if (!sequence.range.current()) { sequence.close(); return; }
-            if (sequence.continuation != null) { sequence.continuation.repeat(event.key); return; }
-            if (sequence.use == KeySequence.Use.NAVIGATION) {
-                SceneNavigationEvent direction = SceneKeyInterpreter.navigation(event.key);
-                if (direction != null && direction.directional()) {
-                    // 空间方向每次先问当次目标；Tab仍延续原逻辑导航，不转为INSERT_TAB。
-                    club.heiqi.uilib.ui.scene.node.SceneNode focused = runtime.focusRouter().focused().get();
-                    SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key, held -> sequence.continuation = held);
-                    if (result != SceneRuntime.KeyResult.IGNORED) {
-                        if (result == SceneRuntime.KeyResult.EDITED) {
-                            sequence.use = KeySequence.Use.EDIT;
-                            sequence.editing = focused == null ? null : runtime.captureMount(focused);
-                        }
-                        return;
-                    }
-                }
-                event.consumed = false; return;
-            }
-            if (sequence.use != KeySequence.Use.EDIT || sequence.editing == null || !sequence.editing.active()
-                    || runtime.focusRouter().focused().get() != sequence.editing.node()) return;
-            // 编辑续段不再查询应用绑定，也不因当前控件未消费而转为导航或宿主动作。
-            runtime.dispatchKeyEdit(event.key);
-            return;
-        }
-        KeySequence previous = keySequences.remove(event.key.key);
-        if (previous != null) previous.close();
-        club.heiqi.uilib.ui.scene.node.SceneNode focused = runtime.focusRouter().focused().get();
-        KeySequence sequence = new KeySequence(runtime.focusRouter().captureRange(), focused == null ? null : runtime.captureMount(focused));
-        keySequences.put(event.key.key, sequence);
-        event.keySequence = sequence;
-        SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event.key, held -> sequence.continuation = held);
-        event.consumed = result != SceneRuntime.KeyResult.IGNORED;
-        if (result == SceneRuntime.KeyResult.EDITED) sequence.use = KeySequence.Use.EDIT;
-    }
-
     private void followUp(InputBatch batch, QueuedInput event) {
         if (batch.failed || isClosed() || !runtime.alive() || event.consumed) return;
         // 沿当前事件结算，不能重新排到下一帧而越过已采集的文字。
         switch (event.followUp.kind) {
             case KEY:
-                // Effect可能打开或结束模态；先准备当前事实，旧键不能转投新范围。
+                // Effect 可能改变范围；准备后仍由原按键续段核验，不转投新范围。
                 prepare(batch.frameNanos);
-                if (event.keySequence == null || !event.keySequence.range.current()) return;
-                if (event.key.repeat) {
-                    if (event.keySequence.use == KeySequence.Use.NAVIGATION) {
-                        if (runtime.dispatchKeyCommand(event.key)) return;
-                        SceneNavigationEvent repeated = SceneKeyInterpreter.navigation(event.key);
-                        if (repeated != null) navigate(repeated);
-                    }
-                    return;
-                }
-                if (runtime.dispatchKeyCommand(event.key)) return;
-                if (event.key.plainSpace()) {
-                    event.keySequence.use = KeySequence.Use.PRESS;
-                    event.keySequence.continuation = runtime.beginKeyPress(event.keySequence.editing, event.keySequence.range);
-                    return;
-                }
-                SceneNavigationEvent navigation = SceneKeyInterpreter.navigation(event.key);
-                if (navigation != null) { event.keySequence.use = KeySequence.Use.NAVIGATION; navigate(navigation); }
-                else if (event.followUp.host != null) event.followUp.host.run();
+                keyboard.afterEffects(event.key);
                 break;
             case HOST:
                 event.followUp.host.run();
@@ -457,25 +371,16 @@ public final class SceneFramePipeline implements AutoCloseable {
                     prepare(batch.frameNanos);
                     if (!event.directionRange.current() || runtime.dispatchKeyCommand(SceneKeyInterpreter.direction(event.followUp.navigation))) return;
                 }
-                navigate(event.followUp.navigation);
+                keyboard.navigate(event.followUp.navigation);
                 break;
         }
-    }
-
-    private void navigate(SceneNavigationEvent event) {
-        if (event == SceneNavigationEvent.ACTIVATE) {
-            if (!runtime.dispatchEdit(SceneEditEvent.command(SceneEditEvent.Command.ACTIVATE_ONLY, false, null)))
-                runtime.focusRouter().activate();
-        }
-        else if (event.directional()) runtime.focusRouter().navigate(event);
-        else runtime.focusRouter().navigate(event == SceneNavigationEvent.PREVIOUS);
     }
 
     private void failBatch(InputBatch batch, int firstDiscard, Throwable cause) {
         batch.failed = true;
         finishInspections(null, cause);
         for (QueuedInput input : batch.events) if (input.semanticCompletion != null) input.semanticCompletion.finish(null, cause);
-        clearKeySequences();
+        keyboard.clear();
         if (batch.independent) release(batch);
         ScenePointerRouter router = runtime.pointerRouter();
         // 导航后的Effect也可能失败；即使剩余只有导航，旧物理owner仍必须取消。
@@ -562,7 +467,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         runtime.domain()
                 .execute(
                         () -> {
-                            clearKeySequences();
+                            keyboard.clear();
                             ScenePointerRouter router = runtime.pointerRouter();
                             // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
                             Throwable failure = null;
