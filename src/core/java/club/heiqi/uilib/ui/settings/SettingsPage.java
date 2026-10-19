@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.scene.control.SceneCommand;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneShortcut;
 
@@ -72,6 +73,7 @@ public final class SettingsPage implements ScenePage {
         final Signal<Dialog> dialog;
         final Signal<String> selectedBuiltin;
         final ReadableSignal<SettingsStyle.Palette> palette;
+        final SettingsMotion motion;
         final SceneEditState path, sample;
         final ReadableSignal<Boolean> compact;
         final Signal<Boolean> navigationOpen;
@@ -89,7 +91,10 @@ public final class SettingsPage implements ScenePage {
             section=ctx.domain().signal(Section.APPEARANCE);dialog=ctx.domain().signal(Dialog.NONE);
             List<String> builtins=configuration.builtinCandidates();
             selectedBuiltin=ctx.domain().signal(builtins.isEmpty()?"":builtins.get(0));
-            palette=ctx.domain().computed(ctx.scope(),() -> new SettingsStyle.Palette(model.theme().get().isDark()));
+            palette=ctx.domain().computed(ctx.scope(),() -> new SettingsStyle.Palette(
+                    model.theme().get().sceneTheme().withDensity(ctx.density().get())
+                            .withMotion(ctx.theme().get().feedbackMotion,ctx.theme().get().spatialMotion)));
+            motion=new SettingsMotion(palette);
             path=new SceneEditState(ctx.domain(),"");
             sample=new SceneEditState(ctx.domain(),defaultSample,SceneEditState.Mode.MULTI_LINE);
         }
@@ -117,12 +122,11 @@ public final class SettingsPage implements ScenePage {
                     .add(SettingsStyle.column(6).add(SettingsStyle.heading(ctx,() -> "设置",palette,30))
                     .add(text("管理字体、界面外观与当前宿主的本地配置。",15,true)))
                     .add(SettingsStyle.line(palette));
-            SceneNode appearance=appearancePage(),minecraft=minecraftPage(),file=filePage();
-            ctx.own(appearance::destroy);ctx.own(minecraft::destroy);ctx.own(file::destroy);
-            SceneNode deck=SettingsStyle.column(0);
-            deck.bind(NodeBinding.children(() -> Collections.singletonList(section.get()==Section.APPEARANCE?appearance:
-                    section.get()==Section.MINECRAFT?minecraft:file)));
-            SceneNode content=SettingsStyle.column(24).add(pageHeading()).add(deck);
+            SceneNode deck=SettingsStyle.column(0)
+                    .add(sectionPanel(Section.APPEARANCE,appearancePage()))
+                    .add(sectionPanel(Section.MINECRAFT,minecraftPage()))
+                    .add(sectionPanel(Section.FILE,filePage()));
+            SceneNode content=SettingsStyle.column(24);
             Signal<String> presentedMessage=ctx.domain().signal("");
             ReadableSignal<SettingsModel.Feedback> result=model.feedback();
             ReadableSignal<String> feedbackText=() -> {
@@ -134,31 +138,32 @@ public final class SettingsPage implements ScenePage {
             feedback.bind(NodeBinding.transientValue(() -> {
                 SettingsModel.Feedback value=result.get();return value!=null&&value.success?value:null;
             },3_000_000_000L,(n,value) -> presentedMessage.set(value==null?"":value.text)));
-            feedback.bind(NodeBinding.value(feedbackText,(n,s) -> n.visible(!s.isEmpty())));
+            motion.reveal(feedback,() -> !feedbackText.get().isEmpty());
             SceneNode external=SettingsStyle.surface(SettingsStyle.column(8).padding(16)
                     .add(text("当前生效配置已变化",14,false))
                     .add(text("你的草稿已保留。可以继续编辑并明确应用，或放弃编辑以同步当前值。",13,true))
                     .add(button("同步当前值",model::discard)),palette,true);
-            external.bind(NodeBinding.value(model.externalChanged(),SceneNode::visible));content.add(external);
-            SceneNode body=SettingsLayout.form(content).size(Size.fill(1),Size.fill(1)).clip(true).scrollable(true);
+            motion.reveal(external,model.externalChanged());content.add(external).add(deck);
+            SceneNode body=motion.scroll(SettingsLayout.form(content).size(Size.fill(1),Size.fill(1)).clip(true).scrollable(true));
             SceneNode shell=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1))
                     .bind(NodeBinding.value(palette,(n,v) -> n.background(v.background)))
                     .add(SettingsLayout.workspace(compact,toolbar,heading,navigation(),body,footer(feedback)));
-            SceneNode fonts=fontsDialog(),add=addDialog(),reload=confirmation(Dialog.RELOAD),close=confirmation(Dialog.CLOSE);
-            ctx.own(fonts::destroy);ctx.own(add::destroy);ctx.own(reload::destroy);ctx.own(close::destroy);
-            SceneNode overlay=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
-            overlay.bind(NodeBinding.children(() -> dialog.get()==Dialog.NONE?Collections.emptyList():Collections.singletonList(dialog.get()==Dialog.FONTS?fonts:dialog.get()==Dialog.ADD?add:dialog.get()==Dialog.RELOAD?reload:close)));
+            SceneNode scrim=motion.reveal(SettingsStyle.column(0).size(Size.fill(1),Size.fill(1))
+                    .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM),() -> dialog.get()!=Dialog.NONE);
+            SceneNode overlay=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false))
+                    .add(scrim).add(fontsDialog()).add(addDialog()).add(confirmation(Dialog.RELOAD)).add(confirmation(Dialog.CLOSE));
             SceneNode root=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
             root.add(shell).add(overlay).onEscape(() -> {closeRequested();return true;})
                     .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
                             SceneShortcut.primary(SceneKey.S, save)));
             return root;
         }
-        SceneNode pageHeading() {
-            return SettingsStyle.column(16).add(SettingsStyle.column(4)
-                    .add(SettingsStyle.heading(ctx,() -> section.get().title,palette,20))
-                    .add(text(() -> section.get().description,14,true)))
-                    .add(SettingsStyle.line(palette));
+        SceneNode sectionPanel(Section target,SceneNode form) {
+            SceneNode heading=SettingsStyle.column(6)
+                    .add(SettingsStyle.heading(ctx,() -> target.title,palette,22))
+                    .add(text(target.description,14,true));
+            return motion.reveal(SettingsStyle.column(24).add(heading).add(SettingsStyle.line(palette)).add(form),
+                    () -> section.get()==target);
         }
         SceneNode navigation() {
             SceneNode sidebar=SettingsStyle.column(24).size(Size.fill(1),Size.fill(1)).padding(20)
@@ -220,29 +225,24 @@ public final class SettingsPage implements ScenePage {
         SceneNode fontsDialog() {
             SceneNode list=club.heiqi.uilib.ui.scene.control.SceneSortableList.create(ctx,model.sources(),SettingsModel.Source::identity,
                     this::sortableSource,this::sourcePreview,move -> model.moveBefore(move.key,move.beforeKey))
-                    .size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true);
+                    .size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true)
+                    .bind(SceneMotion.layoutPositions(motion.spatial));
             list.bind(NodeBinding.value(() -> SettingsTypography.style(14,palette.get().accent,400),SceneNode::style));
             // 空态隐藏整个表面，避免仍参与布局的容器失去唯一可见正文。
             SceneNode sourceList=SettingsStyle.surface(list,palette,false)
                     .bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(!items.isEmpty())));
-            SceneNode empty=text("未配置字体候选。不会自动补入默认字体。",14,true);
-            empty.bind(NodeBinding.value(model.sources(),(n,items) -> n.visible(items.isEmpty())));
             SettingsStyle.Button done=SettingsStyle.button(ctx,() -> "完成字体编辑",palette,() -> dialog.set(Dialog.NONE),true,false);
             SceneNode content=SettingsStyle.column(16).add(SettingsStyle.heading(ctx,() -> "管理字体来源",palette,20))
-                    .add(text("从上到下依次匹配。拖动把手调整顺序，松手只更新草稿。",14,true))
-                    .add(text("也可用上移/下移，或聚焦后按空格拾取、方向键排序、Enter 确认、Esc 取消。",12,true))
-                    .add(empty).add(sourceList).add(error(model.fontError()))
+                    .add(sourceList).add(error(model.fontError()))
                     .add(actions(button("+ 添加来源",() -> {path.reset("");fileSource.set(false);dialog.set(Dialog.ADD);}),
                             button(() -> "恢复默认",model::resetFonts,false,true)))
-                    .add(text("移除的来源不会补回；空列表也不会追加默认字体。",12,true))
                     .add(done.view);
-            return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,720))
-                    .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM).modal(true).onEscape(() -> {cancelDialog();return true;})
-                    .add(SettingsStyle.card(content,palette)).initialFocus(done.target)
-                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name("管理字体来源").build()));
+            return modal(content,Dialog.FONTS,720,done.target,"管理字体来源");
         }
         club.heiqi.uilib.ui.scene.control.SceneSortableList.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
-            SceneNode handle=text("::",20,true).size(Size.fixed(28),Size.natural()).padding(4);
+            SceneNode handle=SettingsStyle.column(0).padding(12)
+                    .size(Size.natural().bounds(44,Integer.MAX_VALUE),Size.natural().bounds(44,Integer.MAX_VALUE))
+                    .add(text("::",20,true));
             SceneNode row=SettingsStyle.row(4).add(handle).add(sourceRow(source).size(Size.fill(1),Size.natural()));
             return new club.heiqi.uilib.ui.scene.control.SceneSortableList.Row(row,handle);
         }
@@ -333,7 +333,7 @@ public final class SettingsPage implements ScenePage {
         String state() { return model.dirty().get()?"有待应用修改":model.unsaved().get()?"已应用，未保存":"已保存"; }
         SceneNode error(ReadableSignal<String> value) {
             SceneNode result=SceneLabel.create(ctx,value,() -> palette.get().theme(13,palette.get().error,0,false));
-            result.bind(NodeBinding.value(value,(n,s) -> n.visible(!s.isEmpty())));return result;
+            return motion.reveal(result,() -> !value.get().isEmpty());
         }
         void closeRequested() {closeRequested(leave);}
         void closeRequested(Runnable action) {
@@ -351,9 +351,14 @@ public final class SettingsPage implements ScenePage {
             navigationOpen.set(false);confirmedLeave=null;
             if(model.dirty().get()||model.unsaved().get())dialog.set(Dialog.RELOAD);else model.reload();
         }
-        SceneNode modal(SceneNode card) {
-            return SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true))
-                    .background(club.heiqi.uilib.ui.scene.control.SceneAppearance.MODAL_SCRIM).modal(true).onEscape(() -> {cancelDialog();return true;}).add(SettingsStyle.card(card,palette));
+        SceneNode modal(SceneNode content,Dialog kind,int width,SceneNode initialFocus,String name,SceneNode... attached) {
+            SceneNode layer=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(false));
+            SceneNode window=SettingsStyle.column(0).size(Size.fill(1),Size.fill(1)).control(new SettingsLayout.Layers(true,width))
+                    .modal(true).initialFocus(initialFocus).onEscape(() -> {cancelDialog();return true;})
+                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name(name).build()))
+                    .add(SettingsStyle.card(content,palette));
+            for(SceneNode child:attached)window.add(child);
+            return motion.dialog(layer,window,() -> dialog.get()==kind);
         }
         SceneNode confirmation(Dialog kind) {
             SceneNode content=SettingsStyle.column(16);
@@ -363,8 +368,7 @@ public final class SettingsPage implements ScenePage {
             content.add(actions(cancel.view,button(() -> kind==Dialog.CLOSE?"不保存并离开":"放弃更改并加载",() -> {
                 if(kind==Dialog.CLOSE){discardAndLeave();}else{dialog.set(Dialog.NONE);model.reload();}
             },true,false)));
-            return modal(content).initialFocus(cancel.target).bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP)
-                    .name(kind==Dialog.CLOSE?"离开配置工作区":"重新加载配置").build()));
+            return modal(content,kind,480,cancel.target,kind==Dialog.CLOSE?"离开配置工作区":"重新加载配置");
         }
         SceneNode addDialog() {
             SceneNode content=SettingsStyle.column(14).add(text("添加字体来源",20,false))
@@ -399,11 +403,9 @@ public final class SettingsPage implements ScenePage {
                 if(fileSource.get())addFile(path.request(true));
                 else if(!selectedBuiltin.get().isEmpty()){model.add(selectedBuiltin.get());if(model.fontError().get().isEmpty())dialog.set(Dialog.FONTS);}
             },true,false)));
-            SceneNode result=modal(content).initialFocus(cancel.target)
-                    .bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.GROUP).name("添加字体来源").build()));
             SceneNode pickerOwner=new SceneNode().size(Size.fill(1),Size.fill(1)).bind(NodeBinding.repeat(()->fontPicking.get()?java.util.Collections.singletonList(true):java.util.Collections.emptyList(),value->value,item->
                     club.heiqi.uilib.ui.scene.control.SceneFilePicker.create(ctx,fontDirectory(),()->palette.get().theme(14,palette.get().text,10,false),new club.heiqi.uilib.ui.scene.control.SceneFilePicker.Options().filter("字体文件","ttf,otf,ttc,woff,woff2"),selected->{path.reset(selected.toString());fontPicking.set(false);},()->fontPicking.set(false))));
-            result.add(pickerOwner);return result;
+            return modal(content,Dialog.ADD,520,cancel.target,"添加字体来源",pickerOwner);
         }
         java.nio.file.Path fontDirectory(){
             String raw=path.snapshot().get().text.trim();try{if(!raw.isEmpty()){java.nio.file.Path candidate=java.nio.file.Paths.get(raw).toAbsolutePath().normalize();if(candidate.getParent()!=null)return candidate.getParent();}}catch(IllegalArgumentException ignored){}

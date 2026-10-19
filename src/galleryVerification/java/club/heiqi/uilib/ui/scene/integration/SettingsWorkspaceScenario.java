@@ -9,6 +9,8 @@ import club.heiqi.uilib.ui.scene.input.*;
 import club.heiqi.uilib.ui.scene.semantics.*;
 import club.heiqi.uilib.ui.scene.text.font.*;
 import club.heiqi.uilib.ui.settings.*;
+import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -20,16 +22,20 @@ public final class SettingsWorkspaceScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("正式设置单选字体仅改草稿且应用保存保留用户注释",this::fontSelection);
         scenario("路径拒绝保留原草稿与关联说明且模态返回按原确认",this::pathAndClose);
+        scenario("分类与弹窗快速反向保留编辑身份且退出立即结束输入",this::motionLifecycle);
+        scenario("弹窗退场绘制跟随弹簧且快速重开位置连续",this::motionPaint);
+        scenario("宿主请求重载结束添加窗口所属的文件选择模态",this::pickerOwnership);
     }
     final class Fixture implements AutoCloseable{
         final ReactiveDomain domain=ReactiveDomain.direct();final VectorPresentationScenario.Host host=new VectorPresentationScenario.Host();
         final List<FontSource> builtins=FontTextService.defaultSources(getClass().getClassLoader(),1);
         final ConfigKey<List<String>> fonts=FontCandidateConfiguration.key(builtins);
         final Path file;ConfigSession config;SettingsConfiguration configuration;SettingsPage page;ScenePageSession session;
-        int refreshes,leaves;
+        int refreshes,leaves;Signal<MotionPolicy> motion;
         Fixture()throws Exception{
             file=Files.createTempFile("uilib-workspace-",".yaml");onClose(()->Files.deleteIfExists(file));host.width=1280;host.height=1100;
             domain.execute(()->{
+                motion=domain.signal(MotionPolicy.NORMAL);
                 config=new ConfigSession(domain,ConfigSchema.of(fonts,ThemeConfiguration.KEY));
                 try{config.load(new StringReader("# 用户字体说明\nfont:\n  candidates: [builtin:"+builtins.get(0).id+"] # 字体候选注释\n"));config.save(file);}catch(IOException failure){throw new UncheckedIOException(failure);}
                 configuration=new SettingsConfiguration(domain,config,fonts,null,file,FontCandidateConfiguration.defaults(builtins),values->{
@@ -38,7 +44,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                 },()->refreshes++);
                 page=new SettingsPage(configuration,()->leaves++);
             });
-            session=ScenePageSession.open(domain,host,host,page);session.frame();
+            session=ScenePageSession.open(domain,host,host,context -> {context.motionPolicy(motion);page.build(context);});session.frame();
         }
         SceneSemanticSnapshot.Entry entry(SceneSemantics.Role role,String name){
             for(SceneSemanticSnapshot.Entry e:host.semantics.entries)if(e.values.role==role&&name.equals(e.values.name))return e;
@@ -81,6 +87,66 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         require(Boolean.TRUE.equals(f.entry(SceneSemantics.Role.BUTTON,"配置文件").values.selected),"当前分类未表达选中状态");
         f.action(SceneSemantics.Role.BUTTON,"从文件重新加载",SceneSemantics.Action.ACTIVATE);
         require(f.refreshes==1&&f.current().size()==2,"同值显式加载未沿真实资源通道刷新");
+    }}
+    private void pickerOwnership()throws Exception{try(Fixture f=new Fixture()){
+        f.action(SceneSemantics.Role.BUTTON,"深色外观",SceneSemantics.Action.ACTIVATE);f.openAdd();
+        f.action(SceneSemantics.Role.RADIO,"本地字体文件",SceneSemantics.Action.SELECT);
+        f.action(SceneSemantics.Role.BUTTON,"浏览字体文件",SceneSemantics.Action.ACTIVATE);
+        SceneSemanticSnapshot.Entry browse=f.entry(SceneSemantics.Role.BUTTON,"前往");
+        require(browse.rangeInteractive,"文件浏览没有进入实际所属模态");
+        f.page.requestReload();f.session.frame();
+        require(f.entry(SceneSemantics.Role.BUTTON,"继续编辑").rangeInteractive,"文件选择器脱离父模态并遮挡宿主重载确认");
+        require(f.request(SceneSemanticRequest.of(browse.id,SceneSemantics.Action.ACTIVATE))!=SceneSemanticRequest.Result.APPLIED,"父窗口退出后文件选择器仍接受输入");
+        f.action(SceneSemantics.Role.BUTTON,"放弃更改并加载",SceneSemantics.Action.ACTIVATE);
+        require(f.request(SceneSemanticRequest.of(browse.id,SceneSemantics.Action.ACTIVATE))!=SceneSemanticRequest.Result.APPLIED,"完成重载后旧文件选择器恢复输入");
+        require(f.entry(SceneSemantics.Role.BUTTON,"管理字体来源").rangeInteractive&&f.refreshes==1,"完成宿主重载后旧文件模态复活或资源未刷新");
+    }}
+    private PaintCommand managerTitle(Fixture f){
+        PaintCommand title=null;
+        for(PaintCommand command:f.session.pipeline().current().paint.commands())
+            if(command.kind==PaintCommand.Kind.TEXT&&"管理字体来源".equals(command.text.logicalText)
+                    &&(title==null||command.text.style.logicalEm>title.text.style.logicalEm))title=command;
+        require(title!=null,"正式绘制计划中缺少字体管理标题");return title;
+    }
+    private double paintY(PaintCommand command){return command.transform.y(command.box.x,command.box.y);}
+    private void motionPaint()throws Exception{try(Fixture f=new Fixture()){
+        f.action(SceneSemantics.Role.BUTTON,"管理字体来源",SceneSemantics.Action.ACTIVATE);
+        double[] position=new double[3];
+        f.domain.execute(()->{
+            f.session.runtime().preparePresentation(f.session.runtime().inputNanos()+2_000_000_000L);
+            position[0]=paintY(managerTitle(f));
+        });
+        f.action(SceneSemantics.Role.BUTTON,"+ 添加来源",SceneSemantics.Action.ACTIVATE);
+        f.domain.execute(()->{
+            f.session.runtime().preparePresentation(f.session.runtime().inputNanos()+80_000_000L);
+            PaintCommand exit=managerTitle(f);position[1]=paintY(exit);
+            require(position[1]>position[0]+1,"退场仅隐藏节点内部运动，保留画面没有沿弹簧移动："+Arrays.toString(position));
+            require((exit.color>>>24)>0&&(exit.color>>>24)<255,"退场绘制没有透明度中间值");
+        });
+        f.session.escape(()->{throw new AssertionError("添加窗口未消费ESC");});f.session.frame();
+        f.domain.execute(()->position[2]=paintY(managerTitle(f)));
+        require(Math.abs(position[2]-position[1])<3,"快速返回跳离正在显示的退出位置："+Arrays.toString(position));
+        System.out.println("SETTINGS_MOTION titleY="+Arrays.toString(position)+" exitPaintMoves=true reverseContinuous=true");
+    }}
+    private void motionLifecycle()throws Exception{try(Fixture f=new Fixture()){
+        String saved=f.disk();List<String> current=new ArrayList<>(f.current());
+        SceneSemanticSnapshot.Entry sample=f.entry(SceneSemantics.Role.TEXT_AREA,"文字样本");
+        require(f.request(SceneSemanticRequest.text(sample.id,"保留样本编辑 Aa 123"))==SceneSemanticRequest.Result.APPLIED,"样本拒绝实际编辑");
+        // 同页持续挂载避免重建编辑器；退场画面不能保留原输入资格。
+        for(MotionPolicy policy:MotionPolicy.values()){
+            f.domain.execute(()->f.motion.set(policy));f.session.frame();
+            f.action(SceneSemantics.Role.BUTTON,"配置文件",SceneSemantics.Action.ACTIVATE);
+            require(f.request(SceneSemanticRequest.text(sample.id,"不应写入"))!=SceneSemanticRequest.Result.APPLIED,"退出分类仍接受文字："+policy);
+            f.action(SceneSemantics.Role.BUTTON,"外观",SceneSemantics.Action.ACTIVATE);
+            SceneSemanticSnapshot.Entry returned=f.entry(SceneSemantics.Role.TEXT_AREA,"文字样本");
+            require(returned.id.equals(sample.id)&&"保留样本编辑 Aa 123".equals(returned.values.value),"分类反向重建编辑身份或丢草稿："+policy);
+            f.openAdd();f.action(SceneSemantics.Role.RADIO,"本地字体文件",SceneSemantics.Action.SELECT);
+            SceneSemanticSnapshot.Entry path=f.entry(SceneSemantics.Role.TEXT_FIELD,"字体文件路径");
+            f.session.escape(()->{throw new AssertionError("添加来源没有消费ESC");});f.session.frame();
+            require(f.request(SceneSemanticRequest.text(path.id,"不应写入"))!=SceneSemanticRequest.Result.APPLIED,"退出添加窗口仍接受文字："+policy);
+            f.action(SceneSemantics.Role.BUTTON,"完成字体编辑",SceneSemantics.Action.ACTIVATE);
+        }
+        require(f.current().equals(current)&&f.disk().equals(saved)&&f.refreshes==0&&f.leaves==0,"动效切换隐式应用、保存、重载或离开");
     }}
     private void pathAndClose()throws Exception{try(Fixture f=new Fixture()){
         String original=f.disk();f.openAdd();

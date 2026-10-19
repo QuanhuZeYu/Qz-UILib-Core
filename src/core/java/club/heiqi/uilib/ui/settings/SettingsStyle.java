@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneButton;
+import club.heiqi.uilib.ui.scene.control.SceneAppearance;
+import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
 import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
@@ -30,10 +32,13 @@ final class SettingsStyle {
     private SettingsStyle() {}
     static final class Palette {
         final boolean dark;
+        final SceneTheme source;
         final int background,panel,text,muted,border,hover,accent,selected,primary,onPrimary,error;
-        Palette(boolean dark) {
-            this.dark=dark;
-            club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette p=new club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette(dark);
+        Palette(boolean dark) { this(dark ? SceneTheme.dark() : SceneTheme.light()); }
+        Palette(SceneTheme source) {
+            this.source=source;
+            SceneAppearance.Palette p=new SceneAppearance.Palette(source);
+            dark=p.dark;
             background=p.background;
             panel=p.surface;
             text=p.text;
@@ -52,7 +57,9 @@ final class SettingsStyle {
         SceneTheme theme(TextStyle style,int padding,boolean transparent) {
             return new SceneTheme(style,transparent?0:background,transparent?0:border,
                     transparent?0:selected,transparent?0:selected,transparent?0:accent,
-                    transparent?0:panel,muted,primary,onPrimary,padding,8);
+                    transparent?0:panel,muted,primary,onPrimary,padding,8)
+                    .withDensity(source.density).withControlSize(source.controlSize)
+                    .withMotion(source.feedbackMotion,source.spatialMotion);
         }
     }
     static SceneNode column(int gap){return new SceneNode().size(Size.fill(1),Size.natural()).gap(gap);}
@@ -72,11 +79,11 @@ final class SettingsStyle {
     }
     static Button button(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,
             Runnable action,boolean primary,boolean ghost) {
-        SceneNode control=SceneButton.create(ctx,text,
-                () -> p.get().theme(SettingsTypography.style(14,primary?p.get().onPrimary:p.get().text,500),8,true),
-                action,SceneTextPolicy.WRAP).size(Size.natural(),Size.natural());
-        return new Button(column(0).size(Size.natural(),Size.natural())
-                .control(new Surface(p,primary,ghost,control,8,false)).add(control),control);
+        SceneNode control=SceneAppearance.button(ctx,text,
+                // 现代外观从完整主题判定明暗，透明表面由 Role 决定。
+                () -> p.get().theme(SettingsTypography.style(14,p.get().text,500),10,false),action,
+                primary?SceneAppearance.Role.PRIMARY:ghost?SceneAppearance.Role.GHOST:SceneAppearance.Role.OUTLINE);
+        return new Button(control,control);
     }
     static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,
             ReadableSignal<Palette> p,SceneIconButton.Symbol symbol,Runnable action) {
@@ -109,7 +116,8 @@ final class SettingsStyle {
             ReadableSignal<Palette> p,Runnable action) {
         SceneNode button=SceneButton.create(ctx,() -> label,() -> p.get().theme(14,p.get().text,12,true),action)
                 .size(Size.fill(1),Size.natural());
-        SceneNode preview=column(0).size(Size.fill(1),Size.fixed(112)).control(new ThemePreview(dark,p,selected));
+        SceneNode preview=column(0).size(Size.fill(1),Size.fixed(96)).control(new ThemePreview(dark,p,selected))
+                .bind(SceneMotion.translateY(() -> selected.get()?-3f:0f,() -> p.get().source.spatialMotion));
         // 只扩展标准按钮的内容与装饰；整张选项仍只有一个动作与键盘焦点。
         SceneNode mark=SceneIconButton.graphic(ctx,() -> SceneIconButton.Symbol.CHECK,() -> p.get().theme(14,p.get().text,0,true))
                 .size(Size.fixed(16),Size.fixed(20)).bind(NodeBinding.value(selected,SceneNode::visible));
@@ -168,7 +176,7 @@ final class SettingsStyle {
         final boolean dark;final ReadableSignal<Palette> colors;final ReadableSignal<Boolean> selected;
         ThemePreview(boolean dark,ReadableSignal<Palette> p,ReadableSignal<Boolean> selected){this.dark=dark;colors=p;this.selected=selected;}
         public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,selected);}
-        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){return new Result(c.availableWidth,112,Collections.emptyList());}
+        Result layout(SceneNode n,Constraints c,SceneChildMeasurer m){return new Result(c.availableWidth,96,Collections.emptyList());}
         public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder p){
             SceneGeometryView.Entry e=g.get(n);Palette c=new Palette(dark);LayoutBox b=e.box;
             ScenePaintShapes.rounded(p,b,e.clip,selected.get()?colors.get().text:colors.get().border,8);
@@ -179,7 +187,7 @@ final class SettingsStyle {
             ScenePaintShapes.rounded(p,new LayoutBox(x+8,b.y+19,Math.max(0,w/2),5),e.clip,c.muted,2);
             ScenePaintShapes.rounded(p,new LayoutBox(x+8,b.y+29,Math.max(0,w*2/3),4),e.clip,c.border,2);
             for(int row=0;row<2;row++){
-                int y=b.y+48+row*27;
+                int y=b.y+46+row*22;
                 ScenePaintShapes.rounded(p,new LayoutBox(x,y,w,21),e.clip,c.panel,5);
                 ScenePaintShapes.rounded(p,new LayoutBox(x+7,y+6,9,9),e.clip,c.border,4);
                 ScenePaintShapes.rounded(p,new LayoutBox(x+23,y+8,Math.max(0,w-36),5),e.clip,c.border,2);
