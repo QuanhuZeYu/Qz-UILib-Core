@@ -759,10 +759,15 @@ public final class MotionScenario extends TestApplication {
         page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5).at(now));
         page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.move(55, 5).at(now + 50_000_000L));
         page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 55, 5).at(now + 50_000_000L)); page.frame();
-        page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE, false, null)); page.frame();
+        int[] released = {0}; domain.execute(() -> released[0] = page.pipeline().current().geometry.get(content[0]).box.x);
+        require(released[0] != 0, "未建立回槽中的键盘接管反例");
+        page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.SPACE, false, null));
+        // 沿原输入队列结算，但保持同一呈现时刻；托管 runner 的调度间隔会让回槽正常前进。
+        page.inspect().join();
         int[] grabbed = {0}; domain.execute(() -> {
             grabbed[0] = page.pipeline().current().geometry.get(content[0]).box.x;
-            require(Math.abs(grabbed[0] - 50) < 3, "键盘拾取瞬间跳回原槽: " + grabbed[0]);
+            require(grabbed[0] == released[0], "键盘拾取没有保持当前呈现位置: " + released[0] + " -> " + grabbed[0]);
+            System.out.println("MOTION_KEYBOARD_TAKEOVER before=" + released[0] + " after=" + grabbed[0]);
         });
         page.edit(club.heiqi.uilib.ui.scene.input.SceneEditEvent.command(club.heiqi.uilib.ui.scene.input.SceneEditEvent.Command.RIGHT, false, null)); page.frame();
         domain.execute(() -> require(page.pipeline().current().geometry.get(content[0]).box.x > grabbed[0], "键盘位移仍被旧回槽覆盖"));
