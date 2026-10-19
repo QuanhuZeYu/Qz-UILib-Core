@@ -48,6 +48,9 @@ public final class EditingScenario extends TestApplication {
             return 320;
         }
 
+        private long frameTime = System.nanoTime();
+        public long frameNanos() { return frameTime += 5_000_000L; }
+
         @Override
         public long metricsRevision() {
             return 0;

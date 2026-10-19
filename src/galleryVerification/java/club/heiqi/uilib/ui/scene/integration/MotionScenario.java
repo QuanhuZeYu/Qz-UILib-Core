@@ -3,6 +3,23 @@ package club.heiqi.uilib.ui.scene.integration;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
+import club.heiqi.uilib.ui.scene.layout.Constraints;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
+import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
+import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.TextLayout;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.motion.MotionValue;
@@ -42,6 +59,8 @@ public final class MotionScenario extends TestApplication {
         scenario("无效目标结束轨迹后可卸载重挂", this::failedMount);
         scenario("退场所属层继续逃离来源局部裁剪", this::presenceLayer);
         scenario("纯位置重排复用度量且内容与视口变更失效", this::measureReuse);
+        scenario("排列信号512种约束只保留当前测量工作集", this::measureWorkingSet);
+        scenario("父测量命中保留子事实且纯绘制读取已定位约束", this::positionedMeasureReuse);
     }
     private void spring() {
         for (double damping : new double[] {.65, 1, 1.7}) {
@@ -238,6 +257,105 @@ public final class MotionScenario extends TestApplication {
         require(measured[0] > initial, "测量依赖改变仍使用旧度量");
         int beforeResize = measured[0]; host.width = 360; page.frame();
         require(measured[0] > beforeResize, "视口改变没有重新测量");
+    }
+    private void measureWorkingSet() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = host.height = 1000;
+        Signal<Integer>[] width = new Signal[1], position = new Signal[1];
+        int[] parentMeasures = {0}, childMeasures = {0}; SceneNode[] child = new SceneNode[1];
+        ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+            width[0] = domain.signal(1); position[0] = domain.signal(0);
+            child[0] = new SceneNode().control(measuredLeaf(childMeasures));
+            context.mountOwned(new SceneNode().size(Size.fixed(1000), Size.fixed(1000)).add(child[0]).control(new SceneControl() {
+                public List<ReadableSignal<?>> arrangementDependencies(SceneNode node) { return Arrays.asList(width[0], position[0]); }
+                public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
+                    parentMeasures[0]++; return new MeasuredSize(1000, 1000);
+                }
+                public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+                    MeasuredSize measured = children.measureChild(child[0], new Constraints(width[0].get(), 20));
+                    return new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(child[0],
+                            new LayoutBox(0, position[0].get(), measured.width, measured.height))));
+                }
+                public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+            }));
+        }));
+        int maximum = 0;
+        for (int value = 1; value <= 512; value++) {
+            final int next = value; domain.execute(() -> width[0].set(next)); page.frame();
+            domain.execute(() -> require(page.pipeline().current().geometry.get(child[0]).layoutBox.width == next,
+                    "排列没有消费当前子约束：" + next));
+            maximum = Math.max(maximum, measurementCount(page, child[0]));
+        }
+        require(maximum == 1, "测量缓存累积了排列历史约束：" + maximum);
+        int before = childMeasures[0]; domain.execute(() -> position[0].set(1)); page.frame();
+        require(parentMeasures[0] == 1 && childMeasures[0] == before, "稳定约束的跨批内容度量未被复用");
+        Object dependencies = field(field(page.pipeline(), "layout"), "measureDependencies");
+        page.close();
+        require(((Map<?, ?>) field(dependencies, "stamps")).isEmpty(), "页面结束仍持有测量约束");
+    }
+    private void positionedMeasureReuse() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = host.height = 1000;
+        Signal<Integer>[] position = new Signal[1], color = new Signal[1];
+        SceneNode[] parent = new SceneNode[1], measuredOnly = new SceneNode[1], inline = new SceneNode[1];
+        int[] parentMeasures = {0}, childMeasures = {0}, arrangements = {0};
+        ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+            position[0] = domain.signal(0); color[0] = domain.signal(0xffffffff);
+            measuredOnly[0] = new SceneNode().size(Size.fixed(37), Size.fixed(20)).control(measuredLeaf(childMeasures));
+            inline[0] = new SceneNode().size(Size.fixed(41), Size.fixed(20)).control(measuredLeaf(childMeasures));
+            parent[0] = new SceneNode().size(Size.fixed(1000), Size.fixed(1000)).add(measuredOnly[0]).add(inline[0])
+                    .bind(NodeBinding.value(position[0], (node, value) -> node.translation(0, value)))
+                    .bind(NodeBinding.value(color[0], (node, value) -> node.style(node.style().withColor(value))))
+                    .control(new SceneControl() {
+                public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) { return new MeasuredSize(1000, 1000); }
+                public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text, SceneChildMeasurer children) {
+                    parentMeasures[0]++;
+                    children.measureChild(measuredOnly[0], new Constraints(37, 20));
+                    children.measureChild(inline[0], new Constraints(41, 20));
+                    return new MeasuredSize(1000, 1000);
+                }
+                public TextLayout layoutText(SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
+                    MeasuredSize embedded = children.measureChild(inline[0], new Constraints(41, 20));
+                    return text.layout(embedded.width + ":" + embedded.height, node.style(), width);
+                }
+                public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+                    arrangements[0]++;
+                    return new ChildPlacements(Arrays.asList(new ChildPlacements.Entry(measuredOnly[0], new LayoutBox(0, 0, 37, 20)),
+                            new ChildPlacements.Entry(inline[0], new LayoutBox(37, 0, 41, 20))));
+                }
+                public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+            });
+            context.mountOwned(parent[0]);
+        }));
+        page.frame();
+        for (int value = 1; value <= 8; value++) { final int next = value; domain.execute(() -> position[0].set(next)); page.frame(); }
+        require(parentMeasures[0] == 1 && childMeasures[0] == 2, "父命中后重排重复测量子内容");
+        require(measurementCount(page, measuredOnly[0]) == 1, "父命中省略的有效子度量被当作历史清除");
+        int before = arrangements[0]; domain.execute(() -> color[0].set(0xff123456)); page.frame();
+        domain.execute(() -> require(page.pipeline().current().geometry.get(parent[0]).text.style.color == 0xff123456,
+                "纯绘制投影没有读取当前样式与已定位子约束"));
+        require(parentMeasures[0] == 1 && childMeasures[0] == 2 && arrangements[0] == before,
+                "纯绘制投影触发了测量或重新排列");
+    }
+    private static SceneControl measuredLeaf(int[] measures) {
+        return new SceneControl() {
+            public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text) {
+                measures[0]++; return new MeasuredSize(constraints.availableWidth, 20);
+            }
+            public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
+                return new ChildPlacements(Collections.emptyList());
+            }
+            public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
+        };
+    }
+    // 反射只观察合法生产调用形成的容量与释放，不注入缓存，也不改变求解路径。
+    private static int measurementCount(ScenePageSession page, SceneNode node) throws Exception {
+        Object layout = field(page.pipeline(), "layout"), dependencies = field(layout, "measureDependencies");
+        Object stamp = ((Map<?, ?>) field(dependencies, "stamps")).get(node);
+        return stamp == null ? 0 : ((Map<?, ?>) field(stamp, "measurements")).size();
+    }
+    private static Object field(Object owner, String name) throws Exception {
+        java.lang.reflect.Field field = owner.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(owner);
     }
     private void layout() {
         ReactiveDomain domain = ReactiveDomain.direct();

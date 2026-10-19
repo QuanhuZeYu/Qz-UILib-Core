@@ -25,6 +25,8 @@ import java.util.List;
 public final class TooltipScenario extends TestApplication {
     static final class Host implements SceneHost,SceneTextMeasurer {
         int width=440,height=240;PaintPlan last;
+        long frameTime=System.nanoTime();
+        public long frameNanos(){return frameTime+=5_000_000L;}
         public int width(){return width;}public int height(){return height;}public long metricsRevision(){return 1;}
         public void replay(PaintPlan plan){last=plan;}
         public TextLayout layout(String text,TextStyle style,int available,club.heiqi.uilib.ui.scene.text.TextPolicy policy){return layout(text,style,available);}
@@ -62,7 +64,7 @@ public final class TooltipScenario extends TestApplication {
             })){
                 page.frame();page.pointer(ScenePointerEvent.down(0,430,230));page.pointer(ScenePointerEvent.up(0,430,230));page.frame();
                 LayoutBox box=box(page,button[0]);point(page,box.x+5,box.y+5);require(!text(host,"最初内容"),"打开延迟被忽略");
-                point(page,430,230);long end=System.nanoTime()+85_000_000L;while(System.nanoTime()<end)page.frame();require(!text(host,"最初内容"),"离开后迟到显示");
+                point(page,430,230);host.frameTime+=85_000_000L;page.frame();require(!text(host,"最初内容"),"离开后迟到显示");
                 page.navigation(SceneNavigationEvent.NEXT);page.frame();require(text(host,"最初内容"),"键盘焦点没有即时显示");
                 domain.execute(()->content[0].set("新内容"));page.frame();require(text(host,"新内容")&&!text(host,"最初内容"),"说明未随来源更新");
                 domain.execute(()->visible[0].set(false));page.frame();require(!text(host,"新内容"),"隐藏来源留下提示");
@@ -87,11 +89,11 @@ public final class TooltipScenario extends TestApplication {
                 SceneNode row=new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.fill(1)).padding(60).gap(12);
                 for(int i=0;i<2;i++){final int index=i;nodes[i]=new SceneNode().size(Size.fixed(80),Size.fixed(40));row.add(SceneTooltip.attach(ctx,nodes[i],()->SceneTooltip.Content.text("定时说明"+index),()->new SceneTooltip.Options().timing(100_000_000L,120_000_000L,150_000_000L),()->SceneAppearance.theme(false)));}ctx.mount(row);
             })){
-                page.frame();LayoutBox a=box(page,nodes[0]),b=box(page,nodes[1]);long open=System.nanoTime();point(page,a.x+5,a.y+5);require(!text(host,"定时说明0"),"非零打开延迟未等待");
-                waitUntil(page,()->text(host,"定时说明0"));long opened=System.nanoTime()-open;require(opened>=100_000_000L,"提示早于打开期限");
+                page.frame();LayoutBox a=box(page,nodes[0]),b=box(page,nodes[1]);long open=host.frameTime;point(page,a.x+5,a.y+5);require(!text(host,"定时说明0"),"非零打开延迟未等待");
+                waitUntil(page,()->text(host,"定时说明0"));long opened=host.frameTime-open;require(opened>=100_000_000L,"提示早于打开期限");
                 point(page,b.x+5,b.y+5);require(text(host,"定时说明1")&&!text(host,"定时说明0"),"组内快速切换再次完整等待");
-                long close=System.nanoTime();point(page,430,230);require(text(host,"定时说明1"),"关闭延迟没有保持内容");waitUntil(page,()->!text(host,"定时说明1"));long closed=System.nanoTime()-close;require(closed>=120_000_000L,"提示早于关闭期限");
-                long until=System.nanoTime()+200_000_000L;while(System.nanoTime()<until){page.frame();Thread.sleep(2);}open=System.nanoTime();point(page,a.x+5,a.y+5);require(!text(host,"定时说明0"),"组内期限过期后仍跳过打开延迟");waitUntil(page,()->text(host,"定时说明0"));long reopened=System.nanoTime()-open;require(reopened>=100_000_000L,"过期后的打开未重新等待");
+                long close=host.frameTime;point(page,430,230);require(text(host,"定时说明1"),"关闭延迟没有保持内容");waitUntil(page,()->!text(host,"定时说明1"));long closed=host.frameTime-close;require(closed>=120_000_000L,"提示早于关闭期限");
+                host.frameTime+=200_000_000L;page.frame();open=host.frameTime;point(page,a.x+5,a.y+5);require(!text(host,"定时说明0"),"组内期限过期后仍跳过打开延迟");waitUntil(page,()->text(host,"定时说明0"));long reopened=host.frameTime-open;require(reopened>=100_000_000L,"过期后的打开未重新等待");
                 System.out.println("TOOLTIP_TIMING naturalOpenNanos="+opened+" delayedCloseNanos="+closed+" expiredSkipReopenNanos="+reopened+" quickSwitchImmediate=true");
             }
         });
@@ -120,7 +122,10 @@ public final class TooltipScenario extends TestApplication {
             }
         });
     }
-    private static void waitUntil(ScenePageSession page,java.util.function.BooleanSupplier condition)throws Exception{long deadline=System.nanoTime()+2_000_000_000L;while(!condition.getAsBoolean()&&System.nanoTime()<deadline){page.frame();Thread.sleep(2);}require(condition.getAsBoolean(),"有限Tooltip期限未自然完成");}
+    private static void waitUntil(ScenePageSession page,java.util.function.BooleanSupplier condition){
+        for(int frames=0;frames<400&&!condition.getAsBoolean();frames++)page.frame();
+        require(condition.getAsBoolean(),"有限Tooltip期限未在确定性帧时间内完成");
+    }
     private static LayoutBox box(ScenePageSession page,SceneNode node){LayoutBox[] result={null};page.domain().execute(()->result[0]=page.pipeline().current().geometry.get(node).box);return result[0];}
     private static void point(ScenePageSession page,int x,int y){page.pointer(ScenePointerEvent.move(x,y));page.frame();}
     private static String rendered(PaintCommand command){return command.text.lines().stream().map(line->line.text).collect(java.util.stream.Collectors.joining());}

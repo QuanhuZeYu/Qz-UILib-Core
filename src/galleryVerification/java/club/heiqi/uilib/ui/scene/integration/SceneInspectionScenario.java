@@ -32,6 +32,56 @@ public final class SceneInspectionScenario extends TestApplication {
         scenario("视口与资源原因只归页面且返回原版本", this::environment);
         scenario("有限集合不构造屏外行且重挂沿原opaque身份", this::mountAndVirtual);
         scenario("关闭与初始化或批失败结束等待请求", this::closedAndFailed);
+        scenario("早先空回放不能越过限频MOVE完成后来检查", this::queuedMoveInspection);
+        scenario("准备通知中独立关闭runtime结束所属检查", this::closeRuntimeDuringInspection);
+    }
+    private void closeRuntimeDuringInspection(){
+        ReactiveDomain domain=ReactiveDomain.direct();MultilineEditingScenario.PlainHost text=host();
+        SceneRuntime[] runtime=new SceneRuntime[1];Signal<String>[] label=new Signal[1];Runnable[] callback={()->{}};
+        SceneHost host=new SceneHost(){
+            public int width(){return 200;}public int height(){return 100;}public long metricsRevision(){return 0;}
+            public void replay(club.heiqi.uilib.ui.scene.paint.PaintPlan plan){}
+            public void semanticsChanged(club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot snapshot){callback[0].run();}
+        };
+        try(ScenePageSession page=ScenePageSession.open(domain,host,text,p->{
+            label[0]=domain.signal("原名称");
+            p.mount(new SceneNode().bind(NodeBinding.semantics(()->club.heiqi.uilib.ui.scene.semantics.SceneSemantics.builder(
+                    club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role.BUTTON).name(label[0].get()).build())));
+        })){
+            page.frame();domain.execute(()->{runtime[0]=page.runtime();label[0].set("关闭时名称");});
+            callback[0]=()->runtime[0].close();
+            CompletableFuture<SceneInspectionSnapshot> result=page.inspect();
+            require(result.isDone()&&result.join().status==Status.CLOSED,"独立runtime关闭留下未完成检查");
+        }
+    }
+    private void queuedMoveInspection(){
+        ArrayDeque<Runnable> queue=new ArrayDeque<>();
+        ReactiveDomain domain=new ReactiveDomain(queue::add);
+        MultilineEditingScenario.PlainHost text=host();long[] clock={1_000_000_000L};int[] moves={0},active={0};
+        SceneHost host=new SceneHost(){
+            public int width(){return 200;}public int height(){return 100;}public long metricsRevision(){return 0;}
+            public long frameNanos(){return clock[0];}public void replay(club.heiqi.uilib.ui.scene.paint.PaintPlan p){}
+        };
+        ScenePageSession page=ScenePageSession.open(domain,host,text,p->{
+            p.mount(new SceneNode().size(Size.fixed(100),Size.fixed(40)).control(new SceneControl(){
+                public MeasuredSize measure(SceneNode n,Constraints c,club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t){return new MeasuredSize(100,40);}
+                public ChildPlacements arrange(SceneNode n,LayoutBox b,SceneChildMeasurer c){return new ChildPlacements(Collections.emptyList());}
+                public void paint(SceneNode n,SceneGeometryView g,club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder b){}
+                public boolean capturesPointer(){return true;}public long nextInputNanos(SceneNode n){return 0;}
+                public void inputFrame(SceneNode n,SceneGeometryView g,long now){active[0]++;}
+                public void pointer(SceneNode n,ScenePointerEvent e,SceneGeometryView g){if(e.kind==ScenePointerEvent.Kind.MOVE)moves[0]++;}
+            }).onClick(()->{}));
+        });
+        while(!queue.isEmpty())queue.remove().run();
+        page.frame();while(!queue.isEmpty())queue.remove().run();
+        page.pointer(ScenePointerEvent.down(0,5,5));page.frame();while(!queue.isEmpty())queue.remove().run();
+        int ticks=active[0];clock[0]++;
+        page.pointer(ScenePointerEvent.move(10,5));page.frame();
+        CompletableFuture<SceneInspectionSnapshot> result=page.inspect();
+        while(!queue.isEmpty())queue.remove().run();
+        require(result.isDone()&&result.join().status==Status.READY&&moves[0]==1&&active[0]==ticks,
+                "检查读取早于限频MOVE，或检查推进了主动时间 done="+result.isDone()+" moves="+moves[0]+" active="+active[0]+" before="+ticks);
+        page.close();while(!queue.isEmpty())queue.remove().run();
     }
     private static MultilineEditingScenario.PlainHost host() {
         MultilineEditingScenario.PlainHost host=new MultilineEditingScenario.PlainHost();host.width=640;host.height=480;return host;

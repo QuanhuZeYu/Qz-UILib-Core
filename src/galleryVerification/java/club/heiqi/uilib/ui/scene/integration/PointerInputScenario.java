@@ -206,8 +206,47 @@ public final class PointerInputScenario extends TestApplication {
         System.out.println("POINTER_RELEASE_FAILURE effect=" + effectFailure + " originalIdentity=true cleanupSuppressed=true noUp=true physicalTail=true");
     }
 
+    private void inputCadence() {
+        Page p = new Page(); p.host.frameStep = 0;
+        java.util.List<Integer> moves = new java.util.ArrayList<>();
+        java.util.List<Long> ticks = new java.util.ArrayList<>();
+        p.domain.execute(() -> {
+            p.runtime.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
+            p.button = new SceneNode().size(Size.fixed(40), Size.fixed(20)).control(new SceneControl() {
+                public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer t) { return new MeasuredSize(40, 20); }
+                public ChildPlacements arrange(SceneNode n, LayoutBox b, SceneChildMeasurer c) { return new ChildPlacements(Collections.emptyList()); }
+                public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder b) {}
+                public boolean capturesPointer() { return true; }
+                public long nextInputNanos(SceneNode n) { return 0; }
+                public void inputFrame(SceneNode n, SceneGeometryView g, long now) { ticks.add(now); }
+                public void pointer(SceneNode n, ScenePointerEvent e, SceneGeometryView g) { if (e.kind == ScenePointerEvent.Kind.MOVE) moves.add(e.x); }
+            }).onClick(() -> p.count.set(p.count.get() + 1));
+            p.children.set(Collections.singletonList(p.button));
+        });
+        p.host.frameTime += 3_333_334L; p.session.frame();
+        long first = p.host.frameTime; int initial = ticks.size();
+        require(initial == 1, "正式控件没有进入主动输入周期");
+        p.session.pointer(ScenePointerEvent.down(0, 5, 5)); p.session.frame();
+        p.host.frameTime = first + 1; p.session.pointer(ScenePointerEvent.move(10, 5)); p.session.frame();
+        p.host.frameTime = first + 3_333_333L; p.session.pointer(ScenePointerEvent.move(20, 5)); p.session.frame();
+        require(ticks.size() == initial && moves.isEmpty(), "未到300Hz周期便推进连续输入");
+        p.host.frameTime++; p.session.frame();
+        require(ticks.size() == initial + 1 && moves.equals(Arrays.asList(10, 20)), "周期边界未按序结算全部MOVE");
+        p.host.frameTime++; p.session.pointer(ScenePointerEvent.move(30, 5));
+        p.session.pointer(ScenePointerEvent.up(0, 30, 5)); p.session.frame();
+        p.expect(1, "释放边界须带完整MOVE前序及时提交");
+        require(moves.equals(Arrays.asList(10, 20, 30)) && ticks.size() == initial + 1, "边界丢MOVE或额外推进主动输入");
+        final long base = p.host.frameTime; int before = ticks.size(), rendered = p.host.replays;
+        for (int i = 1; i <= 1000; i++) { p.host.frameTime = base + i * 1_000_000L; p.session.frame(); }
+        require(ticks.size() - before <= 300 && ticks.size() > before, "1000Hz宿主帧未限制周期输入");
+        require(p.host.replays - rendered == 1000, "输入上限不应限制宿主绘制");
+        for (int i = 1; i < ticks.size(); i++) require(ticks.get(i) - ticks.get(i - 1) >= 3_333_334L, "主动输入时间间隔小于上限");
+        System.out.println("INPUT_CADENCE hostFrames=1000 activeTicks=" + (ticks.size()-before) + " orderedMoves=" + moves + " releaseImmediate=true");
+    }
+
     @Override
     protected void runTests() throws Exception {
+        scenario("300Hz连续采样独立于绘制且释放带完整前序", this::inputCadence);
         scenario("高频同区移动复用绘制计划，跨目标仍刷新悬停", () -> {
             Page p = new Page();
             p.domain.execute(() -> {

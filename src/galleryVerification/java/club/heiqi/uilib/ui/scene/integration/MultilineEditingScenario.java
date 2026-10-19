@@ -47,6 +47,9 @@ public final class MultilineEditingScenario extends TestApplication {
             return height;
         }
 
+        private long frameTime = System.nanoTime();
+        public long frameNanos() { return frameTime += 5_000_000L; }
+
         public long metricsRevision() {
             return 0;
         }

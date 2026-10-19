@@ -68,6 +68,12 @@ public final class VectorGeometryScenario extends TestApplication {
         ScenePath repeated=ScenePath.builder().moveTo(0,0).lineTo(10,0).lineTo(0,0).build();near(repeated.strokeMesh(new SceneStroke(2),.001).area(),20,1e-9,"重叠笔段重复贡献覆盖");
     }
     private void rectangleIntersections(){
+        SceneMesh tiny=SceneMesh.rectangle(0,0,1e-200,1e-200);
+        require(tiny.intersection(tiny).empty(),"零叉积的极小矩形交集仍发布退化网格");
+        SceneMesh narrow=SceneMesh.rectangle(0,0,1,1e-200),tall=SceneMesh.rectangle(0,0,1e-200,1);
+        require(narrow.intersection(tall).empty()&&!narrow.intersects(tall),"矩形快路保留了通用三角化会丢弃的零叉积交集");
+        require(!SceneMesh.rectangle(0,0,1e-150,1e-150).intersection(SceneMesh.rectangle(0,0,1e-150,1e-150)).empty(),
+                "可表示的非零极小交集被近似阈值丢弃");
         SceneClipRegion region=SceneClipRegion.rectangle(new LayoutBox(0,0,720,520))
                 .transformed(SceneTransform.translation(0,.25));
         for(int i=1;i<=12;i++){

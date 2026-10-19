@@ -125,17 +125,22 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     private final ArrayDeque<QueuedInput> inputs = new ArrayDeque<>();
+    private static final long INPUT_INTERVAL_NANOS = (1_000_000_000L + 299) / 300;
+    private boolean inputSampled;
+    private long lastInputNanos;
 
     private static final class InputBatch {
         final SceneRuntime.InputFrame activeInput = new SceneRuntime.InputFrame();
         final List<QueuedInput> events;
-        final boolean independent;
+        final List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspectionRequests;
+        final boolean independent, advanceInput;
         final long frameNanos;
         boolean failed, released;
 
-        InputBatch(List<QueuedInput> events, boolean independent, long frameNanos) {
-            this.events = events;
-            this.independent = independent; this.frameNanos = frameNanos;
+        InputBatch(List<QueuedInput> events, boolean independent, long frameNanos, boolean advanceInput,
+                List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspectionRequests) {
+            this.events = events; this.inspectionRequests = inspectionRequests;
+            this.independent = independent; this.frameNanos = frameNanos; this.advanceInput = advanceInput;
         }
     }
 
@@ -158,7 +163,13 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void finishInspections(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot snapshot, Throwable failure) {
         java.util.List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> pending;
-        synchronized (inputs) { pending = new ArrayList<>(inspections); inspections.clear(); }
+        synchronized (inputs) { pending = new ArrayList<>(inspections); }
+        finishInspections(pending, snapshot, failure);
+    }
+
+    private void finishInspections(List<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> pending,
+            club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot snapshot, Throwable failure) {
+        synchronized (inputs) { inspections.removeAll(pending); }
         for (java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result : pending) {
             if (failure != null) result.completeExceptionally(failure); else result.complete(snapshot);
         }
@@ -275,6 +286,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
         }
         host.prepareResources();
+        if (isClosed()) return;
         InputBatch batch = takeBatch(!replay);
         for (int i = 0; i < batch.events.size(); i++) {
             final int index = i;
@@ -299,20 +311,25 @@ public final class SceneFramePipeline implements AutoCloseable {
         List<QueuedInput> events = new ArrayList<>();
         synchronized (inputs) {
             checkOpen();
-            while (!inputs.isEmpty()) events.add(inputs.remove());
-        }
-        // 有后续动作或释放前位置准备的事件需要顶层Effect结算；已排队批次不能被同步批次越过。
-        synchronized (inputs) {
+            long now = inspecting && inputGeometry != null ? preparedNanos : host.frameNanos();
+            boolean advance = !inspecting && (!inputSampled || now - lastInputNanos >= INPUT_INTERVAL_NANOS);
+            // 连续采样可等到下个输入周期；边界事件带着完整前序立即结算，不合并MOVE或越序。
+            boolean boundary = !advance && inputs.stream().anyMatch(event -> event.kind != InputKind.POINTER
+                    || event.pointer.kind != ScenePointerEvent.Kind.MOVE);
+            if (advance || boundary || inspecting) while (!inputs.isEmpty()) events.add(inputs.remove());
+            if (advance) { inputSampled = true; lastInputNanos = now; }
             boolean independent = pendingIndependent > 0
                     || events.stream().anyMatch(QueuedInput::requiresTopLevelSettlement);
             if (independent) pendingIndependent++;
-            return new InputBatch(events, independent, inspecting && presentation != null ? preparedNanos : System.nanoTime());
+            return new InputBatch(events, independent, now, advance,
+                    inspecting ? new ArrayList<>(inspections) : java.util.Collections.emptyList());
         }
     }
 
     private void preparePointerRelease(InputBatch batch, QueuedInput event) {
         if (batch.failed || isClosed() || !runtime.alive()) return;
-        runtime.pointerRouter().prepareRelease(event.pointer, prepare(batch.frameNanos).geometry);
+        SceneGeometry geometry = prepareInput(batch.frameNanos);
+        if (geometry != null) runtime.pointerRouter().prepareRelease(event.pointer, geometry);
     }
 
     private void route(InputBatch batch, QueuedInput event) {
@@ -323,6 +340,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             return;
         }
         SceneGeometryView geometry = prepareInput(batch.frameNanos);
+        if (geometry == null) { event.discard(router); return; }
         runtime.inspectionReason(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.INPUT);
         switch (event.kind) {
             case SEMANTIC:
@@ -364,15 +382,14 @@ public final class SceneFramePipeline implements AutoCloseable {
         switch (event.followUp.kind) {
             case KEY:
                 // Effect 可能改变范围；准备后仍由原按键续段核验，不转投新范围。
-                prepare(batch.frameNanos);
-                keyboard.afterEffects(event.key);
+                if (prepareInput(batch.frameNanos) != null) keyboard.afterEffects(event.key);
                 break;
             case HOST:
                 event.followUp.host.run();
                 break;
             case NAVIGATION:
                 if (event.directionRange != null) {
-                    prepare(batch.frameNanos);
+                    if (prepareInput(batch.frameNanos) == null) return;
                     if (!event.directionRange.current() || runtime.dispatchKeyCommand(SceneKeyInterpreter.direction(event.followUp.navigation))) return;
                 }
                 keyboard.navigate(event.followUp.navigation);
@@ -418,13 +435,16 @@ public final class SceneFramePipeline implements AutoCloseable {
     private void replay(InputBatch batch, boolean replay) {
         try {
             if (!batch.failed && !isClosed() && runtime.alive()) {
-                ScenePresentation current = replay ? prepare(batch.frameNanos, batch.activeInput) : prepare(batch.frameNanos);
-                if (replay) host.replay(current.paint);
-                synchronized (inputs) {
-                    if (inspections.isEmpty()) return;
+                ScenePresentation current = replay && batch.advanceInput ? prepare(batch.frameNanos, batch.activeInput) : prepare(batch.frameNanos);
+                if (current == null) {
+                    finishInspections(batch.inspectionRequests, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
+                    return;
                 }
-                finishInspections(runtime.inspect(current, metrics), null);
-            } else if (!batch.failed) finishInspections(club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
+                if (replay) host.replay(current.paint);
+                // 只有检查批次覆盖了请求前序；更早已排队的普通回放不能完成后来请求。
+                if (!batch.inspectionRequests.isEmpty())
+                    finishInspections(batch.inspectionRequests, runtime.inspect(current, metrics), null);
+            } else if (!batch.failed) finishInspections(batch.inspectionRequests, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
         } finally {
             if (batch.independent) release(batch);
         }
@@ -442,12 +462,16 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
         }
         // 读取当前呈现不推进几何动画；下一宿主frame才提供新的时间样本。
-        return prepare(inputGeometry == null ? System.nanoTime() : preparedNanos);
+        ScenePresentation current = prepare(inputGeometry == null ? host.frameNanos() : preparedNanos);
+        if (current == null) throw new IllegalStateException("页面已结束");
+        return current;
     }
 
     private void checkOpen() {
         if (closed) throw new IllegalStateException("帧管线已释放");
     }
+
+    private boolean available() { return !isClosed() && runtime.alive(); }
 
     private boolean isClosed() {
         synchronized (inputs) {
@@ -517,13 +541,9 @@ public final class SceneFramePipeline implements AutoCloseable {
     private SceneGeometry prepareInput(long frameNanos) {
         runtime.inspectionBegin(); boolean success = false;
         try {
-            preparedNanos = frameNanos;
-            int w = host.width(), h = host.height();
-            runtime.prepareViewport(w, h);
-            long nextMetrics = host.metricsRevision();
-            runtime.prepareMetricsRevision(nextMetrics);
-            runtime.preparePresentation(frameNanos);
-            SceneGeometry geometry = prepareGeometry(frameNanos, w, h, nextMetrics);
+            SceneGeometry geometry = prepareFacts(frameNanos);
+            if (geometry == null) return null;
+            long nextMetrics = inputMetrics;
             runtime.prepareTooltips(geometry, text, nextMetrics);
             if (capturedRevision != runtime.revision() || capturedGeometry != geometry || System.nanoTime() >= paint.nextPaintNanos()) {
                 runtime.domain().readOnly(() -> { paint.capturePresence(geometry, nextMetrics); return null; });
@@ -531,8 +551,10 @@ public final class SceneFramePipeline implements AutoCloseable {
                 capturedRevision = runtime.revision(); capturedGeometry = geometry;
             }
             publishSemantics(runtime.semanticSnapshot(geometry));
+            // 宿主通知和owner取消允许同步关闭页面；准备出口只交付仍可路由的事实。
+            if (!available()) return null;
             runtime.pointerRouter().prepare(geometry);
-            success = true; return geometry;
+            success = true; return available() ? geometry : null;
         } finally { runtime.inspectionEnd(success, generation); }
     }
     private void publishSemantics(club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semantic) {
@@ -553,20 +575,33 @@ public final class SceneFramePipeline implements AutoCloseable {
         } finally { runtime.inspectionEnd(success, generation); }
     }
 
-    private ScenePresentation prepareCurrent(long frameNanos, SceneRuntime.InputFrame activeInput, boolean advanceInput) {
+    /** 输入与可观察呈现共用环境、声明及几何；此处不收集整页绘制，也不通知外部宿主。 */
+    private SceneGeometry prepareFacts(long frameNanos) {
+        if (!available()) return null;
         preparedNanos = frameNanos;
         int w = host.width(), h = host.height();
         runtime.prepareViewport(w, h);
         long nextMetrics = host.metricsRevision();
         runtime.prepareMetricsRevision(nextMetrics);
         runtime.preparePresentation(frameNanos);
+        if (!available()) return null;
         SceneGeometry geometry = prepareGeometry(frameNanos, w, h, nextMetrics);
-        if (activeInput != null && prepareActiveInput(geometry, frameNanos, activeInput, advanceInput))
-            return prepare(frameNanos, activeInput, false);
-        runtime.prepareTooltips(geometry, text, nextMetrics);
-        publishPresentation(geometry, w, h, nextMetrics);
+        return available() ? geometry : null;
+    }
+
+    private ScenePresentation prepareCurrent(long frameNanos, SceneRuntime.InputFrame activeInput, boolean advanceInput) {
+        SceneGeometry geometry = prepareFacts(frameNanos);
+        if (geometry == null) return null;
+        if (activeInput != null) {
+            boolean changed = prepareActiveInput(geometry, frameNanos, activeInput, advanceInput);
+            if (!available()) return null;
+            if (changed) return prepare(frameNanos, activeInput, false);
+        }
+        runtime.prepareTooltips(geometry, text, inputMetrics);
+        publishPresentation(geometry, inputWidth, inputHeight, inputMetrics);
+        if (!available()) return null;
         runtime.pointerRouter().prepare(presentation.geometry);
-        return presentation;
+        return available() ? presentation : null;
     }
 
     /** 声明、范围与主动显露使用同一收敛循环；不在绘制收集中补排版。 */
@@ -637,10 +672,10 @@ public final class SceneFramePipeline implements AutoCloseable {
             capturedRevision = runtime.revision(); capturedGeometry = geometry;
         }
         presentation = new ScenePresentation(++generation, geometry, plan, semantic);
-        publishSemantics(semantic);
         revision = runtime.revision();
         width = w;
         height = h;
         metrics = nextMetrics;
+        publishSemantics(semantic);
     }
 }

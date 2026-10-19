@@ -41,7 +41,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 final class SoftwareSceneScenario extends TestApplication {
 
     static final class SoftwareHost implements SceneHost, SceneTextMeasurer {
-        int width = 100, height = 80, glyph = 5, lineHeight = 10, measures;
+        int width = 100, height = 80, glyph = 5, lineHeight = 10, measures, replays;
         long metrics;
         PaintPlan last;
 
@@ -55,6 +55,9 @@ final class SoftwareSceneScenario extends TestApplication {
             return height;
         }
 
+        long frameTime = System.nanoTime(), frameStep = 5_000_000L;
+        public long frameNanos() { return frameTime += frameStep; }
+
         @Override
         public long metricsRevision() {
             return metrics;
@@ -62,6 +65,7 @@ final class SoftwareSceneScenario extends TestApplication {
 
         @Override
         public void replay(PaintPlan plan) {
+            replays++;
             last = plan;
         }
 

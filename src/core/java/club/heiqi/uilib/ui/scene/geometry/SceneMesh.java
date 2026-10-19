@@ -21,6 +21,8 @@ public final class SceneMesh {
         return rectangleBounds(x,y,x+width,y+height);
     }
     private static SceneMesh rectangleBounds(double left,double top,double right,double bottom){
+        // 与通用三角化共用精确零叉积语义；正边长的乘积也可能下溢为零。
+        if((right-left)*(bottom-top)==0)return EMPTY;
         return new SceneMesh(new double[]{left,top,right,top,right,bottom,left,top,right,bottom,left,bottom},true);
     }
     public SceneMesh union(SceneMesh other){

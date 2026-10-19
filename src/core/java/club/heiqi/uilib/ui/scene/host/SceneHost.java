@@ -14,6 +14,9 @@ public interface SceneHost {
     /** 显式媒体宿主的挂载 consumer 泵；普通无媒体入口保持无平台且不创建服务。 */
     default club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() { return null; }
 
+    /** 每个宿主帧采样一次的单调纳秒时间，默认与System.nanoTime同域；供输入周期和呈现共同消费。 */
+    default long frameNanos() { return System.nanoTime(); }
+
     int width();
 
     int height();

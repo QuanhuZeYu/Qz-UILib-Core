@@ -20,6 +20,7 @@ public final class SemanticScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("名称关系与纯描述更新复用布局绘制且旧快照不可变",this::descriptions);
         scenario("同目标MOVE先发布纯语义变化后current仍取得同代快照",this::semanticDuringMove);
+        scenario("宿主语义通知中结束页面不执行当前激活或回放",this::closeDuringPublication);
         scenario("定向字段替换保留撤销选区和原业务基线",this::targetedText);
         scenario("真实组字联系与只读仅保护当前字段写入",this::composition);
         scenario("旧挂载ID重建拒绝且关闭发布移除并结束请求",this::identityAndClose);
@@ -31,10 +32,13 @@ public final class SemanticScenario extends TestApplication {
     }
     static final class Host implements SceneHost,SceneTextMeasurer{
         final MultilineEditingScenario.PlainHost text=new MultilineEditingScenario.PlainHost();
-        SceneSemanticSnapshot snapshot=SceneSemanticSnapshot.EMPTY;PaintPlan paint;int changes,measures;
+        SceneSemanticSnapshot snapshot=SceneSemanticSnapshot.EMPTY;PaintPlan paint;int changes,measures,replays;
+        Runnable onSemantics = () -> {};
+        private long frameTime=System.nanoTime();
+        public long frameNanos(){return frameTime+=5_000_000L;}
         public int width(){return 600;}public int height(){return 400;}public long metricsRevision(){return 0;}
-        public void replay(PaintPlan plan){paint=plan;}
-        public void semanticsChanged(SceneSemanticSnapshot value){snapshot=value;changes++;}
+        public void replay(PaintPlan plan){paint=plan;replays++;}
+        public void semanticsChanged(SceneSemanticSnapshot value){snapshot=value;changes++;onSemantics.run();}
         public TextLayout layout(String s,TextStyle style,int width){measures++;return text.layout(s,style,width);}
         public TextLayout layout(String s,TextStyle style,int width,TextPolicy policy){measures++;return text.layout(s,style,width,policy);}
     }
@@ -80,6 +84,23 @@ public final class SemanticScenario extends TestApplication {
         SceneSemanticSnapshot idle=f.host.snapshot;int changes=f.host.changes;f.session.frame();
         require(f.host.snapshot==idle&&f.host.changes==changes,"静止帧重复发布语义");
     }}
+    private void closeDuringPublication(){
+        for(boolean withInput:new boolean[]{true,false})try(Fixture f=new Fixture()){
+            int[] point=new int[2];
+            f.domain.execute(()->{
+                club.heiqi.uilib.ui.scene.layout.LayoutBox box=f.session.pipeline().current().geometry.get(f.button).box;
+                point[0]=box.x+box.width/2;point[1]=box.y+box.height/2;
+                f.accessible.set("触发宿主结束通知");
+            });
+            int replays=f.host.replays;
+            f.host.onSemantics=()->{if(!f.session.ended())f.session.close();};
+            if(withInput){f.session.pointer(ScenePointerEvent.syntheticActivation(point[0],point[1]));
+                f.session.pointer(ScenePointerEvent.syntheticActivation(point[0],point[1]));}
+            f.session.frame();
+            require(f.session.ended()&&f.actions==0&&f.host.replays==replays,
+                    "准备回调关闭后仍执行了业务或回放 input="+withInput+" actions="+f.actions);
+        }
+    }
     private void semanticDuringMove(){try(Fixture f=new Fixture()){
         f.session.pipeline().pointer(ScenePointerEvent.move(f.host.width()-1,f.host.height()-1));f.session.frame();
         ScenePresentation[] before=new ScenePresentation[1];f.domain.execute(()->before[0]=f.session.pipeline().current());

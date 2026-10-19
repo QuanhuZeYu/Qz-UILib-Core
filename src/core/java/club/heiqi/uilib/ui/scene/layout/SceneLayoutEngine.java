@@ -23,7 +23,6 @@ public final class SceneLayoutEngine {
     }
     private final java.util.function.ToLongFunction<SceneNode> nodeMeasureRevision;
     private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
-    private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
     private final SceneMeasureDependencies measureDependencies = new SceneMeasureDependencies();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
     private final Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextStyle> textCacheStyles = new IdentityHashMap<>();
@@ -94,7 +93,6 @@ public final class SceneLayoutEngine {
         allocatedBoxes.clear();
         arrangementViewport = null;
         presentedStyles.clear();
-        measuredCache.clear();
         measureDependencies.clear();
         textCache.clear();
         textCacheStyles.clear();
@@ -108,8 +106,9 @@ public final class SceneLayoutEngine {
         Set<SceneNode> mounted = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         for (SceneNode root : roots) collectMounted(root, mounted);
         // 主几何省略 READY 图像的备用子树；生命周期必须按完整挂载树判定。
-        if (nodeMeasureRevision == null || measureDependencies.update(mounted, presentation, nodeMeasureRevision))
-            measuredCache.clear();
+        if (nodeMeasureRevision == null) measureDependencies.clear();
+        else if (measureDependencies.update(mounted, presentation, nodeMeasureRevision))
+            measureDependencies.resetMeasurements();
         batchText.keySet().retainAll(mounted);
         presentedStyles.keySet().retainAll(mounted);
         // 隐藏节点可能本批不访问；代际结束也要及时丢弃其旧内容及inline载荷。
@@ -125,7 +124,7 @@ public final class SceneLayoutEngine {
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
         presentation = null;
-        measuredCache.clear();
+        measureDependencies.clear();
         // 无度量代际的旧入口不能假定字体资源稳定。
         batchText.clear();
         metricsKnown = false;
@@ -142,12 +141,12 @@ public final class SceneLayoutEngine {
             long nextMeasure, SceneLayoutPresentation current) {
         presentation = current;
         retainMounted(roots);
-        if (!metricsKnown || metricsRevision != nextMetrics) { batchText.clear(); measuredCache.clear(); }
+        if (!metricsKnown || metricsRevision != nextMetrics) { batchText.clear(); measureDependencies.resetMeasurements(); }
         else if (measureRevision != nextMeasure
                 || measuredWidth != width
                 || measuredHeight != height) {
             // 先清旧请求再重新测量，不跨声明代际积累动态文字或任意宽度。
-            measuredCache.clear();
+            measureDependencies.resetMeasurements();
             for (BatchTextMeasurer batch : batchText.values()) batch.resetRequests();
             batchText.clear();
         }
@@ -187,6 +186,7 @@ public final class SceneLayoutEngine {
             return geometry;
         } finally {
             endTextRequests();
+            measureDependencies.endRequests();
         }
     }
 
@@ -198,9 +198,7 @@ public final class SceneLayoutEngine {
             public MeasuredSize measureChild(SceneNode child, Constraints constraints) {
                 if (child.parent() != parent || layerPolicy(child) != null)
                     throw new IllegalArgumentException("纯绘制只能读取直属普通流子内容度量");
-                Map<Long, int[]> cached = measuredCache.get(child);
-                long key = ((long) constraints.availableWidth << 32) | (constraints.availableHeight & 0xffffffffL);
-                int[] size = cached == null ? null : cached.get(key);
+                int[] size = measureDependencies.positioned(child, constraints.availableWidth, constraints.availableHeight);
                 if (size == null) throw new IllegalStateException("纯绘制投影请求了未定位的子度量: node=" + child.id());
                 return new MeasuredSize(size[0], size[1]);
             }
@@ -233,6 +231,7 @@ public final class SceneLayoutEngine {
             return refreshed;
         } finally {
             endTextRequests();
+            measureDependencies.endRequests();
         }
     }
 
@@ -315,12 +314,11 @@ public final class SceneLayoutEngine {
     }
 
     private int[] measure(SceneNode node, int availableWidth, int availableHeight) {
-        long constraintKey = ((long) availableWidth << 32) | (availableHeight & 0xffffffffL);
-        return measuredCache
-                .computeIfAbsent(node, key -> new HashMap<>())
-                .computeIfAbsent(
-                        constraintKey,
-                        key -> measureUncached(node, availableWidth, availableHeight));
+        int[] cached = measureDependencies.request(node, availableWidth, availableHeight);
+        if (cached != null) return cached;
+        int[] measured = measureUncached(node, availableWidth, availableHeight);
+        measureDependencies.remember(node, availableWidth, availableHeight, measured);
+        return measured;
     }
 
     private int[] measureUncached(SceneNode node, int availableWidth, int availableHeight) {
@@ -409,6 +407,7 @@ public final class SceneLayoutEngine {
             return new SceneGeometry(SceneScrollDecorationLayout.project(entries, worldViewport), worldViewport);
         } finally {
             endTextRequests();
+            measureDependencies.endRequests();
         }
     }
 
