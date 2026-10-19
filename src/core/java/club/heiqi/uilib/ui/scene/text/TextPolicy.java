@@ -2,7 +2,8 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 组件请求的排版语义。裁剪/滚动由 scene 执行；当前不实现省略，调用方不能将截断冒充省略。 */
+/** 字体排版的方向、语言与断行请求。省略、裁剪和滚动由 scene 消费最终外盒；
+ * 省略统一投影已整形布局，保留完整簇与原文，不在这里重复表达呈现策略。 */
 public final class TextPolicy {
     public enum Direction {
         AUTO,
