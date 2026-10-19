@@ -24,6 +24,7 @@ public final class SceneLayoutEngine {
     private final java.util.function.ToLongFunction<SceneNode> nodeMeasureRevision;
     private final java.util.function.ToIntFunction<SceneNode> scrollOffsets;
     private final Map<SceneNode, Map<Long, int[]>> measuredCache = new IdentityHashMap<>();
+    private final SceneMeasureDependencies measureDependencies = new SceneMeasureDependencies();
     private final Map<SceneNode, Map<Integer, TextLayout>> textCache = new IdentityHashMap<>();
     private final Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextStyle> textCacheStyles = new IdentityHashMap<>();
     private final Map<SceneNode, BatchTextMeasurer> batchText = new IdentityHashMap<>();
@@ -94,6 +95,7 @@ public final class SceneLayoutEngine {
         arrangementViewport = null;
         presentedStyles.clear();
         measuredCache.clear();
+        measureDependencies.clear();
         textCache.clear();
         textCacheStyles.clear();
         batchChildren.clear();
@@ -106,6 +108,8 @@ public final class SceneLayoutEngine {
         Set<SceneNode> mounted = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         for (SceneNode root : roots) collectMounted(root, mounted);
         // 主几何省略 READY 图像的备用子树；生命周期必须按完整挂载树判定。
+        if (nodeMeasureRevision == null || measureDependencies.update(mounted, presentation, nodeMeasureRevision))
+            measuredCache.clear();
         batchText.keySet().retainAll(mounted);
         presentedStyles.keySet().retainAll(mounted);
         // 隐藏节点可能本批不访问；代际结束也要及时丢弃其旧内容及inline载荷。
@@ -121,6 +125,7 @@ public final class SceneLayoutEngine {
 
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
         presentation = null;
+        measuredCache.clear();
         // 无度量代际的旧入口不能假定字体资源稳定。
         batchText.clear();
         metricsKnown = false;
@@ -137,11 +142,12 @@ public final class SceneLayoutEngine {
             long nextMeasure, SceneLayoutPresentation current) {
         presentation = current;
         retainMounted(roots);
-        if (!metricsKnown || metricsRevision != nextMetrics) batchText.clear();
+        if (!metricsKnown || metricsRevision != nextMetrics) { batchText.clear(); measuredCache.clear(); }
         else if (measureRevision != nextMeasure
                 || measuredWidth != width
                 || measuredHeight != height) {
             // 先清旧请求再重新测量，不跨声明代际积累动态文字或任意宽度。
+            measuredCache.clear();
             for (BatchTextMeasurer batch : batchText.values()) batch.resetRequests();
             batchText.clear();
         }
@@ -158,7 +164,7 @@ public final class SceneLayoutEngine {
         arrangementViewport = new LayoutBox(0, 0, width, height);
         activeText.clear();
         try {
-            measuredCache.clear();
+            // 纯位置/滚动/层锚定只重新排列；内容、尺寸、字体与视口代际在入口结束旧度量。
             textCache.clear();
             textCacheStyles.clear();
             List<SceneGeometryView.Entry> entries = new ArrayList<>();

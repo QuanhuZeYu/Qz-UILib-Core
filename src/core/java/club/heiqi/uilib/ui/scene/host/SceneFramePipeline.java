@@ -175,7 +175,11 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private boolean closed;
     private ScenePresentation presentation;
-    private long revision = -1, geometryRevision = -1, metrics = -1, generation;
+    private SceneGeometry inputGeometry, capturedGeometry;
+    private long inputRevision = -1, inputGeometryRevision = -1, inputMetrics = -1, capturedRevision = -1;
+    private int inputWidth = -1, inputHeight = -1;
+    private club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot publishedSemantics;
+    private long revision = -1, metrics = -1, generation;
     private int width = -1, height = -1;
     private long preparedNanos;
 
@@ -318,7 +322,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             event.discard(router);
             return;
         }
-        SceneGeometryView geometry = prepare(batch.frameNanos).geometry;
+        SceneGeometryView geometry = prepareInput(batch.frameNanos);
         runtime.inspectionReason(null, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Category.INPUT);
         switch (event.kind) {
             case SEMANTIC:
@@ -438,7 +442,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
         }
         // 读取当前呈现不推进几何动画；下一宿主frame才提供新的时间样本。
-        return prepare(presentation == null ? System.nanoTime() : preparedNanos);
+        return prepare(inputGeometry == null ? System.nanoTime() : preparedNanos);
     }
 
     private void checkOpen() {
@@ -477,7 +481,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                             catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
                             try { host.semanticsChanged(runtime.clearSemantics()); }
                             catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
-                            finally { presentation = null; paint.clear(); layout.clearCaches(); }
+                            finally { presentation = null; inputGeometry = capturedGeometry = null; publishedSemantics = null; paint.clear(); layout.clearCaches(); }
                             if (failure instanceof Error) throw (Error) failure;
                             if (failure instanceof RuntimeException) throw (RuntimeException) failure;
                         });
@@ -509,6 +513,31 @@ public final class SceneFramePipeline implements AutoCloseable {
         return geometry;
     }
 
+    /** 输入只要求当前几何、语义与退场片段；整页 PaintPlan 留给 current/replay。 */
+    private SceneGeometry prepareInput(long frameNanos) {
+        runtime.inspectionBegin(); boolean success = false;
+        try {
+            preparedNanos = frameNanos;
+            int w = host.width(), h = host.height();
+            runtime.prepareViewport(w, h);
+            long nextMetrics = host.metricsRevision();
+            runtime.prepareMetricsRevision(nextMetrics);
+            runtime.preparePresentation(frameNanos);
+            SceneGeometry geometry = prepareGeometry(frameNanos, w, h, nextMetrics);
+            runtime.prepareTooltips(geometry, text, nextMetrics);
+            if (capturedRevision != runtime.revision() || capturedGeometry != geometry || System.nanoTime() >= paint.nextPaintNanos()) {
+                runtime.domain().readOnly(() -> { paint.capturePresence(geometry, nextMetrics); return null; });
+                runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
+                capturedRevision = runtime.revision(); capturedGeometry = geometry;
+            }
+            publishSemantics(runtime.semanticSnapshot(geometry));
+            runtime.pointerRouter().prepare(geometry);
+            success = true; return geometry;
+        } finally { runtime.inspectionEnd(success, generation); }
+    }
+    private void publishSemantics(club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semantic) {
+        if (publishedSemantics != semantic) { publishedSemantics = semantic; host.semanticsChanged(semantic); }
+    }
     private ScenePresentation prepare(long frameNanos) { return prepare(frameNanos, null); }
 
     private ScenePresentation prepare(long frameNanos, SceneRuntime.InputFrame activeInput) {
@@ -543,7 +572,7 @@ public final class SceneFramePipeline implements AutoCloseable {
     /** 声明、范围与主动显露使用同一收敛循环；不在绘制收集中补排版。 */
     private SceneGeometry prepareGeometry(long frameNanos, int w, int h, long nextMetrics) {
         boolean geometryDirty = geometryDirty(w, h, nextMetrics);
-        SceneGeometry prepared = geometryDirty ? null : presentation.geometry;
+        SceneGeometry prepared = geometryDirty ? null : inputGeometry;
         long[] arrangedRevision = {runtime.geometryRevision()};
         do {
             if (geometryDirty) {
@@ -564,17 +593,19 @@ public final class SceneFramePipeline implements AutoCloseable {
             runtime.preparePresentation(frameNanos);
             geometryDirty = arrangedRevision[0] != runtime.geometryRevision();
         } while (geometryDirty);
-        if (presentation == null || revision != runtime.revision() || prepared != presentation.geometry) {
+        if (inputGeometry == null || inputRevision != runtime.revision() || prepared != inputGeometry) {
             SceneGeometry located = prepared;
             prepared = runtime.domain().readOnly(() -> layout.refreshTextStyles(located));
             runtime.prepareInputGeometry(prepared);
         }
+        inputGeometry = prepared; inputRevision = runtime.revision(); inputGeometryRevision = runtime.geometryRevision();
+        inputWidth = w; inputHeight = h; inputMetrics = nextMetrics;
         return prepared;
     }
 
     private boolean geometryDirty(int w, int h, long nextMetrics) {
-        return presentation == null || geometryRevision != runtime.geometryRevision()
-                || width != w || height != h || metrics != nextMetrics;
+        return inputGeometry == null || inputGeometryRevision != runtime.geometryRevision()
+                || inputWidth != w || inputHeight != h || inputMetrics != nextMetrics;
     }
 
     /** 一批只推进一次时间；后续重排只同步本批参与者，并复用原失败取消记录。 */
@@ -601,11 +632,13 @@ public final class SceneFramePipeline implements AutoCloseable {
         if (!changedPaint && !semanticChanged) return;
         if (changedPaint) runtime.inspectionPaintCollected();
         PaintPlan plan = changedPaint ? runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics)) : presentation.paint;
-        if (changedPaint) runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
+        if (changedPaint) {
+            runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
+            capturedRevision = runtime.revision(); capturedGeometry = geometry;
+        }
         presentation = new ScenePresentation(++generation, geometry, plan, semantic);
-        if (semanticChanged) host.semanticsChanged(semantic);
+        publishSemantics(semantic);
         revision = runtime.revision();
-        geometryRevision = runtime.geometryRevision();
         width = w;
         height = h;
         metrics = nextMetrics;

@@ -41,6 +41,7 @@ public final class MotionScenario extends TestApplication {
         scenario("自身裁剪外盒与退场错误清理", this::presenceOwnClip);
         scenario("无效目标结束轨迹后可卸载重挂", this::failedMount);
         scenario("退场所属层继续逃离来源局部裁剪", this::presenceLayer);
+        scenario("纯位置重排复用度量且内容与视口变更失效", this::measureReuse);
     }
     private void spring() {
         for (double damping : new double[] {.65, 1, 1.7}) {
@@ -214,6 +215,29 @@ public final class MotionScenario extends TestApplication {
         page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5)); page.frame();
         domain.execute(() -> require(page.pipeline().current().paint.commands().get(0).color
                 == club.heiqi.uilib.ui.scene.control.SceneTheme.light().pressed, "局部即时覆盖未生效"));
+    }
+    private void measureReuse() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
+        Signal<Integer>[] content = new Signal[1], position = new Signal[1]; int[] measured = {0}; SceneNode[] item = {null};
+        club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
+            content[0] = domain.signal(20); position[0] = domain.signal(0);
+            item[0] = new SceneNode().control(new club.heiqi.uilib.ui.scene.control.SceneControl() {
+                public java.util.List<club.heiqi.uilib.ui.reactive.ReadableSignal<?>> measureDependencies(SceneNode node) { return java.util.Collections.singletonList(content[0]); }
+                public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode n, club.heiqi.uilib.ui.scene.layout.Constraints c, club.heiqi.uilib.ui.scene.text.SceneTextMeasurer t) { measured[0]++; return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(80, content[0].get()); }
+                public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode n, club.heiqi.uilib.ui.scene.layout.LayoutBox b, club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer c) { return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(java.util.Collections.emptyList()); }
+                public void paint(SceneNode n, club.heiqi.uilib.ui.scene.layout.SceneGeometryView g, club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder p) {}
+            }).bind(NodeBinding.value(position[0], (node, value) -> node.translation(0, value)));
+            context.mountOwned(item[0]);
+        }));
+        page.frame(); int initial = measured[0];
+        for (int i = 1; i <= 8; i++) { final int next = i; domain.execute(() -> position[0].set(next)); page.frame(); }
+        require(measured[0] == initial, "纯位置变化重复测量内容：" + initial + "→" + measured[0]);
+        domain.execute(() -> content[0].set(45)); page.frame();
+        domain.execute(() -> require(page.pipeline().current().geometry.get(item[0]).layoutBox.height == 45, "内容变化未结束缓存"));
+        require(measured[0] > initial, "测量依赖改变仍使用旧度量");
+        int beforeResize = measured[0]; host.width = 360; page.frame();
+        require(measured[0] > beforeResize, "视口改变没有重新测量");
     }
     private void layout() {
         ReactiveDomain domain = ReactiveDomain.direct();

@@ -21,6 +21,8 @@ public final class TextStyle {
     public final int defaultHighlightColor;
     public final TextScript script;
     private final List<FontSource> candidates;
+    private volatile TextStyle layoutStyle;
+    private volatile Integer cachedHash;
 
     public TextStyle(String font, int size, int color) {
         this(font, size, color, null);
@@ -164,12 +166,16 @@ public final class TextStyle {
     /** 普通文字请求的有界缓存键；前景和默认mark色保留在当前绘制声明。 */
     public TextStyle layoutStyle() {
         if(color==0&&defaultHighlightColor==0)return this;
-        return new TextStyle(font,logicalEm,0,candidates,effects,decoration,fontStyle,
-                baselineShift,letterSpacing,highlightColor,0,script);
+        // 样式和字体来源都是不可变代际；同一样式不在每次定位请求里复制完整候选列表。
+        TextStyle result=layoutStyle;
+        if(result==null){result=new TextStyle(font,logicalEm,0,candidates,effects,decoration,fontStyle,
+                baselineShift,letterSpacing,highlightColor,0,script);layoutStyle=result;}
+        return result;
     }
 
     @Override
     public boolean equals(Object o) {
+        if (o == this) return true;
         if (!(o instanceof TextStyle)) return false;
         TextStyle s = (TextStyle) o;
         return sameFont(s)
@@ -182,6 +188,8 @@ public final class TextStyle {
 
     @Override
     public int hashCode() {
-        return Objects.hash(font, logicalEm, color, candidates, effects, decoration, fontStyle, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);
+        Integer hash=cachedHash;
+        if(hash==null){hash=Objects.hash(font, logicalEm, color, candidates, effects, decoration, fontStyle, baselineShift, letterSpacing, highlightColor, defaultHighlightColor, script);cachedHash=hash;}
+        return hash;
     }
 }

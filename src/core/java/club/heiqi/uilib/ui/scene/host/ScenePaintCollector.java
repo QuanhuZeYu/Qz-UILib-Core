@@ -46,6 +46,15 @@ final class ScenePaintCollector {
             append(content, layers.content);
             append(overlay, layers.overlay);
         }
+        capturePresence(geometry, metricsRevision);
+        append(content, runtime.retainedPresencePaint(geometry));
+        // 控件内容保持树序；overlay在全页内容之后保持原overlay树序。
+        append(content, overlay.build());
+        return content.build();
+    }
+
+    /** 每个输入仍捕获当前退场片段；未显示的整页输出可等真正读取或回放时生成。 */
+    void capturePresence(SceneGeometryView geometry, long metricsRevision) {
         presenceSnapshots.clear();
         for (SceneNode node : runtime.presenceCaptureNodes()) {
             if (geometry.get(node) == null) continue;
@@ -70,10 +79,6 @@ final class ScenePaintCollector {
             }
             finally { capturePresenceRoot = null; }
         }
-        append(content, runtime.retainedPresencePaint(geometry));
-        // 控件内容保持树序；overlay在全页内容之后保持原overlay树序。
-        append(content, overlay.build());
-        return content.build();
     }
 
     private static final class PaintLayers {
@@ -194,12 +199,18 @@ final class ScenePaintCollector {
             intrinsic.put(entry.node, entry.projected(entry.transform, clip));
         }
         return new SceneGeometryView() {
+            private final Map<SceneNode, SceneGeometryView> views = new IdentityHashMap<>();
+            private List<Entry> source;
+            public SceneGeometryView asControl(SceneNode node) { return views.computeIfAbsent(node, key -> SceneGeometryView.super.asControl(key)); }
             public Entry get(SceneNode node) { Entry own = intrinsic.get(node); return own == null ? current.get(node) : own; }
             // 输入与遮挡仍用原批完整范围，只有本片段绘制的get使用内在裁剪。
             public List<Entry> ordered() { return current.ordered(); }
             public List<Entry> sourceOrdered() {
-                List<Entry> source = new ArrayList<>();
-                for (Entry entry : current.sourceOrdered()) source.add(get(entry.node));
+                if (source == null) {
+                    List<Entry> entries = new ArrayList<>();
+                    for (Entry entry : current.sourceOrdered()) entries.add(get(entry.node));
+                    source = java.util.Collections.unmodifiableList(entries);
+                }
                 return source;
             }
             public LayoutBox viewport() { return current.viewport(); }

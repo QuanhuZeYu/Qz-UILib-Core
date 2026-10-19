@@ -12,6 +12,9 @@ public final class VectorGeometryScenario extends TestApplication {
         scenario("二次曲线椭圆和共线回转保留真实几何",this::curves);
         scenario("描边端帽连接与重叠笔段只贡献一次区域",this::strokes);
         scenario("形状洞和嵌套裁剪保留精确覆盖与线性采样坐标",this::clips);
+        scenario("嵌套小数矩形保留精确区域且不拆出内部碎片",this::rectangleIntersections);
+        scenario("轴向反射与直角变换保留矩形、非轴向仍按真实形状裁剪",this::rectangleTransforms);
+        scenario("矩形裁剪一次发布凸多边形并保留全部采样属性",this::rectangleSamples);
     }
     private static void near(double got,double expected,double error,String message){require(Math.abs(got-expected)<=error,message+" got="+got+" expected="+expected);}
     private static ScenePath.Builder square(ScenePath.Builder b,double x,double y,double size,boolean reverse){
@@ -63,6 +66,68 @@ public final class VectorGeometryScenario extends TestApplication {
         SceneMesh full=SceneShape.vector(ScenePath.rectangle(0,0,10,10),10,10,true,new SceneStroke(2)).resolve(10,10,.02);
         near(full.area(),12*12,1e-7,"填充和居中描边的命中union重复或丢外半");require(full.contains(-.5,5)&&full.contains(10.5,5),"居中描边外半缺失");
         ScenePath repeated=ScenePath.builder().moveTo(0,0).lineTo(10,0).lineTo(0,0).build();near(repeated.strokeMesh(new SceneStroke(2),.001).area(),20,1e-9,"重叠笔段重复贡献覆盖");
+    }
+    private void rectangleIntersections(){
+        SceneClipRegion region=SceneClipRegion.rectangle(new LayoutBox(0,0,720,520))
+                .transformed(SceneTransform.translation(0,.25));
+        for(int i=1;i<=12;i++){
+            double left=.2*i,top=.25+.17*i,width=720-.4*i,height=520-.34*i;
+            region=region.intersect(SceneClipRegion.of(SceneMesh.rectangle(left,top,width,height)));
+            SceneMesh mesh=region.mesh();
+            require(mesh.triangleCount()==2,"矩形交集被内部对角线持续拆碎: depth="+i+" triangles="+mesh.triangleCount());
+            near(mesh.minX,left,1e-10,"小数裁剪左边界");near(mesh.minY,top,1e-10,"小数裁剪上边界");
+            near(mesh.maxX,left+width,1e-10,"小数裁剪右边界");near(mesh.maxY,top+height,1e-10,"小数裁剪下边界");
+            near(mesh.area(),width*height,1e-7,"嵌套矩形交集面积");
+            require(region.contains(left+width/2,top+height/2)&&!region.contains(left-.01,top+height/2),"矩形精确边界退化成整数包络");
+        }
+        club.heiqi.uilib.ui.scene.paint.PaintCommand command=club.heiqi.uilib.ui.scene.paint.PaintCommand
+                .rect(new LayoutBox(0,0,720,520),new LayoutBox(0,0,720,520),0xffffffff)
+                .withGeometry(SceneTransform.translation(0,.25),region);
+        require(command.effectiveClip().mesh().triangleCount()==2,"正式绘制命令重建了矩形碎片");
+        near(command.effectiveClip().mesh().area(),region.mesh().area(),1e-7,"绘制命令的小数裁剪区域");
+    }
+    private void rectangleTransforms(){
+        SceneMesh rectangle=SceneMesh.rectangle(-7.5,1.25,20.5,13.5);
+        SceneTransform[] transforms={SceneTransform.translation(.125,-.375),
+                SceneTransform.scale(-1.25,2.5).then(SceneTransform.translation(4.125,-8.25)),
+                SceneTransform.of(0,1,-1,0,10.125,3.5),SceneTransform.of(0,-2,-.5,0,7.25,-9.125)};
+        for(SceneTransform transform:transforms){
+            SceneMesh moved=rectangle.transformed(transform);
+            double width=moved.maxX-moved.minX-1.5,height=moved.maxY-moved.minY-1;
+            SceneMesh clipped=moved.intersection(SceneMesh.rectangle(moved.minX+.75,moved.minY+.5,width,height));
+            require(clipped.triangleCount()==2,"轴向变换丢失精确矩形: "+transform.a+","+transform.b+","+transform.c+","+transform.d);
+            near(clipped.area(),width*height,1e-9,"反射/直角矩形交集面积");
+        }
+        SceneMesh skewed=SceneMesh.rectangle(0,0,4,2).transformed(SceneTransform.of(1,0,1,1,0,0))
+                .intersection(SceneMesh.rectangle(0,0,6,2));
+        near(skewed.area(),4*2,1e-10,"非轴向矩形被包络填满");
+        require(!skewed.contains(.25,1.75)&&skewed.contains(3,1),"斜切的精确区域被当作轴矩形");
+        SceneMesh rotated=rectangle.transformed(SceneTransform.rotationDegrees(90));
+        near(rotated.intersection(SceneMesh.rectangle(-100,-100,200,200)).area(),20.5*13.5,1e-9,"带浮点余弦的直角变换被近似");
+        SceneMesh collapsed=rectangle.transformed(SceneTransform.scale(0,1));
+        require(collapsed.intersection(rectangle).empty()&&!collapsed.contains(0,5),"零缩放产生了可见/可命中的矩形");
+    }
+    private void rectangleSamples(){
+        double[] input={-2,-3,0,0,-6,17.25,10,-3,1,0,18,17.25,
+                10,7,1,1,48,17.25,-2,7,0,1,24,17.25};
+        java.util.List<double[]> polygons=new java.util.ArrayList<>();
+        SceneMesh clip=SceneMesh.rectangle(.125,.375,4.5,3.75);
+        clip.clipPolygon(input,6,polygons::add);
+        require(polygons.size()==1&&polygons.get(0).length==4*6,"矩形把一个凸多边形重复切成三角分支");
+        double[] polygon=polygons.get(0);double twiceArea=0;
+        for(int i=0;i<polygon.length;i+=6){
+            int next=(i+6)%polygon.length;twiceArea+=polygon[i]*polygon[next+1]-polygon[next]*polygon[i+1];
+            near(polygon[i+2],(polygon[i]+2)/12,1e-12,"矩形裁剪u插值");
+            near(polygon[i+3],(polygon[i+1]+3)/10,1e-12,"矩形裁剪v插值");
+            near(polygon[i+4],2*polygon[i]+3*polygon[i+1]+7,1e-12,"额外顶点属性插值");
+            near(polygon[i+5],17.25,1e-12,"常量顶点属性");
+            require(polygon[i]>=clip.minX&&polygon[i]<=clip.maxX&&polygon[i+1]>=clip.minY&&polygon[i+1]<=clip.maxY,"插值顶点越过精确轴边界");
+        }
+        near(Math.abs(twiceArea)/2,4.5*3.75,1e-12,"裁剪后的多边形面积");
+        require(polygon!=input,"输出顶点仍借用调用者输入数组");
+        java.util.List<double[]> outside=new java.util.ArrayList<>();
+        clip.clipPolygon(new double[]{-4,-4,0,0,-3,-4,1,0,-3,-3,1,1},4,outside::add);
+        require(outside.isEmpty(),"完全在矩形外的三角形没有被裁掉");
     }
     private void clips(){
         SceneMesh donut=square(square(ScenePath.builder().rule(ScenePath.FillRule.EVEN_ODD),0,0,10,false),3,3,4,false).build().fillMesh(.05);

@@ -208,6 +208,32 @@ public final class PointerInputScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("高频同区移动复用绘制计划，跨目标仍刷新悬停", () -> {
+            Page p = new Page();
+            p.domain.execute(() -> {
+                p.button = new SceneNode().size(Size.fixed(40), Size.fixed(20)).control(new SceneControl() {
+                public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text) { return new MeasuredSize(40, 20); }
+                public ChildPlacements arrange(SceneNode n, LayoutBox box, SceneChildMeasurer children) { return new ChildPlacements(Collections.emptyList()); }
+                public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder paint) {
+                    paint.add(club.heiqi.uilib.ui.scene.paint.PaintCommand.rect(g.get(n).box, null, n.runtime().pointerRouter().hovered(g) == n ? 0xFF00CC00 : 0xFFCC0000));
+                }
+                }).onClick(() -> {});
+                p.children.set(Collections.singletonList(p.button));
+            });
+            p.events(ScenePointerEvent.move(5, 5));
+            require(p.host.last.commands().stream().anyMatch(c -> c.color == 0xFF00CC00), "进入目标没有刷新实际悬停颜色");
+            club.heiqi.uilib.ui.scene.paint.PaintPlan hovered = p.host.last;
+            for (int i = 6; i < 30; i++) p.session.pointer(ScenePointerEvent.move(i, 5));
+            p.session.frame();
+            require(p.host.last == hovered, "同目标连续移动重复生成未变化的整页绘制计划");
+            p.events(ScenePointerEvent.move(60, 40));
+            require(p.host.last != hovered && p.host.last.commands().stream().anyMatch(c -> c.color == 0xFFCC0000), "离开目标遗留悬停颜色");
+            club.heiqi.uilib.ui.scene.paint.PaintPlan outside = p.host.last;
+            p.events(ScenePointerEvent.move(61, 41), ScenePointerEvent.move(62, 42));
+            require(p.host.last == outside, "空白区域移动使整页无效重画");
+            p.events(ScenePointerEvent.move(5, 5), ScenePointerEvent.cancel());
+            require(p.host.last.commands().stream().anyMatch(c -> c.color == 0xFFCC0000), "失焦取消没有清除悬停颜色");
+        });
         for (boolean nested : new boolean[] {false, true}) scenario("释放前位置Effect与同批事件顺序 nested=" + nested, () -> releasePreparationOrder(nested));
         for (boolean effect : new boolean[] {false, true}) scenario("释放前失败保留物理尾部 effect=" + effect, () -> releasePreparationFailure(effect));
         scenario("焦点外空白主键失焦且物理尾部不夺回", () -> {

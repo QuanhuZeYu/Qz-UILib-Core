@@ -32,6 +32,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private boolean closed, positionKnown;
     private long positionRevision;
     private final HoverProjection hover = new HoverProjection(), passive = new HoverProjection();
+    private SceneNode paintedPassiveTarget;
     private SceneGeometryView preparedGeometry;
     private final java.util.Set<HoverInterest> hoverInterests = new java.util.LinkedHashSet<>();
     private final java.util.Map<SceneNode, Integer> hoverNodes = new java.util.IdentityHashMap<>();
@@ -54,7 +55,11 @@ public final class ScenePointerRouter implements AutoCloseable {
         hoverNodes.put(node, hoverNodes.getOrDefault(node, 0) + 1); passive.clear(); return interest;
     }
     private void publishHover(SceneGeometryView geometry) {
-        hoverTarget.set(hovered(geometry));
+        SceneNode next = hovered(geometry), nextPassive = passiveHovered(geometry);
+        // 绘制依赖命中目标，坐标本身只用于路由与提示计时。同区域高频 MOVE 不重建整页计划。
+        if (hoverTarget.get() != next || paintedPassiveTarget != nextPassive) runtime.invalidatePaint();
+        hoverTarget.set(next);
+        paintedPassiveTarget = nextPassive;
         if(hoverInterests.isEmpty())return;
         SceneNode target = closed || !positionKnown ? null : passive.within(geometry.world());
         for(HoverInterest interest:new java.util.ArrayList<>(hoverInterests)) {
@@ -245,11 +250,10 @@ public final class ScenePointerRouter implements AutoCloseable {
             return;
         }
         if (event.kind == ScenePointerEvent.Kind.ALL_BUTTONS_RELEASED) return;
-        boolean changed = !positionKnown || x != event.x || y != event.y;
         positionKnown = true;
         x = event.x;
         y = event.y;
-        if (changed || event.kind == ScenePointerEvent.Kind.DOWN || event.kind == ScenePointerEvent.Kind.UP)
+        if (event.kind == ScenePointerEvent.Kind.DOWN || event.kind == ScenePointerEvent.Kind.UP)
             runtime.invalidatePaint();
     }
 

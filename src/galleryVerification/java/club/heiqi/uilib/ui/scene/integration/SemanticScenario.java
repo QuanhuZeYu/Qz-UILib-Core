@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 public final class SemanticScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("名称关系与纯描述更新复用布局绘制且旧快照不可变",this::descriptions);
+        scenario("同目标MOVE先发布纯语义变化后current仍取得同代快照",this::semanticDuringMove);
         scenario("定向字段替换保留撤销选区和原业务基线",this::targetedText);
         scenario("真实组字联系与只读仅保护当前字段写入",this::composition);
         scenario("旧挂载ID重建拒绝且关闭发布移除并结束请求",this::identityAndClose);
@@ -78,6 +79,19 @@ public final class SemanticScenario extends TestApplication {
         require("接收通知的完整邮箱名称".equals(f.host.snapshot.get(field.id).values.name)&&"电子邮箱".equals(old.get(field.id).values.name),"动态名称不更新或旧值被改写");
         SceneSemanticSnapshot idle=f.host.snapshot;int changes=f.host.changes;f.session.frame();
         require(f.host.snapshot==idle&&f.host.changes==changes,"静止帧重复发布语义");
+    }}
+    private void semanticDuringMove(){try(Fixture f=new Fixture()){
+        f.session.pipeline().pointer(ScenePointerEvent.move(f.host.width()-1,f.host.height()-1));f.session.frame();
+        ScenePresentation[] before=new ScenePresentation[1];f.domain.execute(()->before[0]=f.session.pipeline().current());
+        SceneSemanticId field=f.entry(SceneSemantics.Role.TEXT_FIELD,"seed").id;int changes=f.host.changes,measures=f.host.measures;
+        f.domain.execute(()->f.accessible.set("输入批次中的新邮箱名称"));
+        // 输入准备已通知host不能替代正式呈现缓存更新；同目标MOVE本身不应强制重收绘制。
+        f.session.pipeline().pointer(ScenePointerEvent.move(f.host.width()-2,f.host.height()-1));f.session.frame();
+        ScenePresentation[] after=new ScenePresentation[1];f.domain.execute(()->after[0]=f.session.pipeline().current());
+        require("输入批次中的新邮箱名称".equals(after[0].semantics.get(field).values.name)
+                &&after[0].semantics==f.host.snapshot,"输入已发布新语义但current仍返回旧快照 host="+f.host.snapshot.get(field).values.name+" current="+after[0].semantics.get(field).values.name);
+        require(f.host.changes==changes+1&&before[0].geometry==after[0].geometry&&before[0].paint==after[0].paint&&f.host.measures==measures,
+                "同目标MOVE纯语义更新重复通知或触发重测重绘 changes="+changes+"/"+f.host.changes+" measures="+measures+"/"+f.host.measures);
     }}
     private void targetedText(){try(Fixture f=new Fixture()){
         f.domain.execute(()->{f.drafts[0].select(2,2);f.drafts[0].replaceSelection("X");f.drafts[0].select(1,3);f.page.runtime().focusRouter().request(f.page.runtime().captureMount(f.fields[1]));});
