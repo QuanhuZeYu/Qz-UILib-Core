@@ -13,8 +13,6 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.MeasuredSize;
 import club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
-import club.heiqi.uilib.ui.scene.layout.SceneGeometry;
-import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
@@ -65,23 +63,13 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private SceneNode root;
     private int width, height, offset, estimate, gap;
     private long metrics = Long.MIN_VALUE, revision;
-    private K requested, navigationKey, anchorKey;
-    private long anchorWithin, lastScrollIntent;
-    private K pendingAnchor;
-    private long pendingWithin, pendingIntent;
-    private boolean anchorPending;
-    private boolean focusRequest, requestIssued;
-    private MountHandle requestTarget;
-    private Function<SceneNode, SceneNode> focusTarget;
-    private club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.RangeHandle requestRange;
+    private K navigationKey;
+    private VirtualCollectionPosition<K> positioning;
     private boolean dataChanged;
     private List<T> published;
     private int measuredWidth = -1;
     private SceneGeometryView stableGeometry;
-    private boolean active, endRequested;
-    private long endIntent;
-    private K endTarget;
-    private club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.RangeHandle endRange;
+    private boolean active;
 
     VirtualCollectionController(ScenePageContext page, ReadableSignal<List<T>> source, Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<SceneVirtualList.Options> options,
@@ -112,6 +100,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
 
     void attach(SceneNode node) {
         root = node;
+        positioning = new VirtualCollectionPosition<>(runtime, root, heights);
         node.own(this::dispose);
         node.bind((ownerRuntime, self, owner) -> {
             active = true;
@@ -122,9 +111,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             return new BindingActivation() {
                 public void refresh() { observation.refresh(); }
                 public void close() {
-                    active = false; cancelRequest(); navigationKey = anchorKey = pendingAnchor = null;
-                    anchorPending = false; cancelEnd();
-                    anchorWithin = lastScrollIntent = 0; observation.close();
+                    active = false; navigationKey = null; positioning.reset();
+                    observation.close();
                     width = height = offset = 0; measured.clear(); measuredWidth = -1; stableGeometry = null;
                 }
             };
@@ -154,33 +142,28 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                     throw new IllegalArgumentException("集合业务键重复: " + root.id() + " / " + identity);
                 nextValues.put(identity, value); next.add(identity);
                 T before = values.get(identity);
-                if (!Objects.equals(before, value)) { beginAnchor(); heights.invalidate(identity); }
+                if (!Objects.equals(before, value)) { positioning.beginAnchor(offset); heights.invalidate(identity); }
             }
             dataChanged = !order.equals(next);
-            if (dataChanged) anchorPending = false;
+            if (dataChanged) positioning.dataReordered();
             values.clear(); values.putAll(nextValues); order = next;
             published = current;
         }
         if (changed || reset || gap != root.gap()) {
-            if (!dataChanged && (reset || gap != root.gap())) beginAnchor();
+            if (!dataChanged && (reset || gap != root.gap())) positioning.beginAnchor(offset);
             heights.reconcile(order, nextEstimate, root.gap(), reset);
             metrics = nextMetrics; estimate = nextEstimate; gap = root.gap(); measuredWidth = width; measuredCondition = nextCondition;
             if (conditionChanged) viewRevision.set(++revision);
             if (changed) logicalRevision.set(++logicalClock);
         }
-        if (requested != null && (!values.containsKey(requested) || !runtime.interactive(root)
-                || requestRange == null || !requestRange.active())) cancelRequest();
-        if (endRequested && (order.isEmpty() || !Objects.equals(endTarget, order.get(order.size() - 1))
-                || !runtime.interactive(root) || endRange == null || !endRange.active())) cancelEnd();
+        positioning.validate();
         Set<K> needed = new LinkedHashSet<>();
         int prefetch = policy.overscan >= 0 ? policy.overscan : height;
         int from = heights.at(Math.max(0L, (long) offset - prefetch));
         long end = (long) offset + height + prefetch;
         for (int i = from; i < heights.size() && heights.start(i) < end; i++) needed.add(heights.key(i));
         // 旧视口锚点在度量换代后仍须取得真实新行高，不能先被估算窗口淘汰。
-        if (anchorPending && pendingAnchor != null && values.containsKey(pendingAnchor)) needed.add(pendingAnchor);
-        if (endRequested) needed.add(endTarget);
-        if (requested != null) needed.add(requested);
+        positioning.retain(needed);
         if (navigationKey != null && values.containsKey(navigationKey)) needed.add(navigationKey);
         for (Row<T, K> row : rows.values()) {
             boolean retained = contains(row.node, pressed);
@@ -259,106 +242,55 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private void geometry(SceneGeometryView worldGeometry) {
         SceneGeometryView geometry = worldGeometry == null ? null : worldGeometry.asControl(root);
         if (!active || root.runtime() != runtime) return;
-        if (geometry == null) { stableGeometry = null; cancelRequest(); cancelEnd(); return; }
+        if (geometry == null) { stableGeometry = null; positioning.unavailable(); return; }
         SceneGeometryView.Entry view = geometry.get(root);
-        if (view == null) { cancelRequest(); cancelEnd(); return; }
-        if (requested != null && (requestRange == null || !requestRange.active() || !runtime.interactive(root))) cancelRequest();
+        if (view == null) { positioning.unavailable(); return; }
+        positioning.validate();
         int nextWidth = Math.max(0, view.box.width - root.padding() * 2);
         int nextHeight = Math.max(0, view.box.height - root.padding() * 2);
         int nextOffset = view.scrollOffset;
         long intent = runtime.scrollIntentRevision(root);
-        if (anchorPending && intent != pendingIntent) anchorPending = false;
-        if (endRequested && (intent != endIntent || endRange == null || !endRange.active() || !runtime.interactive(root))) cancelEnd();
-        if (nextWidth != width && !dataChanged) beginAnchor();
-        // 锚点以独立意图跨估算换代保存；范围限制不等于一次用户滚动。
-        boolean positionChanged = nextOffset != offset;
-        boolean changed = nextWidth != width || nextHeight != height || positionChanged || gap != root.gap();
+        positioning.observeIntent(intent);
+        if (nextWidth != width && !dataChanged) positioning.beginAnchor(offset);
+        boolean changed = nextWidth != width || nextHeight != height || nextOffset != offset || gap != root.gap();
         boolean corrected = false;
         for (Row<T, K> row : rows.values()) {
             Integer actual = measured.get(row.node);
             if (actual != null) corrected |= actual < 0 ? heights.omit(row.key) : heights.measure(row.key, actual);
         }
-        if (corrected && !dataChanged && intent == lastScrollIntent) beginAnchor();
+        if (corrected && !dataChanged && intent == positioning.observedIntent()) positioning.beginAnchor(offset);
         width = nextWidth; height = nextHeight; offset = nextOffset;
-        if (endRequested && !order.isEmpty()) {
-            // 校正只使用原ScrollPosition；尾行本次真实测量到齐后，等待总范围也结算到同代。
-            anchorPending = false;
-            runtime.correctScrollPosition(root, endIntent, view.scrollMaximum);
+        if (positioning.endPending()) {
+            // 先校正同一ScrollPosition，再判断该窗口及末行是否已取得同批真实事实。
+            positioning.correctEnd(view);
             offset = runtime.scrollOffset(root);
-            Row<T, K> last = rows.get(endTarget);
-            SceneGeometryView.Entry placed = last == null ? null : geometry.get(last.node);
-            boolean rangePrepared = true;
-            for (int i = heights.at(offset); i < heights.size() && heights.start(i) < (long)offset + height; i++)
-                rangePrepared &= rows.containsKey(heights.key(i)) && heights.known(heights.key(i));
-            boolean endVisible = placed != null
-                    ? (long)placed.box.y + placed.box.height + root.padding() <= (long)view.box.y + view.box.height
-                    : last != null && Integer.valueOf(-1).equals(measured.get(last.node));
-            if (!corrected && rangePrepared && endVisible && offset == view.scrollMaximum) {
-                cancelEnd(); changed = true;
-            }
-        } else if (requested != null) {
-            Row<T, K> row = rows.get(requested);
-            SceneGeometryView.Entry placed = row == null ? null : geometry.get(row.node);
-            if (placed != null) {
-                if (!requestIssued) {
-                    SceneNode target = focusRequest ? focusTarget.apply(row.node) : row.node;
-                    if (focusRequest && target != null && (!target.focusable() || !contains(row.node, target)
-                            || target.runtime() != runtime || !runtime.interactive(target))) target = null;
-                    if (target == null) { cancelRequest(); changed = true; }
-                    else {
-                        requestTarget = runtime.captureMount(target); requestIssued = true;
-                        if (focusRequest) runtime.focusRouter().navigateTo(requestTarget);
-                        else runtime.requestInputReveal(target);
-                    }
-                }
-                if (requestTarget != null) {
-                    SceneNode target = requestTarget.node();
-                    if (!requestTarget.active() || !runtime.interactive(target) || !contains(row.node, target)) {
-                        cancelRequest(); changed = true;
-                    } else {
-                        // focus以原实际目标完成，reveal以整行完成；和正式显露使用同一区域及尽力边界。
-                        LayoutBox region = runtime.domain().readOnly(() -> SceneGeometry.revealRegion(target, root, geometry));
-                        LayoutBox window = SceneGeometry.revealWindow(root, geometry);
-                        boolean reached = region != null && (region.width == 0 || region.height == 0
-                                || window.width == 0 || window.height == 0
-                                || SceneGeometry.revealDelta(region.y, region.height, window.y, window.height) == 0);
-                        boolean rangePrepared = !corrected;
-                        for (int i = heights.at(offset); i < heights.size() && heights.start(i) < (long)offset + height; i++)
-                            rangePrepared &= rows.containsKey(heights.key(i)) && heights.known(heights.key(i));
-                        // 首次显露后的邻行校正仍会移动目标，完成后不因用户滚动重发本请求。
-                        if (reached && rangePrepared) { cancelRequest(); changed = true; }
-                        else if (!reached) runtime.requestInputReveal(target);
-                    }
-                }
-            }
-        } else if (anchorPending && heights.known(pendingAnchor)) {
-            int position = heights.position(pendingAnchor);
-            if (position >= 0 && heights.height(position) > 0) {
-                long desired = heights.start(position) + Math.min(Math.max(0, pendingWithin), heights.height(position) - 1L);
-                if (desired <= Integer.MAX_VALUE && runtime.correctScrollPosition(root, pendingIntent, (int)desired))
-                    offset = runtime.scrollOffset(root);
-            }
-            anchorPending = false;
+            SceneNode last = rowNode(positioning.endKey());
+            changed |= positioning.finishEnd(geometry, last, Integer.valueOf(-1).equals(measured.get(last)),
+                    !corrected && rangePrepared(), offset);
+        } else if (positioning.revealPending()) {
+            SceneNode row = rowNode(positioning.revealKey());
+            changed |= positioning.advanceReveal(geometry, row, Integer.valueOf(-1).equals(measured.get(row)),
+                    !corrected && rangePrepared());
+        } else {
+            positioning.correctAnchor();
+            offset = runtime.scrollOffset(root);
         }
-        if (!anchorPending) {
-            int anchorIndex = heights.at(offset);
-            anchorKey = anchorIndex < heights.size() ? heights.key(anchorIndex) : null;
-            anchorWithin = anchorKey == null ? 0 : offset - heights.start(anchorIndex);
-        }
-        lastScrollIntent = runtime.scrollIntentRevision(root);
+        positioning.remember(offset);
         dataChanged = false;
         stableGeometry = corrected ? null : geometry;
         if (changed || corrected) viewRevision.set(++revision);
     }
 
-    private void beginAnchor() {
-        if (anchorPending || anchorKey == null || offset <= 0) return;
-        pendingAnchor = anchorKey; pendingWithin = anchorWithin;
-        pendingIntent = runtime.scrollIntentRevision(root); anchorPending = true;
+    private SceneNode rowNode(K key) {
+        Row<T, K> row = rows.get(key);
+        return row == null ? null : row.node;
     }
 
-    private void cancelRequest() { requested = null; requestRange = null; requestTarget = null; focusTarget = null; focusRequest = requestIssued = false; }
-    private void cancelEnd() { endRequested = false; endRange = null; endTarget = null; }
+    private boolean rangePrepared() {
+        for (int i = heights.at(offset); i < heights.size() && heights.start(i) < (long)offset + height; i++)
+            if (!rows.containsKey(heights.key(i)) || !heights.known(heights.key(i))) return false;
+        return true;
+    }
 
     private SceneNode firstFocusable(SceneNode node) {
         if (!runtime.interactive(node)) return null;
@@ -541,11 +473,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     @Override public void scrollPositionRequested(SceneNode node, SceneNode.Axis axis, int requested,
             SceneScrollViewport.Snapshot previous) {
         if (axis != SceneNode.Axis.COLUMN || !active) return;
-        if (requested >= previous.maximum && previous.maximum > 0 && !order.isEmpty()) {
-            endRequested = true; endIntent = runtime.scrollIntentRevision(root); endTarget = order.get(order.size() - 1);
-            endRange = runtime.focusRouter().captureRange(); anchorPending = false;
-            viewRevision.set(++revision);
-        } else cancelEnd();
+        positioning.scrollRequested(requested, previous);
+        if (positioning.endPending()) viewRevision.set(++revision);
     }
 
     boolean request(K identity, boolean focus) { return request(identity, focus, this::firstFocusable); }
@@ -554,10 +483,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         page.domain().checkWrite();
         Objects.requireNonNull(identity, "key");
         if (!active || !runtime.interactive(root) || !values.containsKey(identity)) return false;
-        cancelEnd();
-        requested = identity; requestRange = runtime.focusRouter().captureRange();
-        focusRequest = focus; this.focusTarget = Objects.requireNonNull(focusTarget, "焦点目标准备");
-        requestIssued = false; requestTarget = null; viewRevision.set(++revision);
+        positioning.request(identity, focus, focusTarget);
+        viewRevision.set(++revision);
         return true;
     }
 
@@ -565,6 +492,6 @@ final class VirtualCollectionController<T, K> implements SceneControl {
 
     private void dispose() {
         rows.clear(); values.clear(); measured.clear(); heights.clear(); order = Collections.emptyList();
-        published = null; requested = null;
+        published = null; positioning.reset();
     }
 }

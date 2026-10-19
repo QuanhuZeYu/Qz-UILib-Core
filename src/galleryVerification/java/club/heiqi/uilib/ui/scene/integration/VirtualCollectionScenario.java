@@ -55,6 +55,7 @@ public final class VirtualCollectionScenario extends TestApplication {
         final Map<Integer, SceneNode[]> nodes = new HashMap<>();
         final Map<Integer, club.heiqi.uilib.ui.scene.edit.SceneEditState> drafts = new HashMap<>();
         int submissions;
+        Runnable beforeBlur;
         ScenePageContext context;
         Signal<List<Item>> items;
         Signal<List<SceneNode>> layers;
@@ -67,6 +68,9 @@ public final class VirtualCollectionScenario extends TestApplication {
         Page(int count, int firstFocusable, boolean header) { this(count, firstFocusable, header, false); }
         Page(int count, int firstFocusable, boolean header, boolean editors) { this(count, firstFocusable, header, editors, false); }
         Page(int count, int firstFocusable, boolean header, boolean editors, boolean smallAction) {
+            this(count, firstFocusable, header, editors, smallAction, false);
+        }
+        Page(int count, int firstFocusable, boolean header, boolean editors, boolean smallAction, boolean blurProbe) {
             host.width = 200; host.height = 100;
             session = ScenePageSession.open(domain, host, host, page -> {
                 context = page;
@@ -99,6 +103,22 @@ public final class VirtualCollectionScenario extends TestApplication {
                 }, () -> new SceneVirtualList.Options().estimatedRowHeight(20).overscan(0));
                 enabled = domain.signal(true); list.node().bind(NodeBinding.value(enabled, SceneNode::enabled));
                 before = new SceneNode().size(Size.fill(1), Size.fixed(10)).text("before").focusable(header);
+                if (blurProbe) before.control(new club.heiqi.uilib.ui.scene.control.SceneControl() {
+                    public club.heiqi.uilib.ui.scene.layout.MeasuredSize measure(SceneNode node,
+                            club.heiqi.uilib.ui.scene.layout.Constraints constraints,
+                            club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text) {
+                        return new club.heiqi.uilib.ui.scene.layout.MeasuredSize(1, 1);
+                    }
+                    public club.heiqi.uilib.ui.scene.layout.ChildPlacements arrange(SceneNode node, LayoutBox box,
+                            club.heiqi.uilib.ui.scene.layout.SceneChildMeasurer children) {
+                        return new club.heiqi.uilib.ui.scene.layout.ChildPlacements(java.util.Collections.emptyList());
+                    }
+                    public void paint(SceneNode node, SceneGeometryView geometry,
+                            club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder target) {}
+                    public void focusChanged(SceneNode node, boolean focused, boolean eligible) {
+                        if (!focused && beforeBlur != null) beforeBlur.run();
+                    }
+                });
                 after = new SceneNode().size(Size.fill(1), Size.fixed(10)).text("after").focusable(true);
                 layers = domain.signal(java.util.Collections.emptyList());
                 SceneNode layerHost = new SceneNode().size(Size.fixed(0), Size.fixed(0)).bind(NodeBinding.ownedChildren(layers));
@@ -146,6 +166,9 @@ public final class VirtualCollectionScenario extends TestApplication {
         scenario("方向跨行后同批文字进入实际新草稿", this::directionalEditing);
         scenario("行内小动作显露后结束请求且不追随用户滚动", this::smallActionFocus);
         scenario("无合法焦点的显式行请求结束有限准备", this::noFocusableRequest);
+        scenario("同步失焦回调替换行请求后按新键完成", this::reentrantRequest);
+        scenario("折叠行焦点请求结束有限准备", () -> hiddenRequest(true));
+        scenario("折叠行显露请求结束有限准备", () -> hiddenRequest(false));
         scenario("列表语义总数与位置来自逻辑来源且局部角色优先", this::semanticCollection);
     }
 
@@ -240,6 +263,43 @@ public final class VirtualCollectionScenario extends TestApplication {
         page.domain.execute(() -> page.list.focus(20)); page.session.frame();
         require(page.focus() == page.before, "无合法目标的focus请求创建了备用焦点");
         require(page.nodes.get(20)[0].runtime() == null, "没有可聚焦项的行被未结束请求永久保留");
+    }
+
+    private void reentrantRequest() {
+        Page page = new Page(1000, 0, true, false, false, true);
+        page.beforeBlur = () -> require(page.list.focus(30), "同步回调的新请求被拒绝");
+        page.domain.execute(() -> require(page.list.focus(20), "原行请求被拒绝"));
+        page.session.frame();
+        require(page.focus() == page.nodes.get(30)[1], "失焦回调替换的新键没有完成聚焦");
+        page.scroll(0);
+        require(page.entry(page.list.node()).scrollOffset == 0, "被替代的旧请求仍追随滚动");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void hiddenRequest(boolean focus) {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        Host host = new Host();
+        SceneVirtualList<Integer, Integer>[] list = new SceneVirtualList[1];
+        Map<Integer, SceneNode> rows = new HashMap<>();
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            List<Integer> values = new ArrayList<>();
+            for (int i = 0; i < 1000; i++) values.add(i);
+            list[0] = SceneVirtualList.create(page, domain.signal(values), value -> value, value -> {
+                SceneNode row = new SceneNode().size(Size.fill(1), Size.fixed(20))
+                        .visible(value.get() != 20).focusable(true);
+                rows.put(value.get(), row);
+                return row;
+            }, () -> new SceneVirtualList.Options().estimatedRowHeight(20).overscan(0));
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1))
+                    .add(new SceneNode().size(Size.fill(1), Size.fixed(10)).focusable(true))
+                    .add(list[0].node()));
+        });
+        onClose(session::close);
+        session.frame();
+        domain.execute(() -> require(focus ? list[0].focus(20) : list[0].reveal(20), "已有业务键的请求未被接受"));
+        session.frame();
+        require(rows.containsKey(20), "显式目标没有沿正式入口准备");
+        require(rows.get(20).runtime() == null, "折叠行的请求未结束，屏外行被永久保留: focus=" + focus);
     }
 
     private void directionalEditing() {
