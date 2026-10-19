@@ -4,12 +4,18 @@ buildscript {
     repositories { mavenCentral(); gradlePluginPortal() }
     dependencies { classpath 'com.gradleup.shadow:shadow-gradle-plugin:9.2.2' }
 }
-plugins { id 'java-library'; id 'maven-publish' }
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'com.vanniktech.maven.publish.base' version '0.37.0'
+}
 apply plugin: 'com.gradleup.shadow'
+apply plugin: 'signing'
 
-group = 'club.heiqi.uilib'
 // 项目属性同时接收原 -P、工程声明和工作站按提交记录的本地开发组合。
-version = property('uilibVersion')
+version = findProperty('uilibVersion') ?: '5.0.0-beta1'
+// 旧版调用仍使用历史坐标；新系列默认使用已验证的 Central namespace。
+group = findProperty('uilibGroup') ?: (version.toString().tokenize('.')[0].toInteger() >= 5 ? 'asia.quanhuzeyu.uilib' : 'club.heiqi.uilib')
 // 原RFG从此公共镜像取得ICU；保留相同坐标和缓存来源，仓库本身不引入MC依赖。
 repositories {
     maven { url = uri('https://libraries.minecraft.net'); content { includeModule('com.ibm.icu', 'icu4j') } }
@@ -64,13 +70,17 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'; options.compilerArgs += ['-proc:none']
     options.release = name == 'compileJava' ? 21 : 8
 }
-tasks.named('jar', Jar) { archiveClassifier = 'development' }
+tasks.named('jar', Jar) {
+    archiveClassifier = 'development'
+    from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
+}
 tasks.named('shadowJar') { enabled = false }
 def contentPackages = ['com.ibm.icu', 'org.yaml.snakeyaml', 'org.commonmark', 'org.jsoup', 'org.nibor.autolink']
 def coreArtifact = { String taskName, String classifier, String sourceName ->
     tasks.register(taskName, ShadowJar) {
         group = 'build'; archiveBaseName = 'qz_uilib'; archiveClassifier = classifier
         from sourceSets[sourceName].output
+        from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
         configurations = [project.configurations.coreContent]
         enableAutoRelocation = false
         contentPackages.each { relocate it, 'club.heiqi.uilib.shadow.' + it }
@@ -82,6 +92,7 @@ def coreJar = coreArtifact('coreJar', 'core', 'main')
 def coreLegacyJar = coreArtifact('coreLegacyJar', 'core-java8', 'legacy')
 def legacyDevelopmentJar = tasks.register('legacyDevelopmentJar', Jar) {
     archiveClassifier = 'development-java8'; from sourceSets.legacy.output
+    from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
 }
 def galleryJar = tasks.register('galleryJar', Jar) {
     group = 'verification'; archiveClassifier = 'gallery'; from sourceSets.gallery.output
@@ -92,6 +103,45 @@ def verificationJar = tasks.register('verificationJar', Jar) {
     from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.galleryVerification.output
 }
 tasks.named('assemble') { dependsOn coreJar, coreLegacyJar, legacyDevelopmentJar }
+tasks.named('sourcesJar') { from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' } }
+def gallerySourcesJar = tasks.register('gallerySourcesJar', Jar) {
+    archiveBaseName = 'gallery'; archiveClassifier = 'sources'; from sourceSets.gallery.allSource
+    from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
+}
+def verificationSourcesJar = tasks.register('verificationSourcesJar', Jar) {
+    archiveBaseName = 'core-verification'; archiveClassifier = 'sources'
+    from sourceSets.testSupport.allSource, sourceSets.testHost.allSource, sourceSets.galleryVerification.allSource
+    from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
+}
+def coreJavadoc = tasks.register('coreJavadoc', Javadoc) {
+    source = sourceSets.main.allJava
+    classpath = sourceSets.main.compileClasspath
+    destinationDir = layout.buildDirectory.dir('docs/javadoc/' + name).get().asFile
+    options.encoding = 'UTF-8'; options.addStringOption('Xdoclint:none', '-quiet')
+}
+def galleryJavadoc = tasks.register('galleryJavadoc', Javadoc) {
+    source = sourceSets.gallery.allJava
+    classpath = sourceSets.gallery.compileClasspath
+    dependsOn sourceSets.gallery.classesTaskName
+    destinationDir = layout.buildDirectory.dir('docs/javadoc/' + name).get().asFile
+    options.encoding = 'UTF-8'; options.addStringOption('Xdoclint:none', '-quiet')
+}
+def verificationJavadoc = tasks.register('verificationJavadoc', Javadoc) {
+    source sourceSets.testSupport.allJava, sourceSets.testHost.allJava, sourceSets.galleryVerification.allJava
+    classpath = sourceSets.testSupport.compileClasspath + sourceSets.testHost.compileClasspath + sourceSets.galleryVerification.compileClasspath
+    dependsOn sourceSets.testSupport.classesTaskName, sourceSets.testHost.classesTaskName, sourceSets.galleryVerification.classesTaskName
+    destinationDir = layout.buildDirectory.dir('docs/javadoc/' + name).get().asFile
+    options.encoding = 'UTF-8'; options.addStringOption('Xdoclint:none', '-quiet')
+}
+def javadocJar = { String taskName, String baseName, javadocTask ->
+    tasks.register(taskName, Jar) {
+        archiveBaseName = baseName; archiveClassifier = 'javadoc'; from javadocTask
+        from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
+    }
+}
+def coreJavadocJar = javadocJar('coreJavadocJar', 'Qz-UILib-Core', coreJavadoc)
+def galleryJavadocJar = javadocJar('galleryJavadocJar', 'gallery', galleryJavadoc)
+def verificationJavadocJar = javadocJar('verificationJavadocJar', 'core-verification', verificationJavadoc)
 // 核心断言归广场应用；Gradle 的空 JUnit 入口不参与 check。
 tasks.named('test', Test) { enabled = false; group = null }
 
@@ -132,6 +182,31 @@ def galleryChecks = [8, 21].collect { target ->
 }
 tasks.named('check') { setDependsOn(galleryChecks) }
 
+// Central 与 Release Maven ZIP 复用 POM 元数据；测试消费者只随 ZIP 分发。
+def pomMetadata = { pom, String artifactName, String description ->
+    pom.name.set('Qz-UILib ' + artifactName)
+    pom.description.set(description)
+    pom.url.set('https://github.com/QuanhuZeYu/Qz-UILib-Core')
+    pom.licenses {
+        license {
+            delegate.name.set('MIT License')
+            url.set('https://opensource.org/licenses/MIT')
+            distribution.set('repo')
+        }
+    }
+    pom.developers {
+        developer {
+            delegate.id.set('QuanhuZeYu')
+            delegate.name.set('QuanhuZeYu')
+        }
+    }
+    pom.scm {
+        connection.set('scm:git:https://github.com/QuanhuZeYu/Qz-UILib-Core.git')
+        developerConnection.set('scm:git:ssh://git@github.com/QuanhuZeYu/Qz-UILib-Core.git')
+        url.set('https://github.com/QuanhuZeYu/Qz-UILib-Core')
+    }
+}
+def releaseStage = layout.buildDirectory.dir('release/maven')
 publishing {
     publications {
         core(MavenPublication) {
@@ -140,9 +215,21 @@ publishing {
             artifact(tasks.named('jar')) { classifier = 'development' }
             artifact(legacyDevelopmentJar) { classifier = 'development-java8' }
             artifact(tasks.named('sourcesJar')) { classifier = 'sources' }
+            artifact(coreJavadocJar) { classifier = 'javadoc' }
+            pom { pomMetadata(delegate, 'core', '无 Minecraft 前提的 UILib 核心；Java21 与 Java8 正式产物、开发与源码。') }
         }
-        gallery(MavenPublication) { artifactId = 'gallery'; artifact(galleryJar) { classifier = null } }
-        verification(MavenPublication) { artifactId = 'core-verification'; artifact(verificationJar) { classifier = null } }
+        gallery(MavenPublication) {
+            artifactId = 'gallery'; artifact(galleryJar) { classifier = null }
+            artifact(gallerySourcesJar) { classifier = 'sources' }
+            artifact(galleryJavadocJar) { classifier = 'javadoc' }
+            pom { pomMetadata(delegate, 'gallery', 'UILib 共享广场测试消费者，不进入正式发行；仅随 Release Maven ZIP 供 CI 消费。') }
+        }
+        verification(MavenPublication) {
+            artifactId = 'core-verification'; artifact(verificationJar) { classifier = null }
+            artifact(verificationSourcesJar) { classifier = 'sources' }
+            artifact(verificationJavadocJar) { classifier = 'javadoc' }
+            pom { pomMetadata(delegate, 'core-verification', 'UILib 核心验证测试消费者，不进入正式发行；仅随 Release Maven ZIP 供 CI 消费。') }
+        }
     }
     repositories {
         maven {
@@ -150,9 +237,44 @@ publishing {
             url = uri(findProperty('uilibRepository') ?: layout.buildDirectory.dir('repository').get().asFile)
             if (url.scheme != 'file') throw new GradleException('Workspace仅写入本地Maven目录')
         }
+        maven {
+            name = 'ReleaseStage'
+            url = uri(releaseStage.get().asFile)
+        }
     }
+}
+// Central 与本地 ZIP 共用这一套签名入口；没有密钥时本地 build/releaseAssets 保持可用。
+def signingInMemoryKey = findProperty('signingInMemoryKey') ?: findProperty('signingKey') ?: System.getenv('ORG_GRADLE_PROJECT_signingInMemoryKey') ?: System.getenv('SIGNING_KEY')
+def signingInMemoryKeyId = findProperty('signingInMemoryKeyId') ?: System.getenv('ORG_GRADLE_PROJECT_signingInMemoryKeyId')
+def signingInMemoryKeyPassword = findProperty('signingInMemoryKeyPassword') ?: findProperty('signingPassword') ?: System.getenv('ORG_GRADLE_PROJECT_signingInMemoryKeyPassword') ?: System.getenv('SIGNING_PASSWORD') ?: ''
+if (signingInMemoryKey) {
+    signing {
+        useInMemoryPgpKeys(signingInMemoryKeyId as String, signingInMemoryKey as String, signingInMemoryKeyPassword as String)
+        sign publishing.publications
+    }
+}
+mavenPublishing { publishToMavenCentral(false) }
+tasks.withType(PublishToMavenRepository).matching { it.repository?.name == 'mavenCentral' }.configureEach {
+    // 只约束 Central，Workspace 与 ReleaseStage 仍保留完整测试消费者。
+    onlyIf('Central 只发布生产 publication') { publication.name in ['core'] }
+    doFirst { if (!signingInMemoryKey) throw new GradleException('Maven Central 发布缺少 signingInMemoryKey（或 SIGNING_KEY）') }
 }
 tasks.register('publishWorkspace') {
     group = 'publishing'; description = '把明确版本的核心、开发与测试消费者写入本地Maven仓'
-    dependsOn tasks.withType(PublishToMavenRepository).matching { it.repository.name == 'Workspace' }
+    dependsOn tasks.withType(PublishToMavenRepository).matching { it.repository?.name == 'Workspace' }
+}
+// 发布资产只取本次发布阶段目录，避免 build/libs 的旧版本残留混入。
+def prepareReleaseStage = tasks.register('prepareReleaseStage', Delete) {
+    delete releaseStage
+}
+tasks.withType(PublishToMavenRepository).matching { it.repository?.name == 'ReleaseStage' }.configureEach {
+    dependsOn prepareReleaseStage
+}
+tasks.register('releaseAssets', Zip) {
+    group = 'publishing'; description = '把本次版本的 Maven 布局写成固定名发布 ZIP'
+    dependsOn tasks.withType(PublishToMavenRepository).matching { it.repository?.name == 'ReleaseStage' }
+    archiveFileName = "qz-uilib-core-${version}-maven.zip"
+    destinationDirectory = layout.buildDirectory.dir('release')
+    from releaseStage
+    if (signingInMemoryKey) dependsOn tasks.withType(org.gradle.plugins.signing.Sign)
 }

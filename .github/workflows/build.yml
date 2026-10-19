@@ -7,6 +7,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -16,5 +18,11 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew build publishWorkspace --no-daemon --console=plain
+      - name: 完整构建与发布资产
         shell: bash
+        run: ./gradlew build releaseAssets --no-daemon --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-maven-zip
+          path: build/release/qz-uilib-core-*-maven.zip
+          if-no-files-found: error

@@ -307,6 +307,10 @@ public final class CoreArtifactScenario extends TestApplication {
             require(
                     jar.getJarEntry("assets/qz_uilib/licenses/Jsoup-1.19.1-LICENSE.txt") != null,
                     "核心HTML解析许可缺失");
+            require(
+                    jar.getJarEntry("assets/qz_uilib/licenses/SnakeYAML-2.4-LICENSE.txt") != null,
+                    "核心YAML解析许可缺失");
+            require(jar.getJarEntry("LICENSE") != null, "核心MIT根许可缺失");
             boolean config = false, unicode = false, yaml = false;
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
