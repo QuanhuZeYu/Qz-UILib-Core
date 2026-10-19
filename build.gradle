@@ -96,11 +96,20 @@ def legacyDevelopmentJar = tasks.register('legacyDevelopmentJar', Jar) {
 }
 def galleryJar = tasks.register('galleryJar', Jar) {
     group = 'verification'; archiveClassifier = 'gallery'; from sourceSets.gallery.output
+    from('LICENSE')
+}
+// 验证附件可被独立取用；许可复用生产资源原文，不依赖 Core Jar 恰好同时交付。
+def verificationNotices = copySpec {
+    from('src/core/resources') {
+        include 'assets/qz_uilib/unicode/emoji17/LICENSE.txt', 'assets/qz_uilib/math/catalog/LICENSE-KaTeX.txt'
+    }
+    from('src/galleryVerification/THIRD-PARTY-NOTICES.md') { into 'META-INF' }
 }
 // 其他仓只消费测试消费者，不能把它加入正式运行时或正式发行。
 def verificationJar = tasks.register('verificationJar', Jar) {
     group = 'verification'; archiveClassifier = 'verification'
     from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.galleryVerification.output
+    from('LICENSE'); with verificationNotices
 }
 tasks.named('assemble') { dependsOn coreJar, coreLegacyJar, legacyDevelopmentJar }
 tasks.named('sourcesJar') { from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' } }
@@ -111,7 +120,7 @@ def gallerySourcesJar = tasks.register('gallerySourcesJar', Jar) {
 def verificationSourcesJar = tasks.register('verificationSourcesJar', Jar) {
     archiveBaseName = 'core-verification'; archiveClassifier = 'sources'
     from sourceSets.testSupport.allSource, sourceSets.testHost.allSource, sourceSets.galleryVerification.allSource
-    from('LICENSE'); from('THIRD-PARTY-NOTICES.md') { into 'META-INF' }
+    from('LICENSE'); with verificationNotices
 }
 def coreJavadoc = tasks.register('coreJavadoc', Javadoc) {
     source = sourceSets.main.allJava

@@ -1,12 +1,15 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/google/fonts",
-  "license": "SIL Open Font License 1.1",
+  "license": "Apache-2.0 AND OFL-1.1",
+  "licenseDetails": "SOURCE.md",
   "purpose": "数学 text/verb/tag 模式的显式具名字体候选；不加入普通正文默认链，不替换 STIXTwoMath",
   "families": [
     {
       "alias": "math-text-roman",
       "family": "Noto Serif",
+      "license": "Apache-2.0",
+      "licenseFile": "roman/LICENSE-Apache-2.0.txt",
       "commit": "79229f903980e9ce7daa9921d707f82c7994d7dc",
       "repositoryPath": "ofl/notoserif",
       "members": [
@@ -73,6 +76,8 @@
     {
       "alias": "math-text-sans",
       "family": "Noto Sans",
+      "license": "Apache-2.0",
+      "licenseFile": "sans/LICENSE-Apache-2.0.txt",
       "commit": "63c795cbafd88bd4370b6f15f0d700acfdc345d4",
       "repositoryPath": "ofl/notosans",
       "members": [
@@ -139,6 +144,8 @@
     {
       "alias": "math-text-mono",
       "family": "IBM Plex Mono",
+      "license": "OFL-1.1",
+      "licenseFile": "mono/OFL.txt",
       "commit": "8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5",
       "repositoryPath": "ofl/ibmplexmono",
       "members": [

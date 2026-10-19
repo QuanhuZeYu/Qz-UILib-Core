@@ -1,0 +1,14 @@
+SnakeYAML 2.4 — Qz-UILib 修改通知
+
+修改者：QuanhuZeYu，2026。
+
+正式 Core 与 core-java8 Jar 中下列文件由 Shadow 重写：
+  原始路径：org/yaml/snakeyaml/**/*.class
+  分发路径：club/heiqi/uilib/shadow/org/yaml/snakeyaml/**/*.class
+
+修改范围：将包名 org.yaml.snakeyaml 及其字节码中的类型引用重定位为
+club.heiqi.uilib.shadow.org.yaml.snakeyaml，以隔离宿主其他版本的依赖。
+YAML 算法与上游源文件未作修改。development 与源码产物不执行此重定位。
+
+原版权与 Apache License 2.0 全文见同目录 SnakeYAML-2.4-LICENSE.txt。
+本通知明确适用于上述正式产物中所有被重定位的 SnakeYAML 对象文件。

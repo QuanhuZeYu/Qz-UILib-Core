@@ -10,7 +10,7 @@ import java.util.Objects;
 
 /**
  * 数学文字模式的真实正文族；aliases 只选择候选，整形与光栅继续由 FontTextService 完成。 每个名称以一个中性字族候选为首；fallback
- * 只来自公开工厂明确传入的配置列表。 固定来源、字节 SHA256、完整 OFL 与上游元数据见同目录资源 manifest.json。
+ * 只来自公开工厂明确传入的配置列表。 固定来源、字节 SHA256、各自许可与上游元数据见同目录资源 manifest.json。
  */
 public final class MathTextFontSources {
     public static final String ROMAN = "math-text-roman";
