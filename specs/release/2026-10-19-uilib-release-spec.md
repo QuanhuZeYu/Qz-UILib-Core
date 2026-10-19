@@ -16,7 +16,7 @@ Core 交付 Java21、Java8 正式 Jar、开发与源码产物；gallery 和 core
 
 ## 分发与依赖
 
-GitHub Release assets 提供下载及离线产物；用户已授权接通 Maven Central，由工作站 agent 管理命名空间、构建配置与发布状态。Central 的账号、域名验证及签名准备就绪后作为公开 Maven 渠道，尚未实际发布的坐标不得宣称可解析。Core 与 Platform 使用已有 publishWorkspace 生成标准 Maven 布局的版本 ZIP，固定资产名分别为 qz-uilib-core-<version>-maven.zip、qz-uilib-platform-<version>-maven.zip；ZIP 根目录直接是 asia/quanhuzeyu/uilib/...，不额外嵌套仓名。保留现有 -PuilibVersion 和 -PuilibRepository 用法、含义及消费既有 Maven URL 的能力；publishWorkspace 仍只写本地目录。
+GitHub Release assets 提供下载及离线产物；用户已授权接通 Maven Central，由工作站 agent 管理命名空间、构建配置与发布状态。Central 的账号、域名验证及签名准备就绪后作为公开 Maven 渠道，尚未实际发布的坐标不得宣称可解析。Core 与 Platform 使用已有 publishWorkspace 生成标准 Maven 布局的版本 ZIP，固定资产名分别为 qz-uilib-core-<version>-maven.zip、qz-uilib-platform-<version>-maven.zip；ZIP 根目录直接是 asia/quanhuzeyu/uilib/...，不额外嵌套仓名。Core 普通 CI 另提供 core-jars artifact，包含 qz-uilib-core-<version>.jar（Java21）与 qz-uilib-core-<version>-java8.jar；Release 也将这两个正式 Jar 作为独立附件提供，原 core-maven-zip artifact 与 Maven ZIP 保留。保留现有 -PuilibVersion 和 -PuilibRepository 用法、含义及消费既有 Maven URL 的能力；publishWorkspace 仍只写本地目录。
 
 Platform 的独立 CI 下载同版本 Core 的 Maven ZIP，Minecraft 下载同版本 Core 与 Platform ZIP，解到同一本地 Maven 目录后按原接口构建。下载使用明确仓名、tag 和唯一资产名；上游缺失即报告所需发布顺序，不读取工作站、邻仓源码/classes/build 或私有 submodule。发布顺序为 Core → Platform → Minecraft。构建产物选取来自明确任务输出，不从可能含旧版本的 build/libs 无差别发布。
 

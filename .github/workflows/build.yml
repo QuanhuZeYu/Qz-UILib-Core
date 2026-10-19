@@ -20,7 +20,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: 完整构建与发布资产
         shell: bash
-        run: ./gradlew build releaseAssets --no-daemon --console=plain
+        run: |
+          set -euo pipefail
+          ./gradlew build releaseAssets --no-daemon --console=plain
+          VERSION="$(sed -n 's/^uilibVersion=//p' gradle.properties | tr -d '\r')"
+          cp "build/libs/qz_uilib-$VERSION-core.jar" "build/release/qz-uilib-core-$VERSION.jar"
+          cp "build/libs/qz_uilib-$VERSION-core-java8.jar" "build/release/qz-uilib-core-$VERSION-java8.jar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-jars
+          path: build/release/qz-uilib-core-*.jar
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: core-maven-zip

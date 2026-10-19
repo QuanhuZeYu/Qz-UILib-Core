@@ -13,10 +13,19 @@ function fail(message) {
     process.exit(1);
 }
 
+function options(name) {
+    const values = [];
+    for (let index = 2; index < process.argv.length; index++) {
+        if (process.argv[index] !== '--' + name) continue;
+        if (index + 1 >= process.argv.length || process.argv[index + 1].startsWith('--')) fail('缺少 --' + name + ' 的值');
+        values.push(process.argv[index + 1]);
+    }
+    if (!values.length) fail('缺少 --' + name);
+    return values;
+}
+
 function option(name) {
-    const index = process.argv.indexOf('--' + name);
-    if (index < 0 || index + 1 >= process.argv.length) fail('缺少 --' + name);
-    return process.argv[index + 1];
+    return options(name)[0];
 }
 
 // 本地验证可用 QZ_GH_BIN 指向替代 gh 命令（JSON 数组）；生产默认使用 gh。
@@ -31,7 +40,7 @@ const repo = option('repo');
 const tag = option('tag');
 const version = option('version');
 const title = option('title');
-const asset = option('asset');
+const assets = options('asset');
 const changelog = option('changelog');
 const commit = option('commit');
 const runUrl = option('run-url');
@@ -41,7 +50,7 @@ const tagPattern = /^v?\d+\.\d+\.\d+(?:[.-](alpha|beta|rc)[.-]?\d+)?$/;
 const tagMatch = tagPattern.exec(tag);
 if (!tagMatch) fail('tag 格式无效：' + tag);
 if (tag.replace(/^v/, '') !== version) fail('tag ' + tag + ' 与版本 ' + version + ' 不一致');
-if (!existsSync(asset)) fail('构建资产不存在：' + asset);
+for (const asset of assets) if (!existsSync(asset)) fail('构建资产不存在：' + asset);
 if (!existsSync(changelog)) fail('静态说明不存在：' + changelog);
 
 const prerelease = Boolean(tagMatch[1]);
@@ -58,7 +67,7 @@ const releaseBody = [
     '- 提交：' + tick + commit + tick,
     '- Actions 运行：' + runUrl,
     '- 构建范围：' + scope,
-    '- 发布资产：' + tick + basename(asset) + tick + '（Maven 仓库布局，ZIP 根目录为本次发布的 Maven group 路径）',
+    '- 发布资产：' + assets.map(asset => tick + basename(asset) + tick).join('、'),
     ''
 ].join('\n');
 
@@ -84,9 +93,9 @@ try {
         console.log('Release 已存在，更新同名资产：' + tag);
     }
 
-    const upload = gh(['release', 'upload', tag, asset, '--repo', repo, '--clobber']);
+    const upload = gh(['release', 'upload', tag, ...assets, '--repo', repo, '--clobber']);
     if (upload.status !== 0) fail('上传资产失败：' + (upload.stderr || '').trim());
-    console.log('已上传资产：' + basename(asset));
+    console.log('已上传资产：' + assets.map(asset => basename(asset)).join('、'));
 
     const edit = gh(['release', 'edit', tag, '--repo', repo, '--title', title,
         '--notes-file', bodyPath, '--prerelease=' + prerelease, '--latest=' + (!prerelease), '--draft=false']);
