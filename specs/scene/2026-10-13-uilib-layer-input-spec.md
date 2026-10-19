@@ -80,5 +80,5 @@ Tab/Shift+Tab 保持有效范围中的逻辑声明顺序，跳过 PASSIVE 与呈
 | 隐藏 PASSIVE 中声明 modal | 可定位 layer/modal 的合法性诊断 |
 | 正式 Gallery 页面片段与 null-parent coreJar payload | 真实打开、frame、pointer 发布业务值；Policy/create 类型来自 coreJar，关闭后外部策略仍有效 |
 
-通过 layerInputScenario、pointerInputScenario、focusScopeScenario、focusRevealScenario、escapeInputScenario、dynamicStructureScenario、galleryScenario、coreArtifactScenario 核对注入 Core 行为；Gallery 复用正式共享声明与旅程。注入组字只验证目标隔离，不外推原生输入法、MC 或 GPU。
+通过测试广场的“指针与焦点”“状态与生命周期”“呈现与检查”“正式产物隔离”等模块及 Platform 的统一广场验证核对注入 Core 行为；页面与命令行入口共用检查目录，Gallery 复用正式共享声明与旅程。注入组字只验证目标隔离，不外推原生输入法、MC 或 GPU。
 

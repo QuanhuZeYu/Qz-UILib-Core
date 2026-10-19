@@ -14,10 +14,6 @@ import java.util.List;
 final class MailRowSurface extends MailSurface {
     private final ReadableSignal<MailPalette> palette;
     private final ReadableSignal<Boolean> checked,read,opened;
-    private final MailMotion actionMotion=new MailMotion();
-    private int actionOpacity;
-    int actionColor(int rgb) {return (actionOpacity<<24)|(rgb&0xffffff);}
-    @Override public long nextPaintNanos(SceneNode n) {return actionMotion.nextPaintNanos();}
     MailRowSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<MailPalette> palette,
             ReadableSignal<Boolean> checked, ReadableSignal<Boolean> read, ReadableSignal<Boolean> opened) {
         super(theme,() -> 0x00000000,0);this.palette=palette;this.checked=checked;this.read=read;this.opened=opened;
@@ -33,10 +29,6 @@ final class MailRowSurface extends MailSurface {
         boolean pressed=false;
         for(SceneNode child:n.children())if(n.runtime().pointerRouter().pressed(child)){pressed=true;break;}
         if(pressed)background=checked.get()?p.selectedPressed:p.pressed;
-        SceneNode focus=n.runtime().focusRouter().focused().get();
-        boolean keyboardFocus=belongs(focus,n)&&n.runtime().focusRouter().focusVisible(focus);
-        boolean active=belongs(n.runtime().pointerRouter().hovered(g),n)||keyboardFocus;
-        actionOpacity=actionMotion.opacity(active,keyboardFocus?0:150000000L);
         target.add(PaintCommand.rect(e.box,e.clip,background));
         if(opened.get())target.add(PaintCommand.rect(new LayoutBox(e.box.x,e.box.y,3,e.box.height),e.clip,p.accent));
         target.add(PaintCommand.rect(new LayoutBox(e.box.x,e.box.y+e.box.height-1,e.box.width,1),e.clip,

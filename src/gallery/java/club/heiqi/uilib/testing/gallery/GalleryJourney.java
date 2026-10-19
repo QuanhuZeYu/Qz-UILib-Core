@@ -41,6 +41,28 @@ public final class GalleryJourney {
         mailbox(driver);
         click(driver,"场景概览");
     }
+    /** 从真实目录逐页进入并返回，覆盖嵌套 FILL、有限集合和保留页面的窗口变化。 */
+    public static void visitAll(Driver driver) {
+        for (int[] viewport : new int[][] {{1400, 900}, {2560, 1480}, {480, 900}}) {
+            require(driver.resize(viewport[0], viewport[1]), "目录验证驱动必须支持无窗口视口变化");
+            driver.frame();
+            for (TestGallery.Page page : TestGallery.Page.values()) {
+                if (page == TestGallery.Page.HOME) continue;
+                click(driver, "打开" + page.title);
+                driver.frame();
+                require(!driver.paint().commands().isEmpty(), "页面没有实际绘制计划：" + page);
+                for (SceneGeometryView.Entry entry : driver.geometry().ordered()) {
+                    require(entry.box.width >= 0 && entry.box.height >= 0,
+                            "页面出现负尺寸：" + page + " " + entry.box);
+                }
+                String back = page == TestGallery.Page.SETTINGS ? "返回"
+                        : page == TestGallery.Page.MAILBOX ? "场景概览" : "返回场景概览";
+                click(driver, back);
+                require(action(driver, "打开收件箱") || contains(driver, "探索场景"), "页面未返回同一目录：" + page);
+            }
+        }
+    }
+
     private static void settings(Driver driver) {
         go(driver,TestGallery.Page.SETTINGS);
         require(text(driver,"外观")&&action(driver,"管理字体来源")&&!action(driver,"下移")&&text(driver,"已保存"),"配置案例未引用正式设置页面");
@@ -195,63 +217,49 @@ public final class GalleryJourney {
                         c -> c.kind == PaintCommand.Kind.TEXT && value.equals(c.text.logicalText));
     }
 
+    private static SceneGeometryView.Entry actionTarget(Driver driver, String value) {
+        return driver.geometry().ordered().stream()
+                .filter(e -> e.node.clickAction() != null && value.equals(e.node.text())
+                        || e.text != null && value.equals(e.text.logicalText))
+                .findFirst().orElse(null);
+    }
+
     private static void click(Driver driver, String value) {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            SceneGeometryView.Entry target =
-                    driver.geometry().ordered().stream()
-                            .filter(e -> e.node.clickAction()!=null && value.equals(e.node.text())
-                                    || e.text != null && value.equals(e.text.logicalText))
-                            .findFirst()
-                            .orElse(null);
-            if (target != null && visible(target)) break;
-            club.heiqi.uilib.ui.scene.layout.LayoutBox viewport = driver.geometry().viewport();
-            // 内容充实时目标可能在已滚动页面上方，仍走宿主正式滚轮恢复可见范围。
-            int delta =
-                    target != null
-                                    && target.box.y
-                                            < (target.clip == null ? viewport.y : target.clip.y)
-                            ? 6
-                            : -6;
-            club.heiqi.uilib.ui.scene.node.SceneNode parent = target == null ? null : target.node.parent();
+        SceneGeometryView.Entry target;
+        for (;;) {
+            target = actionTarget(driver, value);
+            require(target != null, "找不到输入目标：" + value);
+            if (visible(target)) break;
+            SceneGeometryView geometry = driver.geometry();
+            club.heiqi.uilib.ui.scene.layout.LayoutBox limit = target.clip == null ? geometry.viewport() : target.clip;
+            boolean above = target.box.y < limit.y;
             SceneGeometryView.Entry scroller = null;
-            while (parent != null) {
-                SceneGeometryView.Entry candidate = driver.geometry().get(parent);
+            for (club.heiqi.uilib.ui.scene.node.SceneNode parent = target.node.parent(); parent != null; parent = parent.parent()) {
+                SceneGeometryView.Entry candidate = geometry.get(parent);
                 if (parent.scrollable() && candidate != null && visible(candidate)
-                        && (delta > 0 ? candidate.scrollOffset > 0 : candidate.scrollOffset < candidate.scrollMaximum)) {
-                    scroller = candidate;
-                    break;
+                        && (above ? candidate.scrollOffset > 0 : candidate.scrollOffset < candidate.scrollMaximum)) {
+                    scroller = candidate; break;
                 }
-                // 内层到达端点时仍可能被外层clip挡住；旅程改向尚可移动的祖先递交真实wheel。
-                // 沿现有滚动事实选择输入位置，不修改业务布局、offset或窗口来迁就验收。
-                if (target != null && parent == driver.geometry().layerBoundary(target.node)) break;
-                parent = parent.parent();
+                if (parent == geometry.layerBoundary(target.node)) break;
             }
-            club.heiqi.uilib.ui.scene.layout.LayoutBox hit = scroller == null ? viewport
-                    : scroller.clip == null ? scroller.box : scroller.box.intersect(scroller.clip);
-            // 沿目标自己的滚动祖先边缘递交滚轮，避开中央嵌套滚动区域。
-            driver.scroll(hit.x + 1, hit.y + hit.height / 2, delta);
+            require(scroller != null, "目标被裁剪且没有可移动的滚动祖先：" + value + " viewport=" + geometry.viewport()
+                    + " target=" + target.box + " clip=" + target.clip);
+            club.heiqi.uilib.ui.scene.layout.LayoutBox area = scroller.clip == null ? scroller.box : scroller.box.intersect(scroller.clip);
+            long distance = above ? (long) area.y - target.box.y
+                    : (long) target.box.y + target.box.height - area.y - area.height;
+            int step = scroller.node.scrollStep();
+            int ticks = (int) Math.min(Integer.MAX_VALUE, Math.max(1, (distance + step - 1) / step));
+            int previous = scroller.scrollOffset;
+            club.heiqi.uilib.ui.scene.node.SceneNode owner = scroller.node;
+            // 使用原滚动端口和当前共同几何显露目标，不修改offset或目标的Tab资格。
+            driver.scroll(area.x + 1, area.y + area.height / 2, above ? ticks : -ticks);
             driver.frame();
+            SceneGeometryView.Entry next = driver.geometry().get(owner);
+            require(next != null && next.scrollOffset != previous,
+                    "滚轮未推进目标的实际滚动祖先：" + value + " offset=" + previous
+                            + " maximum=" + scroller.scrollMaximum + " target=" + target.box + " area=" + area);
         }
-        SceneGeometryView.Entry entry =
-                driver.geometry().ordered().stream()
-                        .filter(
-                                e ->
-                                        (e.node.clickAction()!=null && value.equals(e.node.text())
-                                                || e.text != null && value.equals(e.text.logicalText))
-                                                && (e.clip == null
-                                                                        ? e.box
-                                                                        : e.box.intersect(e.clip))
-                                                                .width
-                                                        > 0
-                                                && (e.clip == null
-                                                                        ? e.box
-                                                                        : e.box.intersect(e.clip))
-                                                                .height
-                                                        > 0)
-                        .findFirst()
-                        .orElseThrow(() -> new AssertionError("找不到可见输入目标：" + value));
-        club.heiqi.uilib.ui.scene.layout.LayoutBox hit =
-                entry.clip == null ? entry.box : entry.box.intersect(entry.clip);
+        club.heiqi.uilib.ui.scene.layout.LayoutBox hit = target.clip == null ? target.box : target.box.intersect(target.clip);
         driver.click(hit.x + hit.width / 2, hit.y + hit.height / 2);
         driver.frame();
     }

@@ -1,6 +1,9 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.control.SceneIconButton;
@@ -24,7 +27,14 @@ import java.util.List;
 
 /** 复合主体拥有完整动作名称和一个输入目标，标准子内容在同一几何中显示；独立动作仍是兄弟目标。 */
 final class MessageRow {
+    private static final MotionSpec ACTION_FADE = MotionSpec.tween(150000000L, MailMotion::standard);
     private MessageRow() {}
+    private static boolean keyboardFocus(SceneRuntime runtime, SceneNode row) {
+        SceneNode focused = runtime.focusRouter().focused().get();
+        for (SceneNode node = focused; node != null; node = node.parent())
+            if (node == row) return runtime.focusRouter().focusVisible(focused);
+        return false;
+    }
     static SceneNode create(ScenePageContext p, ReadableSignal<MailboxModel.Item> item,
             MailboxModel model, ReadableSignal<SceneTheme> theme, ReadableSignal<MailPalette> palette,
             ReadableSignal<Boolean> compact, TimeWidths timeWidths) {
@@ -70,13 +80,22 @@ final class MessageRow {
         time.control(new TimeColumn(timeWidths)).clip(true);
         time.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.natural().bounds(MailStyle.px(t,64),Integer.MAX_VALUE),Size.natural())));
         row.add(time);
+        Signal<Boolean> hovered = p.domain().signal(false);
+        Signal<Float> actionOpacity = p.domain().signal(0f);
+        row.bind(NodeBinding.hoverWithin(0, (node, inside) -> hovered.set(inside)));
         MailRowSurface rowSurface=new MailRowSurface(theme,palette,checked,() -> item.get().value.get().read,
                 () -> item.get().id.equals(model.openedId.get()));
         SceneNode read = SceneIconButton.create(p, () -> item.get().value.get().read
                         ? SceneIconButton.Symbol.MAIL_OPEN : SceneIconButton.Symbol.MAIL,
                 () -> "标为" + (item.get().value.get().read ? "未读：" : "已读：") + item.get().value.get().subject,
-                () -> MailStyle.buttonTheme(theme.get().withTextStyle(theme.get().textStyle.withColor(rowSurface.actionColor(palette.get().mutedText))),false), () -> model.setRead(item.get().id,!item.get().value.get().read));
+                () -> MailStyle.buttonTheme(theme.get().withTextStyle(theme.get().textStyle.withColor(MailMotion.alpha(palette.get().mutedText, actionOpacity.get()))),false), () -> model.setRead(item.get().id,!item.get().value.get().read));
         read.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.fixed(MailStyle.px(t,32)),Size.fixed(MailStyle.px(t,32)))));
+        // 透明度属于可追踪的呈现来源，不能在父级paint中改字段让子控件下次碰巧读到。
+        read.bind((runtime, node, owner) -> NodeBinding.motion(
+                () -> hovered.get() || keyboardFocus(runtime, row) ? 1f : 0f,
+                () -> keyboardFocus(runtime, row) ? MotionSpec.instant() : ACTION_FADE,
+                false, "mail.action.opacity", (self, value) -> actionOpacity.set(value))
+                .activate(runtime, node, owner));
         row.add(read);
         row.control(rowSurface);
         return row;

@@ -122,8 +122,13 @@ final class GalleryStyle {
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Collections.singletonList(theme); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
-            MeasuredSize size = children.measureChild(children.flowChildren().get(0), new Constraints(Math.max(0, limits.availableWidth - 2), Math.max(0, limits.availableHeight - 2)));
+            // 无界约束不能因边框变成有限空间，否则内部 FILL 会占用接近整型上限的高度。
+            MeasuredSize size = children.measureChild(children.flowChildren().get(0), new Constraints(
+                    insetLimit(limits.availableWidth), insetLimit(limits.availableHeight)));
             return new MeasuredSize(size.width + 2, size.height + 2);
+        }
+        private static int insetLimit(int available) {
+            return available == Integer.MAX_VALUE ? available : Math.max(0, available - 2);
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children) {
             SceneNode content = children.flowChildren().get(0);

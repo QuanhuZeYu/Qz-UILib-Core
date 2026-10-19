@@ -53,21 +53,17 @@ sourceSets {
         java.srcDirs = ['src/testHost/java']
         compileClasspath = sourceSets.legacy.output; runtimeClasspath = output + compileClasspath
     }
-    mediaCore {
-        java.srcDirs = ['src/mediaTest/java']
-        compileClasspath = sourceSets.legacy.output + sourceSets.testSupport.output
-        runtimeClasspath = output + compileClasspath
-    }
-    test {
+    galleryVerification {
+        java.srcDirs = ['src/galleryVerification/java']; resources.srcDirs = ['src/galleryVerification/resources']
         compileClasspath = sourceSets.legacy.output + sourceSets.testSupport.output + sourceSets.gallery.output + configurations.coreContent
         runtimeClasspath = output + compileClasspath
     }
+    test { java.setSrcDirs([]); resources.setSrcDirs([]) }
 }
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'; options.compilerArgs += ['-proc:none']
     options.release = name == 'compileJava' ? 21 : 8
 }
-tasks.named('compileTestJava') { dependsOn 'legacyClasses', 'testSupportClasses', 'galleryClasses' }
 tasks.named('jar', Jar) { archiveClassifier = 'development' }
 tasks.named('shadowJar') { enabled = false }
 def contentPackages = ['com.ibm.icu', 'org.yaml.snakeyaml', 'org.commonmark', 'org.jsoup', 'org.nibor.autolink']
@@ -93,10 +89,11 @@ def galleryJar = tasks.register('galleryJar', Jar) {
 // 其他仓只消费测试消费者，不能把它加入正式运行时或正式发行。
 def verificationJar = tasks.register('verificationJar', Jar) {
     group = 'verification'; archiveClassifier = 'verification'
-    from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.test.output, sourceSets.mediaCore.output
+    from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.galleryVerification.output
 }
 tasks.named('assemble') { dependsOn coreJar, coreLegacyJar, legacyDevelopmentJar }
-tasks.named('test', Test) { maxHeapSize = '1g'; failOnNoDiscoveredTests = false }
+// 核心断言归广场应用；Gradle 的空 JUnit 入口不参与 check。
+tasks.named('test', Test) { enabled = false; group = null }
 
 // Windows Java8 launcher不能可靠接收含中文的绝对-cp；相对路径仍消费原编译输出。
 tasks.withType(JavaExec).configureEach {
@@ -111,64 +108,29 @@ tasks.withType(JavaExec).configureEach {
     }
 }
 
-def application = { String name, String mainClassName, int javaVersion = 8, Closure configure = {} ->
-    tasks.register(name, JavaExec) {
-        group = 'verification'; mainClass = mainClassName
-        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(javaVersion) }
-        dependsOn 'testClasses', 'testSupportClasses'
-        classpath = sourceSets.test.runtimeClasspath
-        jvmArgs '-Dfile.encoding=UTF-8'; maxHeapSize = '1g'
-        configure.delegate = delegate; configure.resolveStrategy = Closure.DELEGATE_FIRST; configure()
-    }
-}
-def scenarios = [
-    motionScenario:'MotionScenario', pointerInputScenario:'PointerInputScenario', sliderScenario:'SliderScenario',
-    tooltipScenario:'TooltipScenario', focusInputScenario:'FocusInputScenario', focusScopeScenario:'FocusScopeScenario',
-    focusNavigationScenario:'FocusNavigationScenario', escapeInputScenario:'EscapeInputScenario', pageSessionScenario:'PageSessionScenario',
-    dynamicStructureScenario:'DynamicStructureScenario', compositionIdentityScenario:'CompositionIdentityScenario',
-    localizationScenario:'LocalizationScenario', localizationResourceScenario:'LocalizationResourceScenario',
-    standardControlsScenario:'StandardControlsScenario', focusRevealScenario:'FocusRevealScenario', editingScenario:'EditingScenario',
-    multilineEditingScenario:'MultilineEditingScenario', coreLoopScenario:'SceneCoreLoopTest', configScenario:'ConfigScenario',
-    themeConfigurationScenario:'ThemeConfigurationScenario', settingsConfigurationScenario:'SettingsConfigurationScenario',
-    yamlObjectScenario:'YamlObjectScenario', fontConfigurationScenario:'FontConfigurationScenario', coreFontEngineScenario:'CoreFontEngineScenario',
-    hoverProjectionScenario:'HoverProjectionScenario', performanceSamplesScenario:'PerformanceSamplesScenario', typedParagraphScenario:'TypedParagraphScenario',
-    mathCatalogScenario:'MathCatalogScenario', mathMacroScenario:'MathMacroScenario', virtualCollectionScenario:'VirtualCollectionScenario',
-    commandScenario:'CommandScenario', directionalNavigationScenario:'DirectionalNavigationScenario', dataTableScenario:'DataTableScenario', treeViewScenario:'TreeViewScenario', stateControlsScenario:'StateControlsScenario', tabsScenario:'TabsScenario', popupControlsScenario:'PopupControlsScenario', semanticScenario:'SemanticScenario', vectorGeometryScenario:'VectorGeometryScenario', vectorPaintScenario:'VectorPaintScenario', orderedQuadScenario:'OrderedQuadScenario', transformSceneScenario:'TransformSceneScenario', vectorPresentationScenario:'VectorPresentationScenario', densityControlsScenario:'DensityControlsScenario', densityCollectionScenario:'DensityCollectionScenario', densityPresentationScenario:'DensityPresentationScenario', inspectionScenario:'SceneInspectionScenario', inspectionPresentationScenario:'InspectionPresentationScenario', settingsWorkspaceScenario:'SettingsWorkspaceScenario'
-]
-def coreChecks = scenarios.collect { name, entry -> application(name, 'club.heiqi.uilib.ui.scene.integration.' + entry) }
-coreChecks += application('documentArrangementScenario', 'club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario')
-coreChecks += application('filePickerScenario', 'club.heiqi.uilib.ui.scene.control.FilePickerScenario')
-coreChecks += application('virtualCollectionIndexScenario', 'club.heiqi.uilib.ui.scene.control.VirtualCollectionIndexScenario')
-coreChecks += application('testApplicationScenario', 'club.heiqi.uilib.testing.TestApplicationScenario')
-coreChecks += application('mathStructureScenario', 'club.heiqi.uilib.ui.scene.text.math.MathStructureScenario')
-tasks.register('coreStateScenario') { group = 'verification'; dependsOn 'coreLoopScenario' }
-
-[8, 21].each { target ->
+// 同一检查目录只启动一个应用；Java21 另从正式 core Jar 运行，验证目标和产物隔离。
+def galleryChecks = [8, 21].collect { target ->
     def artifact = target == 8 ? coreLegacyJar : coreJar
-    def taskName = target == 8 ? 'coreArtifactScenario' : 'coreArtifactJava21Scenario'
-    coreChecks += application(taskName, 'club.heiqi.uilib.ui.scene.integration.CoreArtifactScenario', target) {
-        dependsOn artifact
-        classpath = sourceSets.test.output + sourceSets.testSupport.output
-        if (target == 21) jvmArgs '--limit-modules=java.base,java.logging,java.management,jdk.unsupported'
-        doFirst { args((target == 21 ? ['--java21'] : []) + [project.relativePath(artifact.get().archiveFile.get().asFile),
-                project.relativePath(sourceSets.test.output.classesDirs.singleFile),
-                project.relativePath(sourceSets.testSupport.output.classesDirs.singleFile)]) }
-    }
-    ['MediaCoreScenario':'mediaCore', 'MediaSourceScenario':'mediaSource', 'SceneVideoLayoutScenario':'mediaLayout'].each { entry, label ->
-        coreChecks += application(label + (target == 8 ? 'LegacyScenario' : 'Scenario'), 'club.heiqi.uilib.testing.media.' + entry, target) {
-            dependsOn 'mediaCoreClasses', artifact
-            classpath = sourceSets.mediaCore.output + sourceSets.testSupport.output + files(artifact)
-            if (target == 21) jvmArgs '--limit-modules=java.base,java.logging,java.management,jdk.unsupported'
+    tasks.register(target == 8 ? 'galleryVerify' : 'galleryVerifyJava21', JavaExec) {
+        group = 'verification'; description = '运行广场核心检查并保存具名结果（Java' + target + '）'
+        mainClass = 'club.heiqi.uilib.testing.gallery.verification.CoreGalleryVerification'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(target) }
+        dependsOn verificationJar, galleryJar, artifact
+        classpath = target == 8 ? sourceSets.galleryVerification.runtimeClasspath
+                : sourceSets.galleryVerification.output + sourceSets.testSupport.output + sourceSets.gallery.output + files(artifact)
+        jvmArgs '-Dfile.encoding=UTF-8'; maxHeapSize = '1g'
+        systemProperty 'java.awt.headless', 'true'
+        doFirst {
+            def reportDirectory = layout.buildDirectory.dir('reports/gallery-java' + target).get().asFile
+            // Windows Java8 的 -D 参数同样会误解中文绝对路径，报告相对任务工作目录传入。
+            systemProperty 'uilib.verification.report', target == 8
+                    ? workingDir.toPath().relativize(reportDirectory.toPath()).toString() : reportDirectory.absolutePath
+            systemProperty 'uilib.verification.core', project.relativePath(artifact.get().archiveFile.get().asFile)
+            if (providers.gradleProperty('galleryChecks').isPresent()) args providers.gradleProperty('galleryChecks').get().split(',') as List
         }
     }
-    coreChecks += application(target == 8 ? 'packagedUnicodeScenario' : 'packagedUnicodeJava21Scenario',
-            'club.heiqi.uilib.ui.scene.integration.PackagedUnicodeScenario', target) {
-        dependsOn artifact; classpath = sourceSets.test.output + sourceSets.testSupport.output
-        doFirst { args project.relativePath(artifact.get().archiveFile.get().asFile) }
-    }
 }
-tasks.register('coreSceneCheck') { group = 'verification'; dependsOn coreChecks }
-tasks.named('check') { dependsOn 'coreSceneCheck' }
+tasks.named('check') { setDependsOn(galleryChecks) }
 
 publishing {
     publications {

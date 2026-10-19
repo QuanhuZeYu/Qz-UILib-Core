@@ -43,7 +43,8 @@ public final class TestGallery implements ScenePage {
         PROJECT_DETAILS("项目详情","标签切换、独立草稿与保存反馈"),
         VECTOR_PRESENTATION("路径与形状","环形进度、扇区动作、旋转与形状编辑视口"),
         DENSITY("尺寸与密度","紧凑与舒适排布、局部尺寸和同一份编辑内容"),
-        INSPECTION("场景检查","查看当前布局、裁剪、输入归属与准备原因");
+        INSPECTION("场景检查","查看当前布局、裁剪、输入归属与准备原因"),
+        VERIFICATION("核心验证","运行核心检查并查看实际结果");
         public final String title,purpose;
         Page(String title,String purpose){this.title=title;this.purpose=purpose;}
         String reference(){
@@ -55,6 +56,7 @@ public final class TestGallery implements ScenePage {
                 case VECTOR_PRESENTATION:return "参考：React Konva / 形状、裁剪与变换";
                 case DENSITY:return "参考：MUI Density / React Spectrum";
                 case INSPECTION:return "参考：React DevTools / MDN Box Model";
+                case VERIFICATION:return "UILib / 核心验证";
                 case MEDIA:return "参考：HTML video / 媒体控制";
                 case TOOLTIP:return "参考：shadcn Base / Tooltip";
                 case MAILBOX:return "参考：Gmail";
@@ -120,6 +122,7 @@ public final class TestGallery implements ScenePage {
                 case VECTOR_PRESENTATION:page=VectorPresentationPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case DENSITY:page=DensityPage.create(context,theme,density,() -> navigate.accept(Page.HOME));break;
                 case INSPECTION:page=InspectionPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
+                case VERIFICATION:page=VerificationPage.create(context,theme,() -> navigate.accept(Page.HOME));break;
                 case MAILBOX:page=club.heiqi.uilib.testing.gallery.mail.MailboxPage.create(context,theme,mode,
                         () -> navigate.accept(Page.HOME),() -> preview.set(dark.get()?ThemeMode.LIGHT:ThemeMode.DARK));break;
                 default:throw new AssertionError(id);
@@ -147,6 +150,7 @@ public final class TestGallery implements ScenePage {
         root.add(GalleryStyle.header(context,theme,"探索场景","从日常应用到细节交互，选择一个场景开始体验。",null));
         root.add(group(context,theme,navigate,"应用体验","完整的工作流程，共同的界面语言。",Page.MAILBOX,Page.SETTINGS,Page.MEDIA,Page.DATA_TABLE,Page.RESOURCE_TREE,Page.PREFERENCES,Page.PROJECT_DETAILS));
         root.add(group(context,theme,navigate,"交互组件","拖动、放置、排序与滚动，在真实内容里试一试。",Page.DRAGGABLE,Page.DROPPABLE,Page.SORTABLE,Page.SCROLL_AREA,Page.MOTION,Page.TOOLTIP,Page.VECTOR_PRESENTATION,Page.DENSITY,Page.INSPECTION));
+        root.add(group(context,theme,navigate,"验证","检查核心行为，查看结果与失败原因。",Page.VERIFICATION));
         return root;
     }
     private static SceneNode group(ScenePageContext context,ReadableSignal<SceneTheme> theme,Consumer<Page> navigate,String title,String description,Page... entries){

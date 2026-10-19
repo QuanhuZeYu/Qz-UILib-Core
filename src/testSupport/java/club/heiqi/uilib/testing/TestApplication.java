@@ -14,6 +14,24 @@ public abstract class TestApplication {
     private final Deque<AutoCloseable> resources = new ArrayDeque<>();
     private String[] arguments;
     private int completed;
+    private java.util.function.Consumer<ScenarioResult> reporter;
+
+    /** 场景清理结束后的实际结果，供广场和命令行使用同一份证据。 */
+    public static final class ScenarioResult {
+        public final String application, name;
+        public final long elapsedNanos;
+        public final Throwable failure;
+        ScenarioResult(String application, String name, long elapsedNanos, Throwable failure) {
+            this.application = application; this.name = name;
+            this.elapsedNanos = elapsedNanos; this.failure = failure;
+        }
+    }
+
+    public final void runReporting(java.util.function.Consumer<ScenarioResult> reporter, String... args) throws Exception {
+        if (arguments != null) throw new IllegalStateException("测试应用正在运行");
+        this.reporter = java.util.Objects.requireNonNull(reporter, "reporter");
+        try { run(args); } finally { this.reporter = null; }
+    }
 
     protected void setup() throws Exception {}
 
@@ -65,6 +83,8 @@ public abstract class TestApplication {
             failure = error;
         }
         failure = release(depth, failure);
+        if (reporter != null) reporter.accept(new ScenarioResult(
+                applicationName(), name, System.nanoTime() - begin, failure));
         if (failure != null) {
             System.err.println("FAIL 场景 " + applicationName() + "/" + name + ": " + failure);
             rethrow(failure);
