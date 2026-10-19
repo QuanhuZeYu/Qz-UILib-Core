@@ -168,7 +168,11 @@ public final class MediaSession implements AutoCloseable {
             try{refreshSource(handle,work.version,work.lifetime);}
             catch(Throwable error){
                 refreshFailed=true;
-                synchronized(lock){if(sourceVersion==work.version&&!work.lifetime.cancelled)fail(work.selected,"source-refresh",error);}
+                synchronized(lock){
+                    // 同来源定位只更换输出代际；旧刷新失败不能取消后来的操作。
+                    if(valid(work.gen,work.operation)&&sourceVersion==work.version&&!work.lifetime.cancelled)
+                        fail(work.selected,"source-refresh",error);
+                }
             }
         }
         private void selectSource(long version){

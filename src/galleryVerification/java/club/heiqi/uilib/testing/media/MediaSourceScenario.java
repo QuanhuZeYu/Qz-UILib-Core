@@ -17,6 +17,7 @@ import club.heiqi.uilib.ui.media.spi.MediaDecoderSource;
 import club.heiqi.uilib.testing.TestApplication;
 
 
+import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/** 新source SPI的独立生命周期反例；原factory lambda由原core十五场景覆盖。 */
+/** 新source SPI的独立生命周期反例；原factory lambda由原core场景覆盖。 */
 public final class MediaSourceScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("同source跨seek保存owner上下文且暂停按deadline刷新",()->{
@@ -56,6 +57,76 @@ public final class MediaSourceScenario extends TestApplication {
         });
         scenario("暂停刷新在途play须先验证旧暂停位置",()->pausedRefreshPlay(true));
         scenario("有效暂停位置待刷新确认后继续原代输出",()->pausedRefreshPlay(false));
+        scenario("同source定位后旧刷新失败不终止新代输出",()->refreshFailure(true));
+        scenario("当前代刷新失败保留来源阶段与原始原因",()->refreshFailure(false));
+    }
+    private void refreshFailure(boolean seekDuringRefresh)throws Exception {
+        AtomicReference<RefreshFailureSource> selected=new AtomicReference<>();
+        AtomicInteger contexts=new AtomicInteger();
+        MediaDecoderFactory factory=new MediaDecoderFactory(){
+            public MediaDecoder open(MediaSource source,MediaCancellation operation){throw new AssertionError("须走source");}
+            public MediaDecoderSource openSource(MediaSource source,MediaCancellation lifetime){
+                contexts.incrementAndGet();RefreshFailureSource next=new RefreshFailureSource();selected.set(next);return next;
+            }
+        };
+        MediaService service=own(new MediaService(factory,b->{throw new AssertionError("纯视频不打开音频");},MediaBudget.DEFAULT));
+        MediaSource source=MediaSource.of(URI.create("test://refresh-failure/"+seekDuringRefresh));
+        MediaSession session=service.open(source,false);
+        RefreshFailureSource gate=null;
+        try {
+            MediaTestSupport.await(session,s->s.info.ready,2000);gate=selected.get();
+            require(gate.entered.await(2,TimeUnit.SECONDS),"未进入解码结束后的来源刷新");
+            long priorGeneration=session.snapshot().generation;
+            long target=500_000_000L;
+            if(seekDuringRefresh)session.seek(target);
+            gate.release.countDown();
+            if(seekDuringRefresh){
+                MediaSnapshot prepared=MediaTestSupport.await(session,s->s.generation>priorGeneration&&s.video!=null,2000);
+                require(contexts.get()==1&&prepared.source==source&&prepared.video.key.generation==prepared.generation,
+                        "同来源定位重建上下文或接收了旧代画面");
+                require(service.presented(prepared.video.key,System.nanoTime())!=null,"新代预览未接受正式提交");
+                MediaSnapshot paused=MediaTestSupport.await(session,s->s.state==MediaState.PAUSED,2000);
+                require(!paused.playIntent&&paused.positionNanos==target,"旧刷新改变了新代暂停事实");
+                session.play();
+                MediaSnapshot playing=MediaTestSupport.await(session,s->s.state==MediaState.PLAYING&&s.positionNanos>target,2000);
+                require(playing.generation==prepared.generation,"恢复播放错误换代");
+                session.pause();
+                MediaSnapshot stopped=MediaTestSupport.await(session,s->s.state==MediaState.PAUSED,2000);
+                require(!stopped.playIntent&&stopped.generation==prepared.generation,"新代不能暂停");
+            }else{
+                MediaSnapshot failed=MediaTestSupport.await(session,s->s.state==MediaState.FAILED,2000);
+                require(failed.generation==priorGeneration&&failed.failure.source==source
+                        &&failed.failure.stage.equals("source-refresh")&&failed.failure.cause==gate.failure,
+                        "当前刷新错误丢失所属来源、代际、阶段或原始原因");
+                require(gate.opens.get()==1,"当前刷新失败自动重开解码操作");
+            }
+        }finally{if(gate!=null)gate.release.countDown();session.close();}
+    }
+    /** 首代EOF后才触发刷新；后续同来源定位可继续提供真实带PTS的视频。 */
+    private static final class RefreshFailureSource implements MediaDecoderSource {
+        final CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+        final AtomicInteger opens=new AtomicInteger();
+        final IOException failure=new IOException("来源刷新失败");
+        long due=Long.MAX_VALUE;
+        public long refreshDeadlineNanos(){return due;}
+        public MediaInfo refresh(MediaInfo current,MediaCancellation lifetime)throws Exception{
+            due=Long.MAX_VALUE;entered.countDown();
+            if(!release.await(3,TimeUnit.SECONDS))throw new AssertionError("未释放失败刷新");
+            throw failure;
+        }
+        public MediaDecoder open(long target,boolean seeking,MediaCancellation operation){
+            boolean initial=opens.incrementAndGet()==1;
+            return new MediaDecoder(){long pts=target;
+                public MediaInfo info(){return new MediaInfo(true,true,false,2_000_000_000L,new MediaRange(0,2_000_000_000L),null,2,2);}
+                public MediaDecoded read(){
+                    operation.check();if(initial||pts>=2_000_000_000L)return null;
+                    long at=pts;pts+=50_000_000L;
+                    return MediaDecoded.video(at,50_000_000L,2,2,ByteBuffer.wrap(new byte[16]));
+                }
+                public void seek(long value){throw new AssertionError("来源已收到定位目标");}
+                public void close(){if(initial)due=0;}
+            };
+        }
     }
     private void pausedRefreshPlay(boolean expired)throws Exception {
         AtomicReference<GateSource> selected=new AtomicReference<>();

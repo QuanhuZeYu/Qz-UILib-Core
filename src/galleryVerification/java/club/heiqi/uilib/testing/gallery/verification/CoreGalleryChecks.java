@@ -3,6 +3,7 @@ package club.heiqi.uilib.testing.gallery.verification;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.testing.gallery.GalleryChecks;
 import club.heiqi.uilib.testing.media.*;
+import club.heiqi.uilib.ui.reactive.ReactiveLifecycleScenario;
 import club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario;
 import club.heiqi.uilib.ui.scene.control.FilePickerScenario;
 import club.heiqi.uilib.ui.scene.control.VirtualCollectionIndexScenario;
@@ -30,7 +31,7 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 GalleryNavigationScenario::new, SettingsWorkspaceScenario::new, VectorPresentationScenario::new,
                 DensityPresentationScenario::new, InspectionPresentationScenario::new),
         new Module("state", "状态与生命周期", "派生读取、动态结构、资源归属与动效时序",
-                SceneCoreLoopTest::new, PageSessionScenario::new, DynamicStructureScenario::new, MotionScenario::new),
+                SceneCoreLoopTest::new, ReactiveLifecycleScenario::new, PageSessionScenario::new, DynamicStructureScenario::new, MotionScenario::new),
         new Module("input", "指针与焦点", "物理按压、焦点范围、方向导航、滚动显露与退出",
                 PointerInputScenario::new, FocusInputScenario::new, FocusScopeScenario::new,
                 FocusNavigationScenario::new, FocusRevealScenario::new, DirectionalNavigationScenario::new,
@@ -50,7 +51,7 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 ConfigScenario::new, YamlObjectScenario::new, ThemeConfigurationScenario::new,
                 FontConfigurationScenario::new, SettingsConfigurationScenario::new),
         new Module("content", "文本与资源", "语言重载、字体资源生命周期、共同内容与最终文档排列",
-                LocalizationScenario::new, LocalizationResourceScenario::new, CoreFontEngineScenario::new,
+                LocalizationScenario::new, LocalizationResourceScenario::new, ImageServiceScenario::new, CoreFontEngineScenario::new,
                 TypedParagraphScenario::new, DocumentArrangementScenario::new),
         new Module("math", "数学内容", "真实宏展开、结构语料、模式资格、来源范围及资源界限",
                 MathMacroScenario::new, MathStructureScenario::new),

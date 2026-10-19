@@ -155,8 +155,14 @@ public final class SettingsConfiguration {
 
     public void reload() throws IOException {
         domain.checkWrite();
-        session.load(path);
-        saved.set(current());
+        IOException[] loadFailure = new IOException[1];
+        // 先写完已加载值与文件基线，再递交资源观察；观察失败不改变已接受的文件事实。
+        domain.batch(() -> {
+            try { session.load(path); }
+            catch (IOException failure) { loadFailure[0] = failure; return; }
+            saved.set(current());
+        });
+        if (loadFailure[0] != null) throw loadFailure[0];
         reloadResources.run();
     }
 }

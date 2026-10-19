@@ -96,6 +96,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("草稿期间真实字体文件失效仍保留编辑", this::sourceDisappears);
         scenario("真实文件错误保留路径草稿和保存基线", this::fileErrors);
         scenario("显式同值重载资源与失败后的文件事实", this::reloadResources);
+        scenario("load同步观察失败仍记录真实文件基线", this::reloadObserverFailure);
         scenario("同步观察及延后资源Effect错误按已发布事实反馈", this::resourceErrors);
         scenario("显式宿主资源失败记录诊断且继续原异常通道", this::explicitResourceFailure);
     }
@@ -421,6 +422,35 @@ public final class SettingsConfigurationScenario extends TestApplication {
             require(f.model.sources().get().get(1) == original[0], "资源回调失败不丢草稿身份");
             require(f.model.fileError().get().contains("显式资源重载失败") && f.model.fileError().get().contains(f.file.toString()), "资源失败定位文件操作及原因");
             require(f.model.message().get().isEmpty(), "资源回调失败不显示重载成功");
+        });
+    }
+
+    private void reloadObserverFailure() throws Exception {
+        Fixture f = new Fixture(true, false);
+        Files.write(f.file, f.disk().replace("replaceVanillaFont: true", "replaceVanillaFont: false").getBytes(StandardCharsets.UTF_8));
+        RuntimeException expected = new UncheckedIOException(new IOException("load发布后资源观察失败"));
+        Owner[] resource = new Owner[1];
+        Source[] draft = new Source[1];
+        f.run(() -> {
+            resource[0] = f.domain.owner();
+            f.domain.observe(resource[0], () -> f.session.get(f.mc), () -> { throw expected; }).refresh();
+            f.model.add(f.declaration(1));
+            draft[0] = f.model.sources().get().get(1);
+            try {
+                f.configuration.reload();
+                throw new AssertionError("load必须继续报告资源观察原错");
+            } catch (IOException failure) {
+                throw new AssertionError("资源观察错误不能转换成文件读取错误", failure);
+            } catch (RuntimeException actual) {
+                require(actual == expected, "load资源异常被转换或替换");
+            }
+            require(!f.configuration.current().replace() && !f.configuration.saved().get().replace(),
+                    "文件已成功载入时资源观察错误不能留下旧文件基线");
+        });
+        onClose(() -> f.domain.execute(resource[0]::dispose));
+        f.run(() -> {
+            require(!f.model.unsaved().get() && f.model.dirty().get(), "文件事实准确，未应用草稿继续独立存在");
+            require(f.model.sources().get().get(1) == draft[0], "资源观察失败丢失草稿身份");
         });
     }
 

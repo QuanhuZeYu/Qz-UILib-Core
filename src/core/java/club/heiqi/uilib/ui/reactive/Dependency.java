@@ -14,7 +14,7 @@ abstract class Dependency {
 
     final void track() {
         domain.checkAccess();
-        if (domain.tracker != null) {
+        if (domain.tracker != null && !domain.tracker.disposed) {
             dependents.add(domain.tracker);
             domain.tracker.sources.add(this);
         }

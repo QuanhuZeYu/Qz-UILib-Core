@@ -2,6 +2,7 @@ package club.heiqi.uilib.ui.scene.image;
 
 import java.util.Objects;
 import java.util.List;
+import java.util.Collections;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -147,7 +148,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             return failure;
         }
 
-        private ImageState failure(Exception error) {
+        private ImageState failure(Throwable error) {
             ImageLoader.Failure f = error instanceof ImageLoader.Failure
                     ? (ImageLoader.Failure) error : null;
             return ImageState.failure(entry.source, request, f != null && f.unsupported,
@@ -203,15 +204,16 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                         }
                     });
                 }
-            } catch (Exception error) {
+            } catch (Exception | Error error) {
                 synchronized (SharedImageService.this) {
                     try {
                         closeSnapshot();
-                    } catch (Exception cleanup) {
-                        error.addSuppressed(cleanup);
+                    } catch (Exception | Error cleanup) {
+                        if (cleanup != error) error.addSuppressed(cleanup);
                     }
                     complete(failure(error));
                 }
+                if (error instanceof Error) throw (Error) error;
             }
         }
     }
@@ -357,7 +359,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                 s.rejection = entry == null ? next : null;
             }
         }
-        for (Subscription s : subscribers) s.publish(next);
+        publish(subscribers, Collections.nCopies(subscribers.size(), next));
     }
 
     /** 资源包换代只重启资源依赖；HTTP/调用方独立位图不随资源包取消。 */
@@ -372,7 +374,15 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                 if (s.source.kind == ImageSource.Kind.RESOURCE
                         || s.source.kind == ImageSource.Kind.ITEM) sources.add(s.source);
         }
-        for (ImageSource s : sources) reload(s);
+        Throwable failure = null;
+        for (ImageSource source : sources) {
+            try { reload(source); }
+            catch (RuntimeException | Error next) {
+                if (failure == null) failure = next;
+                else if (next != failure) failure.addSuppressed(next);
+            }
+        }
+        rethrow(failure);
     }
 
     private boolean evict() {
@@ -409,15 +419,24 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                 }
             }
         }
-        for (int i = 0; i < subscriptions.size(); i++)
-            subscriptions.get(i).publish(notifications.get(i));
+        Throwable failure = null;
+        try { publish(subscriptions, notifications); }
+        catch (RuntimeException | Error error) { failure = error; }
         List<RequestAttempt> start = new ArrayList<>();
         synchronized (this) {
             for (Entry entry : entries.values())
                 if (start.size() < budget.completions && entry.attempt.claimStart())
                     start.add(entry.attempt);
         }
-        for (RequestAttempt attempt : start) attempt.start();
+        // 通知和启动都是本批已接受的工作；一个失败不能遗失完成结果或截断其余启动。
+        for (RequestAttempt attempt : start) {
+            try { attempt.start(); }
+            catch (RuntimeException | Error next) {
+                if (failure == null) failure = next;
+                else if (next != failure) failure.addSuppressed(next);
+            }
+        }
+        rethrow(failure);
     }
 
     /** 宿主呈现结果只作用于仍使用同一不可变内容的当前请求；旧plan错误不能覆盖reload。 */
@@ -461,8 +480,25 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                     }
                 }
         }
-        for (int i = 0; i < subscriptions.size(); i++)
-            subscriptions.get(i).publish(notifications.get(i));
+        publish(subscriptions, notifications);
+    }
+
+    /** 一个domain的通知错误不截断其余有效消费者；沿原通道保留首错及其余原因。 */
+    private void publish(List<Subscription> subscriptions, List<ImageState> notifications) {
+        Throwable failure = null;
+        for (int i = 0; i < subscriptions.size(); i++) {
+            try { subscriptions.get(i).publish(notifications.get(i)); }
+            catch (RuntimeException | Error next) {
+                if (failure == null) failure = next;
+                else if (next != failure) failure.addSuppressed(next);
+            }
+        }
+        rethrow(failure);
+    }
+
+    private static void rethrow(Throwable failure) {
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
     public synchronized long retainedBytes() {
