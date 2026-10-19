@@ -8,7 +8,8 @@ plugins { id 'java-library'; id 'maven-publish' }
 apply plugin: 'com.gradleup.shadow'
 
 group = 'club.heiqi.uilib'
-version = providers.gradleProperty('uilibVersion').get()
+// 项目属性同时接收原 -P、工程声明和工作站按提交记录的本地开发组合。
+version = property('uilibVersion')
 // 原RFG从此公共镜像取得ICU；保留相同坐标和缓存来源，仓库本身不引入MC依赖。
 repositories {
     maven { url = uri('https://libraries.minecraft.net'); content { includeModule('com.ibm.icu', 'icu4j') } }
