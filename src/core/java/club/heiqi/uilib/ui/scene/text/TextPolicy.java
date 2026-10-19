@@ -2,8 +2,8 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 字体排版的方向、语言与断行请求。省略、裁剪和滚动由 scene 消费最终外盒；
- * 省略统一投影已整形布局，保留完整簇与原文，不在这里重复表达呈现策略。 */
+/** 字体排版的方向、语言与断行请求。省略由 scene 选择保留内容，交共同字体管线最终整形；
+ * 裁剪和滚动消费最终外盒；各策略保持完整簇与原文来源。 */
 public final class TextPolicy {
     public enum Direction {
         AUTO,

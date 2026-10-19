@@ -347,7 +347,7 @@ public final class SceneDocument {
                             layout.originalText,
                             layout.generation,
                             diagnostics,
-                            layout.input);
+                            layout.input).withPolicy(layout.policy());
         }
 
         private List<ChildPlacements.Entry> place(TextLayout layout, List<MeasuredInline> inline) {

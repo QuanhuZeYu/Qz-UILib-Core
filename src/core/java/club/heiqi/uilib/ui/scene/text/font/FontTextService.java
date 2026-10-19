@@ -504,7 +504,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     result.originalText,
                     result.generation,
                     diagnostics,
-                    result.input);
+                    result.input).withPolicy(result.policy());
         }
 
         public TextLayout stretch(int codepoint, float minimumHeight) {
@@ -944,7 +944,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                     layout.generation,
                     layout.diagnostics(),
                     layout.input,
-                    layout.mathAssembly);
+                    layout.mathAssembly).withPolicy(layout.policy());
         }
 
         public float topAccentAttachment(TextLayout layout) {
@@ -1149,7 +1149,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 cached.originalText,
                 cached.generation,
                 cached.diagnostics(),
-                cached.input);
+                cached.input).withPolicy(cached.policy());
     }
 
     /** 输入对象携带 byte/UTF16 来源，因此不与 String cache 混用。 */
@@ -1169,16 +1169,19 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (failure == null) {
             try {
                 found = source.openFace(nativeService, size);
+            } catch (IllegalStateException | IllegalArgumentException error) {
+                failure = error.toString();
+                failures.put(key, failure);
+                trim(failures, faceLimit);
+            }
+            if (found != null) {
                 faces.put(key, found);
+                // 关闭错误属于退休face，不能污染已取得的新face加载结果。
                 while (faces.size() > faceLimit) {
                     FaceKey oldest = faces.keySet().iterator().next();
                     faces.remove(oldest).close();
                 }
                 return found;
-            } catch (IllegalStateException | IllegalArgumentException error) {
-                failure = error.toString();
-                failures.put(key, failure);
-                trim(failures, faceLimit);
             }
         }
         String message = source + " (" + source.origin + "): " + failure;
@@ -1636,7 +1639,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 original,
                 generation,
                 doc.diagnostics,
-                input);
+                input).withPolicy(policy);
     }
 
     /** 段落准备建立字体匹配、Bidi 与安全断点；整段宽度只用于候选估算。 */
@@ -2083,7 +2086,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 diagnostics,
                 layout.input,
                 // 未替换字形时仍是原 assembly；真正混淆后旧部件构建事实失效。
-                glyphsReplaced ? null : layout.mathAssembly);
+                glyphsReplaced ? null : layout.mathAssembly).withPolicy(layout.policy());
     }
 
     /** 本行复用的当前安全范围；先裁决完整范围，再交给输出投影，不持有跨调用状态。 */
@@ -2379,7 +2382,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 layout.generation,
                 diagnostics,
                 layout.input,
-                layout.mathAssembly);
+                layout.mathAssembly).withPolicy(layout.policy());
     }
 
     private static InkBounds extendedInk(InkBounds ink, float extra) {

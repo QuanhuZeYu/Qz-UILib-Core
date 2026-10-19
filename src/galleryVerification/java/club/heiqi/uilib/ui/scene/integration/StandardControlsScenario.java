@@ -173,6 +173,7 @@ public final class StandardControlsScenario extends TestApplication {
         scenario("限高仅完整行省略，提示完整且末端绘制，空间及主题变化重新度量", this::boundedText);
         scenario("正式按钮按下释放和Tab激活，禁用取消及模态隔离提示与业务事件", this::inputAndRanges);
         scenario("公开单行省略与溢出策略使用正式文字空间", this::policies);
+        scenario("旧三参字体边界在默认换行限高时仍最终整形省略", this::legacyBoundedText);
         scenario("Enter和空格按压门等待历史释放且repeat一次", this::keyPressSegments);
         scenario("业务目标激活不抢焦点且屏外按钮不投影提示", this::activationAndViewport);
         scenario("全部鼠标释放清除按下颜色与失活owner呈现", this::releasePresentation);
@@ -439,6 +440,39 @@ public final class StandardControlsScenario extends TestApplication {
                                 "字号内边距变化未更新实际几何"));
     }
 
+    private void legacyBoundedText() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        TextHost host = new TextHost();
+        // 只实现最初的三参入口；默认四参方法只能接收 NORMAL，不能据此假定新策略能力。
+        SceneTextMeasurer legacy = (text, style, width) -> host.layout(text, style, width);
+        SceneNode[] label = new SceneNode[1];
+        ScenePageSession session = ScenePageSession.open(domain, host, legacy, ctx -> {
+            label[0] = SceneLabel.create(ctx, domain.signal(LONG), domain.signal(SceneTheme.light()))
+                    .size(Size.fixed(120), Size.natural().bounds(0, 40));
+            ctx.mount(label[0]);
+        });
+        onClose(session::close);
+        session.frame();
+        domain.execute(() -> {
+            TextLayout layout = entry(session, label[0]).text;
+            require(label[0].textPolicy().equals(TextPolicy.NORMAL) && layout.policy() == null,
+                    "旧三参反例没有保持默认策略与旧结果构造条件");
+            require(ellipsis(layout) && LONG.equals(layout.originalText), "旧三参限高没有省略并保留全原文");
+            require(host.requests.stream().anyMatch(r -> r.text.length() > 1 && r.text.endsWith("…")),
+                    "旧三参边界没有收到最终正文与标记的整形请求");
+            assertCompleteLines(entry(session, label[0]), label[0].padding());
+            for (TextLayout.Line line : layout.lines()) {
+                require(line.glyphs().stream().filter(g -> g.logicalEnd > g.logicalStart)
+                                .allMatch(g -> g.glyphId == LONG.charAt(g.logicalStart)
+                                        && g.sourceStart == g.logicalStart && g.sourceEnd == g.logicalEnd),
+                        "旧三参最终行没有投回原文逻辑和source范围");
+                require(line.glyphs().stream().filter(g -> g.logicalEnd == g.logicalStart)
+                                .allMatch(g -> g.sourceStart == g.sourceEnd),
+                        "旧三参合成标记占用了原文来源");
+            }
+        });
+    }
+
     private void boundedText() {
         ReactiveDomain domain = ReactiveDomain.direct();
         TextHost host = new TextHost();
@@ -702,6 +736,21 @@ public final class StandardControlsScenario extends TestApplication {
                     require(
                             a.lines().size() == 1 && ellipsis(a) && LONG.equals(a.originalText),
                             "单行策略未省略保留源文");
+                    // 末行边界改变后必须让字体服务看到最终文字，原字形裁片不能代表新连接形式。
+                    require(host.requests.stream().anyMatch(r -> r.text.length() > 1 && r.text.endsWith("…")),
+                            "省略后的最终文字没有交回共同字体布局");
+                    TextLayout.Line line = a.lines().get(0);
+                    int retainedEnd = line.glyphs().stream()
+                            .filter(g -> g.logicalEnd > g.logicalStart)
+                            .mapToInt(g -> g.logicalEnd).max().orElseThrow(() -> new AssertionError("省略后没有保留正文"));
+                    require(line.glyphs().stream().filter(g -> g.logicalEnd > g.logicalStart)
+                                    .allMatch(g -> g.glyphId == LONG.charAt(g.logicalStart)
+                                            && g.sourceStart == g.logicalStart && g.sourceEnd == g.logicalEnd),
+                            "省略重整形未投回全原文逻辑与来源范围");
+                    require(line.glyphs().stream().filter(g -> g.logicalEnd == g.logicalStart)
+                                    .allMatch(g -> g.logicalStart == retainedEnd
+                                            && g.sourceStart == retainedEnd && g.sourceEnd == retainedEnd),
+                            "合成省略标记占用了原文字符");
                     require(
                             b.lines().size() == 1
                                     && !ellipsis(b)

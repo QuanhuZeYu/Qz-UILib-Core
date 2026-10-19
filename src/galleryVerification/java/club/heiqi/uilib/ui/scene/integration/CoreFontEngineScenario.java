@@ -145,6 +145,29 @@ public final class CoreFontEngineScenario extends TestApplication {
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
+    private void evictionFailure(RuntimeException retiredFailure) {
+        ContractEngine engine = new ContractEngine();
+        engine.faceCloseFailures.add(retiredFailure);
+        FontSource source = FontSource.fromResource(
+                "contract-probe", 1, "assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf", false);
+        FontTextService text = own(new FontTextService(Collections.singletonList(source), engine, 1, 8, 128));
+        text.layout("A", new TextStyle("probe", 12, -1), 1000, TextPolicy.SINGLE_LINE);
+        TextStyle next = new TextStyle("probe", 16, -1);
+        RuntimeException observed = null;
+        try {
+            text.layout("A", next, 1000, TextPolicy.SINGLE_LINE);
+        } catch (RuntimeException failure) {
+            observed = failure;
+        }
+        require(observed == retiredFailure, "LRU关闭错误被吞掉或误归为新face加载失败");
+        require(observed.getSuppressed().length == 0, "单次退役错误被无关异常替换");
+        TextLayout current = text.layout("A", next, 1000, TextPolicy.SINGLE_LINE);
+        require(engine.facesOpened == 2 && engine.facesClosed == 1 && text.cachedFaceCount() == 1,
+                "退役失败后重新打开或丢失已取得的新face");
+        require(current.diagnostics().isEmpty() && current.lines().get(0).glyphs().get(0).source == source,
+                "旧face关闭失败污染新face的资源诊断或来源");
+    }
+
     private void invalidationFailure(boolean register, boolean closeFails) throws Exception {
         ContractEngine engine = new ContractEngine();
         Throwable firstClose = register
@@ -249,6 +272,10 @@ public final class CoreFontEngineScenario extends TestApplication {
                                         && sampled.advanceWidth == 18
                                         && sampled.lines().get(0).glyphs().get(0).size == 24,
                                 "注入布局与采样逻辑流程");
+                        require(logical.policy().equals(TextPolicy.SINGLE_LINE)
+                                        && sampled.policy().equals(logical.policy())
+                                        && logical.withStyle(logical.style.withColor(0xff123456)).policy().equals(logical.policy()),
+                                "正式请求事实在布局、采样或重色时丢失");
                         require(
                                 logical.lines().get(0).glyphs().get(2).source == source
                                         && logical.input.sourceStart(2) == 2,
@@ -256,6 +283,10 @@ public final class CoreFontEngineScenario extends TestApplication {
                     }
                     require(engine.opened == 1 && engine.closed == 1, "session资源生命周期");
                 });
+        scenario("LRU关闭异常保持退休face原错误身份", () -> {
+            evictionFailure(new IllegalStateException("retired face close failure"));
+            evictionFailure(new IllegalArgumentException("retired face argument failure"));
+        });
         scenario("reload关闭失败仍释放全部face并通知", () -> invalidationFailure(false, true));
         scenario("register关闭Error仍释放全部face并通知", () -> invalidationFailure(true, true));
         scenario("失效监听失败不中断其余监听", () -> invalidationFailure(false, false));

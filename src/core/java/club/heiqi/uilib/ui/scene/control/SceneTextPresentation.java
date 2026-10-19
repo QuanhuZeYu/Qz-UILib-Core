@@ -1,6 +1,10 @@
 package club.heiqi.uilib.ui.scene.control;
 
+import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
+import club.heiqi.uilib.ui.scene.text.StyleSpan;
+import club.heiqi.uilib.ui.scene.text.TextInput;
+import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
@@ -8,7 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** 已整形文字的纯投影；保留完整源文、源映射和诊断，不再整形业务文案。 */
+/** 文字呈现的定位投影与省略请求；最终字形来自共同字体管线，保持全原文来源。 */
 final class SceneTextPresentation {
     private SceneTextPresentation() {}
 
@@ -78,7 +82,7 @@ final class SceneTextPresentation {
                 full.originalText,
                 full.generation,
                 full.diagnostics(),
-                full.input);
+                full.input).withPolicy(full.policy());
     }
 
     static TextLayout fit(
@@ -98,12 +102,11 @@ final class SceneTextPresentation {
         boolean wide = false;
         for (TextLayout.Line line : visible) wide |= right(line) > width;
         if (!hidden && !wide) return full;
-        TextLayout mark =
-                measurer.layout("…", full.style, Integer.MAX_VALUE, TextPolicy.SINGLE_LINE);
+        List<TextLayout.Diagnostic> diagnostics = new ArrayList<>(full.diagnostics());
         for (int i = 0; i < visible.size(); i++) {
             TextLayout.Line line = visible.get(i);
             if (right(line) > width || hidden && i == visible.size() - 1) {
-                TextLayout.Line shortened = shorten(line, mark, width, height);
+                TextLayout.Line shortened = shorten(full, line, width, height, measurer, diagnostics);
                 if (shortened == null) {
                     visible.subList(i, visible.size()).clear();
                     break;
@@ -126,8 +129,8 @@ final class SceneTextPresentation {
                 full.logicalText,
                 full.originalText,
                 full.generation,
-                full.diagnostics(),
-                full.input);
+                diagnostics,
+                full.input).withPolicy(full.policy());
     }
 
     /** 列对齐是纯定位投影；字形、装饰、簇和原子项共用偏移，输入仍读同一TextLayout。 */
@@ -215,7 +218,7 @@ final class SceneTextPresentation {
                 full.originalText,
                 full.generation,
                 full.diagnostics(),
-                full.input);
+                full.input).withPolicy(full.policy());
     }
 
     static float right(TextLayout.Line line) {
@@ -235,173 +238,189 @@ final class SceneTextPresentation {
         return bottom;
     }
 
-    private static TextLayout.Line shorten(
-            TextLayout.Line line, TextLayout mark, int width, int height) {
-        if (mark.lines().isEmpty()) return null;
-        TextLayout.Line dots = mark.lines().get(0);
-        float left = 0;
-        for (TextLayout.Glyph g : dots.glyphs())
-            if (g.inkBounds.known) left = Math.min(left, g.x + g.inkBounds.left);
-        float markWidth = right(dots) - left;
-        float dy = line.baseline - dots.baseline;
-        if (markWidth > width
-                || bottom(dots) + dy > height
-                || line.y + Math.max(line.lineHeight, dots.lineHeight) > height
-                || line.baseline + Math.max(line.descent, dots.descent) > height) return null;
-        List<TextLayout.Cluster> candidates = new ArrayList<>(line.clusters());
-        candidates.sort(Comparator.comparingDouble(c -> c.x));
-        float limit = width - markWidth;
-        List<TextLayout.Cluster> keep = new ArrayList<>();
-        float end = 0;
-        for (TextLayout.Cluster c : candidates) {
-            float edge = c.x + c.advance;
-            for (int i = c.glyphIndexStart; i < c.glyphIndexEnd; i++) {
-                TextLayout.Glyph g = line.glyphs().get(i);
-                edge = Math.max(edge, g.x + (g.inkBounds.known ? g.inkBounds.right : g.xAdvance));
-            }
-            if (edge > limit) break;
-            keep.add(c);
-            end = Math.max(end, edge);
-        }
-        // 任何共享glyph的簇必须一起保留或删除，避免切开HB连字。
-        boolean[] excluded = new boolean[line.glyphs().size()];
-        for (int i = keep.size(); i < candidates.size(); i++) {
-            TextLayout.Cluster c = candidates.get(i);
-            for (int g = c.glyphIndexStart; g < c.glyphIndexEnd; g++) excluded[g] = true;
-        }
-        for (int i = keep.size() - 1; i >= 0; i--) {
-            TextLayout.Cluster c = keep.get(i);
-            boolean overlap = false;
-            for (int g = c.glyphIndexStart; g < c.glyphIndexEnd; g++) overlap |= excluded[g];
-            if (overlap) {
-                keep.remove(i);
-                for (int g = c.glyphIndexStart; g < c.glyphIndexEnd; g++) excluded[g] = true;
-            }
-        }
-        end = 0;
-        List<TextLayout.Glyph> glyphs = new ArrayList<>();
-        List<TextLayout.Cluster> clusters = new ArrayList<>();
-        List<TextLayout.Decoration> decorations = new ArrayList<>();
-        for (TextLayout.Cluster c : keep) {
-            int first = glyphs.size(), ci = clusters.size();
-            for (int i = c.glyphIndexStart; i < c.glyphIndexEnd; i++) {
-                TextLayout.Glyph g = line.glyphs().get(i);
-                glyphs.add(
-                        move(
-                                g,
-                                0,
-                                0,
-                                ci,
-                                g.logicalStart,
-                                g.logicalEnd,
-                                g.sourceStart,
-                                g.sourceEnd));
-                end = Math.max(end, g.x + (g.inkBounds.known ? g.inkBounds.right : g.xAdvance));
-            }
-            end = Math.max(end, c.x + c.advance);
-            clusters.add(
-                    new TextLayout.Cluster(
-                            c.logicalStart,
-                            c.logicalEnd,
-                            c.sourceStart,
-                            c.sourceEnd,
-                            first,
-                            glyphs.size(),
-                            c.x,
-                            c.advance,
-                            c.style,
-                            c.rtl));
-            for (TextLayout.Decoration d : line.decorations())
-                if (d.logicalStart == c.logicalStart && d.logicalEnd == c.logicalEnd)
-                    decorations.add(d);
-        }
-        int first = glyphs.size(), ci = clusters.size();
-        for (TextLayout.Glyph g : dots.glyphs())
-            glyphs.add(
-                    move(
-                            g,
-                            end - left,
-                            dy,
-                            ci,
-                            line.logicalEnd,
-                            line.logicalEnd,
-                            line.sourceEnd,
-                            line.sourceEnd));
-        clusters.add(
-                new TextLayout.Cluster(
-                        line.logicalEnd,
-                        line.logicalEnd,
-                        line.sourceEnd,
-                        line.sourceEnd,
-                        first,
-                        glyphs.size(),
-                        end,
-                        markWidth,
-                        mark.style,
-                        line.paragraphRtl));
-        for (TextLayout.Decoration d : dots.decorations())
-            decorations.add(
-                    new TextLayout.Decoration(
-                            d.kind,
-                            d.x + end - left,
-                            d.y + dy,
-                            d.width,
-                            d.height,
-                            d.color,
-                            line.logicalEnd,
-                            line.logicalEnd,
-                            line.sourceEnd,
-                            line.sourceEnd));
-        // text仍描述源行；实际显示由glyph投影决定，合成省略号不写回业务文案。
-        return new TextLayout.Line(
-                line.text,
-                line.x,
-                line.y,
-                line.logicalStart,
-                line.logicalEnd,
-                line.sourceStart,
-                line.sourceEnd,
-                end + markWidth,
-                line.baseline,
-                Math.max(line.ascent, dots.ascent),
-                Math.max(line.descent, dots.descent),
-                Math.max(line.lineHeight, dots.lineHeight),
-                glyphs,
-                clusters,
-                decorations,
-                line.paragraphRtl);
+    private static TextLayout.Glyph move(TextLayout.Glyph g, float dx, float dy, int cluster,
+            int logicalStart, int logicalEnd, int sourceStart, int sourceEnd) {
+        return new TextLayout.Glyph(g.source, g.size, g.glyphId, logicalStart, logicalEnd,
+                sourceStart, sourceEnd, g.x + dx, g.y + dy, g.xAdvance, g.yAdvance,
+                g.color, g.replacement, g.inkBounds, g.logicalEm, g.rasterToLayout,
+                g.rasterStyle, g.resolvedStyle, cluster, g.paintClip, g.xExtension);
     }
 
-    private static TextLayout.Glyph move(
-            TextLayout.Glyph g,
-            float dx,
-            float dy,
-            int ci,
-            int start,
-            int end,
-            int sourceStart,
-            int sourceEnd) {
-        return new TextLayout.Glyph(
-                g.source,
-                g.size,
-                g.glyphId,
-                start,
-                end,
-                sourceStart,
-                sourceEnd,
-                g.x + dx,
-                g.y + dy,
-                g.xAdvance,
-                g.yAdvance,
-                g.color,
-                g.replacement,
-                g.inkBounds,
-                g.logicalEm,
-                g.rasterToLayout,
-                g.rasterStyle,
-                g.resolvedStyle,
-                ci,
-                g.paintClip,
-                g.xExtension);
+    /** 省略改变了最终行的文字边界；共同字体管线重新整形，呈现只投回全原文坐标。 */
+    private static TextLayout.Line shorten(
+            TextLayout full, TextLayout.Line line, int width, int height,
+            SceneTextMeasurer measurer, List<TextLayout.Diagnostic> diagnostics) {
+        FinalLine request = new FinalLine(full, line, measurer);
+        TextLayout marker = request.shape(line.logicalStart);
+        if (marker.lines().isEmpty()) return null;
+        List<Integer> cuts = new ArrayList<>();
+        List<Float> advances = new ArrayList<>();
+        java.util.BitSet unsafe = new java.util.BitSet();
+        for (TextLayout.Glyph g : line.glyphs())
+            if (g.logicalEnd > g.logicalStart + 1) unsafe.set(g.logicalStart + 1, g.logicalEnd);
+        float advance = 0;
+        cuts.add(line.logicalStart);
+        advances.add(0f);
+        for (TextLayout.Cluster cluster : request.logicalClusters) {
+            if (cluster.logicalEnd > cluster.logicalStart + 1)
+                unsafe.set(cluster.logicalStart + 1, cluster.logicalEnd);
+            advance += cluster.advance;
+            cuts.add(cluster.logicalEnd);
+            advances.add(advance);
+        }
+        if (cuts.get(cuts.size() - 1) != line.logicalEnd) {
+            cuts.add(line.logicalEnd);
+            advances.add(line.advance);
+        }
+        for (int i = cuts.size() - 1; i > 0; i--) {
+            if (!unsafe.get(cuts.get(i))) continue;
+            cuts.remove(i);
+            advances.remove(i);
+        }
+        // 原行advance只估算候选；是否容纳由最终行真实字形及墨迹裁决。
+        float budget = width - line.x - right(marker.lines().get(0));
+        int choice = 0;
+        while (choice + 1 < cuts.size() && advances.get(choice + 1) <= budget) choice++;
+        TextLayout shaped = request.shape(cuts.get(choice));
+        TextLayout.Line result = request.project(shaped, cuts.get(choice));
+        while (!fits(result, width, height)) {
+            if (choice == 0) return null;
+            shaped = request.shape(cuts.get(--choice));
+            result = request.project(shaped, cuts.get(choice));
+        }
+        while (choice + 1 < cuts.size()) {
+            TextLayout next = request.shape(cuts.get(choice + 1));
+            TextLayout.Line nextLine = request.project(next, cuts.get(choice + 1));
+            if (!fits(nextLine, width, height)) break;
+            choice++;
+            shaped = next;
+            result = nextLine;
+        }
+        request.diagnostics(shaped, cuts.get(choice), diagnostics);
+        return result;
+    }
+
+    private static boolean fits(TextLayout.Line line, int width, int height) {
+        return line != null && right(line) <= width && bottom(line) <= height;
+    }
+
+    /** 一次省略请求的局部上下文，不写入布局结果或跨批缓存。 */
+    private static final class FinalLine {
+        final TextLayout full;
+        final TextLayout.Line original;
+        final SceneTextMeasurer measurer;
+        final TextPolicy policy;
+        final List<TextLayout.Cluster> logicalClusters;
+
+        FinalLine(TextLayout full, TextLayout.Line line, SceneTextMeasurer measurer) {
+            this.full = full;
+            original = line;
+            this.measurer = measurer;
+            TextPolicy source = full.policy();
+            policy = source == null ? null : new TextPolicy(
+                    line.paragraphRtl ? TextPolicy.Direction.RTL : TextPolicy.Direction.LTR,
+                    TextPolicy.Wrap.NONE, source.language, source.tabSize, source.lineHeight,
+                    TextPolicy.HardBreak.MARKER);
+            logicalClusters = new ArrayList<>(line.clusters());
+            logicalClusters.sort(Comparator.comparingInt(c -> c.logicalStart));
+        }
+
+        TextLayout shape(int end) {
+            int length = end - original.logicalStart;
+            String value = original.text.substring(0, length) + "…";
+            // 旧结果未声明策略事实，仍通过原三参入口最终整形，不给旧measurer增加能力前提。
+            if (policy == null) return measurer.layout(value, full.style, Integer.MAX_VALUE);
+            List<StyleSpan> spans = new ArrayList<>();
+            int cursor = original.logicalStart;
+            for (TextLayout.Cluster c : logicalClusters) {
+                if (c.logicalStart >= end) break;
+                if (c.logicalStart > cursor) span(spans, cursor, c.logicalStart, full.style);
+                int next = Math.min(end, c.logicalEnd);
+                if (next > cursor) span(spans, Math.max(cursor, c.logicalStart), next, c.style);
+                cursor = Math.max(cursor, next);
+            }
+            if (cursor < end) span(spans, cursor, end, full.style);
+            TextStyle markerStyle = spans.isEmpty()
+                    ? logicalClusters.isEmpty() ? full.style : logicalClusters.get(0).style
+                    : spans.get(spans.size() - 1).style;
+            span(spans, end, end + 1, markerStyle);
+            // 单样式保留旧String入口；原已支持的属性请求才需要Attributed入口。
+            if (spans.size() == 1)
+                return measurer.layout(value, spans.get(0).style, Integer.MAX_VALUE, policy);
+            return measurer.layout(new AttributedText(
+                    TextInput.string(value), value, full.style, spans),
+                    Integer.MAX_VALUE, policy);
+        }
+
+        void span(List<StyleSpan> spans,
+                int start, int end, TextStyle style) {
+            int a = start - original.logicalStart, b = end - original.logicalStart;
+            if (!spans.isEmpty()) {
+                StyleSpan last = spans.get(spans.size() - 1);
+                if (last.logicalEnd == a && last.style.equals(style)) {
+                    spans.set(spans.size() - 1,
+                            new StyleSpan(last.logicalStart, b, style));
+                    return;
+                }
+            }
+            spans.add(new StyleSpan(a, b, style));
+        }
+
+        int logical(int offset, int end) {
+            return Math.min(end, original.logicalStart + offset);
+        }
+
+        int source(int offset, boolean end) {
+            if (full.input != null)
+                return end ? full.input.sourceLeft(offset) : full.input.sourceRight(offset);
+            for (TextLayout.Cluster c : logicalClusters)
+                if (end ? c.logicalStart < offset && offset <= c.logicalEnd
+                        : c.logicalStart <= offset && offset < c.logicalEnd)
+                    return end ? c.sourceEnd : c.sourceStart;
+            return original.sourceStart + offset - original.logicalStart;
+        }
+
+        TextLayout.Line project(TextLayout shaped, int end) {
+            if (shaped.lines().isEmpty()) return null;
+            TextLayout.Line line = shaped.lines().get(0);
+            float dy = original.baseline - line.baseline;
+            List<TextLayout.Glyph> glyphs = new ArrayList<>();
+            for (TextLayout.Glyph g : line.glyphs()) {
+                int a = logical(g.logicalStart, end), b = logical(g.logicalEnd, end);
+                glyphs.add(move(g, original.x, dy, g.clusterIndex, a, b,
+                        a == b ? source(a, true) : source(a, false), source(b, true)));
+            }
+            List<TextLayout.Cluster> clusters = new ArrayList<>();
+            for (TextLayout.Cluster c : line.clusters()) {
+                int a = logical(c.logicalStart, end), b = logical(c.logicalEnd, end);
+                clusters.add(new TextLayout.Cluster(a, b,
+                        a == b ? source(a, true) : source(a, false), source(b, true),
+                        c.glyphIndexStart, c.glyphIndexEnd, c.x + original.x, c.advance, c.style, c.rtl));
+            }
+            List<TextLayout.Decoration> decorations = new ArrayList<>();
+            for (TextLayout.Decoration d : line.decorations()) {
+                int a = logical(d.logicalStart, end), b = logical(d.logicalEnd, end);
+                decorations.add(new TextLayout.Decoration(d.kind, d.x + original.x, d.y + dy,
+                        d.width, d.height, d.color, a, b,
+                        a == b ? source(a, true) : source(a, false), source(b, true)));
+            }
+            return new TextLayout.Line(original.text, original.x, original.y,
+                    original.logicalStart, original.logicalEnd, original.sourceStart, original.sourceEnd,
+                    line.advance, original.baseline, line.ascent, line.descent,
+                    Math.max(original.lineHeight, line.lineHeight), glyphs, clusters, decorations,
+                    original.paragraphRtl);
+        }
+
+        void diagnostics(TextLayout shaped, int end, List<TextLayout.Diagnostic> target) {
+            for (TextLayout.Diagnostic d : shaped.diagnostics()) {
+                int a = logical(d.sourceStart, end), b = logical(d.sourceEnd, end);
+                int start = a == b ? source(a, true) : source(a, false), stop = source(b, true);
+                boolean present = false;
+                for (TextLayout.Diagnostic old : target)
+                    present |= old.kind == d.kind && old.sourceStart == start && old.sourceEnd == stop
+                            && old.message.equals(d.message);
+                if (!present) target.add(new TextLayout.Diagnostic(d.kind, start, stop, d.message));
+            }
+        }
     }
 }

@@ -560,6 +560,7 @@ public final class TextLayout {
     public final MathAssemblyFacts mathAssembly;
     private final List<Line> lines;
     private final List<Diagnostic> diagnostics;
+    private final TextPolicy policy;
 
     public TextLayout(int width, int height, TextStyle style, List<Line> lines) {
         this(
@@ -629,6 +630,15 @@ public final class TextLayout {
             List<Diagnostic> diagnostics,
             TextInput input,
             MathAssemblyFacts mathAssembly) {
+        this(width, height, advanceWidth, advanceHeight, style, lines, logicalText, originalText,
+                generation, diagnostics, input, mathAssembly, null);
+    }
+
+    private TextLayout(int width, int height, float advanceWidth, float advanceHeight,
+            TextStyle style, List<Line> lines, String logicalText, String originalText,
+            long generation, List<Diagnostic> diagnostics, TextInput input,
+            MathAssemblyFacts mathAssembly, TextPolicy policy) {
+        this.policy = policy;
         this.input = input;
         if (mathAssembly != null && (mathAssembly.generation != generation
                 || mathAssembly.logicalEm != style.logicalEm))
@@ -653,6 +663,18 @@ public final class TextLayout {
 
     public List<Line> lines() {
         return lines;
+    }
+
+    /** 正式字体产出的实际排版请求；旧构造器未声明此事实时为 null。 */
+    public TextPolicy policy() {
+        return policy;
+    }
+
+    /** 只携带不可变请求事实，供末行省略保持语言、制表位与行高。 */
+    public TextLayout withPolicy(TextPolicy policy) {
+        if (Objects.equals(this.policy, policy)) return this;
+        return new TextLayout(width, height, advanceWidth, advanceHeight, style, lines,
+                logicalText, originalText, generation, diagnostics, input, mathAssembly, policy);
     }
 
     public List<Diagnostic> diagnostics() {
@@ -764,6 +786,6 @@ public final class TextLayout {
         }
         if (!changed && sameDiagnostics) return this;
         return new TextLayout(width, height, advanceWidth, advanceHeight, baseStyle,
-                recolored, logicalText, originalText, generation, currentDiagnostics, input, mathAssembly);
+                recolored, logicalText, originalText, generation, currentDiagnostics, input, mathAssembly, policy);
     }
 }
