@@ -5,6 +5,8 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneSortable;
+import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -47,6 +49,8 @@ public final class MotionScenario extends TestApplication {
         scenario("已有结构退场按当前预算与期限释放", this::ownedExitLimits);
         scenario("所属容器移动后退场消费当前祖先而非旧归属", this::movedExit);
         scenario("退场片段跟随父视口回弹的当前空间", this::presenceBounce);
+        scenario("弹性排序完全落定后往返滚动不复活旧反馈", () -> sortableScroll(true));
+        scenario("弹性排序落下中滚动父容器立即同步且不重启位移", () -> sortableScroll(false));
         scenario("拖拽释放保留位置和速度且单次意图", this::dragRelease);
         scenario("停手释放不甩出且碰壁后立即回槽", this::dragReleaseFeedback);
         scenario("碰壁按实际时刻推进且预览沿视口回槽", this::boundedRelease);
@@ -918,6 +922,90 @@ public final class MotionScenario extends TestApplication {
             page.runtime().preparePresentation(page.runtime().inputNanos() + 300_000_000L);
             require(page.pipeline().current().geometry.get(content[0]).box.x == 0 && drops[0] == 1, "取消复活旧释放或重复业务意图");
         });
+    }
+    private void sortableScroll(boolean settled) {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        host.width = 320; host.height = 320; host.frameTime = 1_000_000_000L; host.frameStep = 0;
+        Signal<List<String>>[] order = new Signal[1]; SceneNode[] viewport = new SceneNode[1], board = new SceneNode[1], preview = new SceneNode[1];
+        Map<String, SceneNode> rows = new java.util.LinkedHashMap<>(); int[] moves = {0};
+        SceneSortable.Options<String, String> options = new SceneSortable.Options<String, String>().autoScroll(false)
+                .reorderMotion(MotionSpec.spring(.32, .72)).dropMotion(MotionSpec.spring(.36, .68));
+        ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+            order[0] = domain.signal(Arrays.asList("a", "b", "c", "d", "e", "f", "g", "h"));
+            board[0] = SceneSortable.create(context, () -> Collections.singletonList(new SceneSortable.Group<>("group", order[0].get())), value -> value,
+                    key -> { SceneNode items = new SceneNode().size(Size.fixed(240), Size.natural());
+                        return new SceneSortable.Container(items, items, SceneSortable.Layout.VERTICAL); },
+                    value -> { SceneNode content = new SceneNode().size(Size.fill(1), Size.fixed(40)).background(0xff345678);
+                        rows.put(value.get(), content); return new SceneSortable.Row(content); },
+                    value -> preview[0] = new SceneNode().background(0xff876543), move -> {
+                        moves[0]++; List<String> next = new java.util.ArrayList<>(order[0].get()); next.remove(move.key);
+                        next.add(move.beforeKey == null ? next.size() : next.indexOf(move.beforeKey), move.key); order[0].set(next);
+                    }, () -> options);
+            viewport[0] = new SceneNode().size(Size.fixed(240), Size.fixed(200)).scrollable(true).scrollStep(24).add(board[0]);
+            context.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).add(viewport[0]));
+        }));
+        page.frame();
+        page.pointer(ScenePointerEvent.down(0, 20, 20).at(host.frameTime));
+        host.frameTime += 50_000_000L; page.pointer(ScenePointerEvent.move(20, 145).at(host.frameTime)); page.frame();
+        host.frameTime += 100_000_000L; page.pointer(ScenePointerEvent.up(0, 20, 145).at(host.frameTime)); page.frame();
+        domain.execute(() -> require(moves[0] == 1 && order[0].get().indexOf("a") > 0, "排序未沿正式 Move 更新权威顺序"));
+        host.frameTime += settled ? 3_000_000_000L : 30_000_000L; page.frame();
+        domain.execute(() -> require(sortableActive(board[0]) != settled,
+                "未触达指定的落下中或完全落定阶段"));
+        // 保持同一宿主时刻，独立检验父滚动的即时平移，排除弹簧自身经过时间的位移。
+        for (int direction : new int[] {-1, 1}) {
+            domain.execute(() -> {
+                SceneGeometryView before = page.pipeline().current().geometry;
+                page.pointer(ScenePointerEvent.scroll(220, 180, direction).at(host.frameTime)); page.frame();
+                SceneGeometryView after = page.pipeline().current().geometry;
+                int shift = before.get(viewport[0]).scrollOffset - after.get(viewport[0]).scrollOffset;
+                require(shift == direction * 24, "父视口未收到原滚轮输入：" + shift);
+                for (Map.Entry<String, SceneNode> row : rows.entrySet()) {
+                    LayoutBox was = before.get(row.getValue()).box, now = after.get(row.getValue()).box;
+                    require(now.x == was.x && now.y - was.y == shift,
+                            "真实行未同步随父滚动：" + row.getKey() + " before=" + was.y + " after=" + now.y + " scroll=" + shift);
+                }
+                if (!settled) {
+                    LayoutBox was = before.get(preview[0]).box, now = after.get(preview[0]).box;
+                    require(now.x == was.x && now.y - was.y == shift, "旧落下反馈将父滚动变成新的弹性位移：" + was.y + "->" + now.y + " scroll=" + shift);
+                } else require(after.get(preview[0]) == null && preview[0].destroyed(), "完全落定后滚动复活旧 ghost");
+                require(sortableActive(board[0]) != settled, "滚动改变了原排序运动生命周期");
+            });
+        }
+        host.frameTime += 3_000_000_000L; page.frame();
+        domain.execute(() -> {
+            require(!sortableActive(board[0]), "落下运动未释放");
+            require(page.pipeline().current().geometry.get(preview[0]) == null && preview[0].destroyed(), "旧反馈未释放");
+        });
+        for (int direction : new int[] {-1, 1}) {
+            page.pointer(ScenePointerEvent.scroll(220, 180, direction).at(host.frameTime)); page.frame();
+            domain.execute(() -> {
+                SceneGeometryView stopped = page.pipeline().current().geometry;
+                for (int frame = 0; frame < 12; frame++) {
+                    host.frameTime += 1_000_000_000L / 300; page.frame();
+                    SceneGeometryView current = page.pipeline().current().geometry;
+                    for (SceneNode row : rows.values()) require(current.get(row).box.y == stopped.get(row).box.y, "300Hz 静止帧出现额外条目位移动效");
+                }
+                require(!sortableActive(board[0]) && moves[0] == 1, "旧排序反馈或业务意图被滚动复活");
+            });
+        }
+    }
+    /** 仅测试观测：区分肉眼落定与 elevation/亚像素仍活跃，不给生产增加探针。 */
+    private static boolean sortableActive(SceneNode board) {
+        try {
+            Object model = sortableField(board.control(), "model"), motion = sortableField(model, "motion");
+            Object landing = sortableField(motion, "landing"), flights = sortableField(motion, "flights");
+            boolean preview = ((ReadableSignal<?>) sortableField(motion, "preview")).get() != null;
+            boolean busy = (Boolean) ((ReadableSignal<?>) sortableField(motion, "busy")).get();
+            boolean active = false;
+            if (landing != null) { java.lang.reflect.Method method = landing.getClass().getDeclaredMethod("active"); method.setAccessible(true); active = (Boolean) method.invoke(landing); }
+            int count = ((Map<?, ?>) sortableField(flights, "flights")).size(); boolean pending = sortableField(flights, "pending") != null;
+            return preview || active || busy || count != 0 || pending;
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    private static Object sortableField(Object owner, String name) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = owner.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(owner);
     }
     private void failedMount() {
         ReactiveDomain domain = ReactiveDomain.direct();

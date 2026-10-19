@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.ArrayDeque;
 import java.util.Iterator;
 
@@ -16,6 +17,8 @@ final class SceneSortableMotion<T, K, C> {
     }
     private static final class Landing {
         final SceneSortableTrack x, y, width, height, elevation;
+        private SceneNode anchor;
+        private double baseX, baseY, worldX, worldY;
         Landing(LayoutBox from, double vx, double vy, SceneSortableTrack.Strategy strategy, long now) {
             x = new SceneSortableTrack(from.x, vx, from.x, strategy, now);
             y = new SceneSortableTrack(from.y, vy, from.y, strategy, now);
@@ -23,11 +26,28 @@ final class SceneSortableMotion<T, K, C> {
             height = new SceneSortableTrack(from.height, 0, from.height, strategy, now);
             elevation = new SceneSortableTrack(1, 0, 0, strategy, now);
         }
-        void retarget(LayoutBox to, SceneSortableTrack.Strategy strategy, long now) {
+        void retarget(LayoutBox to, SceneNode parent, SceneGeometryView geometry, SceneSortableTrack.Strategy strategy, long now) {
+            rebase(parent, geometry, to);
             x.retarget(to.x, strategy, now); y.retarget(to.y, strategy, now);
             width.retarget(to.width, strategy, now); height.retarget(to.height, strategy, now);
             elevation.retarget(0, strategy, now);
         }
+        /** 与让位相同，插槽保留父局部基准；父滚动只换基，不成为新的落下目标或速度。 */
+        private void rebase(SceneNode nextAnchor, SceneGeometryView geometry, LayoutBox slot) {
+            SceneGeometryView.Entry parent = geometry.get(nextAnchor);
+            if (parent == null || parent.inverse == null) { anchor = null; return; }
+            SceneGeometryView.Entry previous = anchor == null ? null : geometry.get(anchor);
+            if (previous != null) {
+                double px = previous.layoutBox.x - scrollX(previous) + baseX;
+                double py = previous.layoutBox.y - scrollY(previous) + baseY;
+                x.shift(previous.transform.x(px, py) - worldX); y.shift(previous.transform.y(px, py) - worldY);
+            }
+            baseX = parent.inverse.x(slot.x, slot.y) - parent.layoutBox.x + scrollX(parent);
+            baseY = parent.inverse.y(slot.x, slot.y) - parent.layoutBox.y + scrollY(parent);
+            anchor = nextAnchor; worldX = slot.x; worldY = slot.y;
+        }
+        private static int scrollX(SceneGeometryView.Entry entry) { return entry.node.axis() == SceneNode.Axis.ROW ? entry.scrollOffset : 0; }
+        private static int scrollY(SceneGeometryView.Entry entry) { return entry.node.axis() == SceneNode.Axis.ROW ? 0 : entry.scrollOffset; }
         void policy(SceneSortableTrack.Strategy strategy, long now) {
             x.retarget(x.target(), strategy, now); y.retarget(y.target(), strategy, now);
             width.retarget(width.target(), strategy, now); height.retarget(height.target(), strategy, now);
@@ -51,6 +71,7 @@ final class SceneSortableMotion<T, K, C> {
     private final ArrayDeque<Sample> samples = new ArrayDeque<>();
     private Object sampleToken;
     private Landing landing;
+    private AutoCloseable landingGeometry;
     SceneSortableMotion(SceneSortableModel<T, K, C> model) {
         this.model = model; flights = new SceneSortableFlights<>(model);
         preview = model.context.domain().signal(null); busy = model.context.domain().signal(false);
@@ -88,7 +109,7 @@ final class SceneSortableMotion<T, K, C> {
         return ((horizontal ? last.box.x : last.box.y) - origin) * 1_000_000_000.0 / (last.time - beginning);
     }
     void show(SceneSortableInteraction.Feedback<T, K, C> value) {
-        landing = null; preview.set(value); elevation.set(1f);
+        stopLanding(); preview.set(value); elevation.set(1f);
     }
     private void configure(SceneSortable.Options<T, C> options) {
         MotionPolicy policy = model.context.motionPolicy().get();
@@ -102,6 +123,13 @@ final class SceneSortableMotion<T, K, C> {
         landing = new Landing(value.box, speed(true, now), speed(false, now), dropStrategy, now);
         samples.clear(); sampleToken = null;
         if (!landing.active()) endPreview();
+        else {
+            // 离散滚轮在 300Hz 输入门限内仍结算几何；落下不能等到下一次主动输入帧才换基。
+            landingGeometry = model.runtime.observeGeometry(model.root, geometry -> {
+                if (geometry != null) { synchronizeLanding(geometry, model.runtime.inputNanos()); publishActivity(); }
+            });
+            if (landing == null) stopLanding();
+        }
     }
     boolean ghost(SceneSortableModel.RowEntry<T, K, C> row) {
         SceneSortableInteraction.Feedback<T, K, C> value = preview.get();
@@ -110,14 +138,16 @@ final class SceneSortableMotion<T, K, C> {
     void synchronize(SceneGeometryView geometry) { advance(geometry, model.runtime.inputNanos()); }
     void advance(SceneGeometryView geometry, long now) {
         flights.synchronize(geometry, this::ghost, reorderStrategy, now);
-        if (landing != null) {
-            SceneSortableInteraction.Feedback<T, K, C> value = preview.get();
-            SceneGeometryView.Entry target = value == null ? null : geometry.get(value.row.declaration.content);
-            if (target == null || !model.runtime.interactive(value.row.node)) endPreview();
-            else { landing.retarget(target.box, dropStrategy, now); publishLanding(); }
-        }
+        synchronizeLanding(geometry, now);
         publishActivity();
         if (preview.get() != null || flights.active()) flights.remember(geometry);
+    }
+    private void synchronizeLanding(SceneGeometryView geometry, long now) {
+        if (landing == null) return;
+        SceneSortableInteraction.Feedback<T, K, C> value = preview.get();
+        SceneGeometryView.Entry target = value == null ? null : geometry.get(value.row.declaration.content);
+        if (target == null || !model.runtime.interactive(value.row.node)) endPreview();
+        else { landing.retarget(target.box, value.row.placed.get().declaration.items, geometry, dropStrategy, now); publishLanding(); }
     }
     /** 只在来源通知后解析策略；逐帧重求 supplier 的等价有限曲线会反复重启轨迹。
      *  声明阶段先采样旧轨迹再切策略，同一时刻的几何同步不重复推进。 */
@@ -141,6 +171,12 @@ final class SceneSortableMotion<T, K, C> {
         busy.set(active);
         if (!active && preview.get() == null) flights.forget();
     }
-    private void endPreview() { preview.set(null); landing = null; samples.clear(); sampleToken = null; }
+    private void stopLanding() {
+        landing = null;
+        if (landingGeometry == null) return;
+        AutoCloseable observation = landingGeometry; landingGeometry = null;
+        try { observation.close(); } catch (Exception failure) { throw new IllegalStateException("排序落下几何观察释放失败", failure); }
+    }
+    private void endPreview() { stopLanding(); preview.set(null); samples.clear(); sampleToken = null; }
     void clear() { flights.clear(); endPreview(); busy.set(false); }
 }

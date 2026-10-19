@@ -65,7 +65,7 @@ public final class InspectionPage {
             sample.add(clipped);
             SceneDraggable.State drag=SceneDraggable.state(page.domain());
             SceneNode badge=GalleryStyle.frame(GalleryStyle.centeredRow().size(Size.fixed(200),Size.fixed(64)).padding(12).gap(12)
-                    .add(GalleryStyle.dragGrip(theme).size(Size.fixed(16),Size.fixed(24)))
+                    .add(GalleryStyle.dragGrip(theme))
                     .add(SceneLabel.create(page,()->"拖动标记",theme).size(Size.fill(1),Size.natural())),theme);
             sample.add(SceneDraggable.create(page,badge,drag,new SceneDraggable.Options().bounds(SceneDraggable.Bounds.PARENT))
                     .size(Size.fill(1),Size.fixed(100)).text("拖动标记")

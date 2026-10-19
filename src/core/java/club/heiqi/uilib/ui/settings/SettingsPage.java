@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.control.SceneCommand;
 import club.heiqi.uilib.ui.scene.control.SceneSelect;
 import club.heiqi.uilib.ui.scene.control.SceneRadioGroup;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
-import club.heiqi.uilib.ui.scene.motion.SceneMotion;
+import club.heiqi.uilib.ui.scene.control.SceneSortable;
 import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneShortcut;
 
@@ -223,10 +223,14 @@ public final class SettingsPage implements ScenePage {
             return sources.size()==1?first:first+"，以及其他 "+(sources.size()-1)+" 个来源";
         }
         SceneNode fontsDialog() {
-            SceneNode list=club.heiqi.uilib.ui.scene.control.SceneSortableList.create(ctx,model.sources(),SettingsModel.Source::identity,
-                    this::sortableSource,this::sourcePreview,move -> model.moveBefore(move.key,move.beforeKey))
-                    .size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true)
-                    .bind(SceneMotion.layoutPositions(motion.spatial));
+            SceneNode list=SceneSortable.create(ctx,
+                    () -> Collections.singletonList(new SceneSortable.Group<>("fonts",model.sources().get())),
+                    SettingsModel.Source::identity, key -> {
+                        SceneNode rows=SettingsStyle.column(0).size(Size.fill(1),Size.fixed(320)).scrollable(true).clip(true);
+                        return new SceneSortable.Container(rows,rows,SceneSortable.Layout.VERTICAL);
+                    },this::sortableSource,this::sourcePreview,move -> model.moveBefore(move.key,move.beforeKey),
+                    () -> new SceneSortable.Options<SettingsModel.Source,String>()
+                            .reorderMotion(motion.spatial.get()).dropMotion(motion.spatial.get()));
             list.bind(NodeBinding.value(() -> SettingsTypography.style(14,palette.get().accent,400),SceneNode::style));
             // 空态隐藏整个表面，避免仍参与布局的容器失去唯一可见正文。
             SceneNode sourceList=SettingsStyle.surface(list,palette,false)
@@ -239,12 +243,10 @@ public final class SettingsPage implements ScenePage {
                     .add(done.view);
             return modal(content,Dialog.FONTS,720,done.target,"管理字体来源");
         }
-        club.heiqi.uilib.ui.scene.control.SceneSortableList.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
-            SceneNode handle=SettingsStyle.column(0).padding(12)
-                    .size(Size.natural().bounds(44,Integer.MAX_VALUE),Size.natural().bounds(44,Integer.MAX_VALUE))
-                    .add(text("::",20,true));
+        SceneSortable.Row sortableSource(ReadableSignal<SettingsModel.Source> source) {
+            SceneNode handle=club.heiqi.uilib.ui.scene.control.SceneDragHandle.create(() -> palette.get().source);
             SceneNode row=SettingsStyle.row(4).add(handle).add(sourceRow(source).size(Size.fill(1),Size.natural()));
-            return new club.heiqi.uilib.ui.scene.control.SceneSortableList.Row(row,handle);
+            return new SceneSortable.Row(row,handle);
         }
         SceneNode sourcePreview(ReadableSignal<SettingsModel.Source> source) {
             SceneNode info=SettingsStyle.column(4).padding(12).add(text(() -> sourceName(source.get().declaration()),14,false))

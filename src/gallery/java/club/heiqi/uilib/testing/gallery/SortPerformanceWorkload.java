@@ -73,7 +73,7 @@ public final class SortPerformanceWorkload implements ScenePage {
         FontEntry entry = source.get();
         if (nodes.containsKey(entry.identity)) throw new AssertionError("排序重建了持续存在的row：" + entry.number);
         rowFactoryCalls++;
-        SceneNode handle = GalleryStyle.label(context, () -> "::", theme, 20, true).size(Size.fixed(28), Size.natural()).padding(4);
+        SceneNode handle = GalleryStyle.dragGrip(theme);
         SceneNode actions = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(), Size.natural()).gap(4);
         for (String text : new String[]{"上移", "下移", "移除"}) actions.add(GalleryStyle.button(context, () -> text, theme, () -> {}));
         SceneNode content = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural()).padding(8).gap(8)

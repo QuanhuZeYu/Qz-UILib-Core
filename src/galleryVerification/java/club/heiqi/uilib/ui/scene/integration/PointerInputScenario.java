@@ -6,8 +6,15 @@ import java.util.UUID;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneControlSize;
+import club.heiqi.uilib.ui.scene.control.SceneDensity;
+import club.heiqi.uilib.ui.scene.control.SceneDragHandle;
+import club.heiqi.uilib.ui.scene.control.SceneDraggable;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.SceneFramePipeline;
+import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
@@ -20,6 +27,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
@@ -206,6 +214,214 @@ public final class PointerInputScenario extends TestApplication {
         System.out.println("POINTER_RELEASE_FAILURE effect=" + effectFailure + " originalIdentity=true cleanupSuppressed=true noUp=true physicalTail=true");
     }
 
+    private static final class DragHandleHost implements SceneHost {
+        long now;
+        PaintPlan last;
+        public int width() { return 1024; }
+        public int height() { return 768; }
+        public long metricsRevision() { return 0; }
+        public long frameNanos() { return now; }
+        public void replay(PaintPlan plan) { last = plan; }
+    }
+
+    private final class DragHandlePage {
+        final ReactiveDomain domain = ReactiveDomain.direct();
+        final DragHandleHost host = new DragHandleHost();
+        final ScenePageSession session;
+        Signal<SceneTheme> theme;
+        Signal<Boolean> clipped;
+        Signal<Integer> clicks;
+        SceneNode handle, button, content, drag;
+        SceneDraggable.State state;
+        int handleMeasures;
+        MountHandle[] originalMounts;
+
+        DragHandlePage(SceneTheme initial) {
+            session = ScenePageSession.open(domain, host, new SoftwareSceneScenario.SoftwareHost(), ctx -> {
+                theme = domain.signal(initial);
+                clipped = domain.signal(false);
+                clicks = domain.signal(0);
+                ctx.runtime().motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
+                handle = SceneDragHandle.create(theme);
+                button = SceneButton.create(ctx, () -> "执行", theme, () -> clicks.set(clicks.get() + 1))
+                        .size(Size.natural(), Size.natural());
+                SceneNode measuredHandle = new SceneNode().add(handle).control(new SceneControl() {
+                    public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
+                    public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
+                        handleMeasures++; return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.measure(node, limits, children);
+                    }
+                    public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+                        return club.heiqi.uilib.ui.scene.layout.SceneFlowLayout.arrange(node, box, children);
+                    }
+                    public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {}
+                });
+                content = new SceneNode().axis(SceneNode.Axis.ROW).add(measuredHandle).add(button);
+                state = SceneDraggable.state(domain);
+                drag = SceneDraggable.create(ctx, content, state,
+                        new SceneDraggable.Options().handles(handle).autoScroll(false));
+                // 同一声明可验证普通溢出与真实祖先裁剪，不回写布局结果来制造命中范围。
+                SceneNode viewport = new SceneNode().size(Size.fixed(32), Size.fixed(240))
+                        .bind(NodeBinding.value(clipped, SceneNode::clip)).add(drag);
+                ctx.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(24).add(viewport));
+                originalMounts = new MountHandle[] {ctx.runtime().captureMount(handle),
+                        ctx.runtime().captureMount(button), ctx.runtime().captureMount(drag)};
+            });
+        }
+
+        void frame(ScenePointerEvent... events) {
+            for (ScenePointerEvent event : events) session.pointer(event);
+            // 连续 MOVE 必须跨过正式 300Hz 输入周期，不能由 CPU 速度决定是否被处理。
+            host.now += 3_333_334L;
+            session.frame();
+        }
+
+        LayoutBox box(SceneNode node) {
+            LayoutBox[] result = new LayoutBox[1];
+            domain.execute(() -> result[0] = session.pipeline().current().geometry.get(node).layoutBox);
+            return result[0];
+        }
+
+        void theme(SceneTheme value) {
+            domain.execute(() -> theme.set(value));
+            frame();
+            domain.execute(() -> {
+                for (MountHandle mount : originalMounts)
+                    require(mount.active(), "主题更新不得重建把手、按钮或拖动声明的挂载身份");
+            });
+        }
+
+        int[] edgePoint() {
+            LayoutBox box = box(handle);
+            int[] point = {box.x + box.width - 1, box.y + box.height - 1};
+            domain.execute(() -> {
+                boolean graphic = false;
+                for (PaintCommand command : host.last.commands()) {
+                    LayoutBox overlap = command.box.intersect(box);
+                    if (overlap.width == 0 || overlap.height == 0) continue;
+                    graphic = true;
+                    require(!command.box.contains(point[0], point[1]), "起拖点必须位于实际绘制图形外的边缘留白");
+                }
+                require(graphic, "把手必须通过正式绘制计划呈现图形");
+                require(session.pipeline().current().geometry.contains(handle, point[0], point[1]),
+                        "留白边缘必须属于实际布局命中盒");
+            });
+            return point;
+        }
+
+        void idle(LayoutBox before, String reason) {
+            domain.execute(() -> {
+                SceneDraggable.Snapshot value = state.snapshot().get();
+                require(!value.active && !value.pending && session.runtime().pointerRouter().pressedTarget().get() == null,
+                        reason + "：不得残留或新建抓取");
+                require(SceneGeometryView.sameBox(before, session.pipeline().current().geometry.get(content).layoutBox),
+                        reason + "：内容不得移动或遗留旧位置");
+                require(clicks.get() == 0, reason + "：不得误执行旁边按钮");
+            });
+        }
+
+        void reject(int[] point, String reason) {
+            LayoutBox before = box(content);
+            frame(ScenePointerEvent.down(0, point[0], point[1]));
+            idle(before, reason + " DOWN");
+            frame(ScenePointerEvent.move(point[0] + 17, point[1] + 13));
+            idle(before, reason + " MOVE");
+            frame(ScenePointerEvent.up(0, point[0] + 17, point[1] + 13));
+            idle(before, reason + " UP");
+        }
+
+        void grab(int[] point, String reason) {
+            LayoutBox before = box(content), handleBefore = box(handle);
+            frame(ScenePointerEvent.down(0, point[0], point[1]));
+            domain.execute(() -> require(state.snapshot().get().active && session.runtime().pressed(drag)
+                    && !session.runtime().pressed(handle), reason + "：留白 DOWN 应由 Draggable 持有手势"));
+            int x = before.x + before.width + 24, y = point[1] + 24;
+            int dx = x - point[0], dy = y - point[1];
+            require(!before.contains(x, y), "MOVE 必须离开原内容盒，验证正式指针捕获");
+            frame(ScenePointerEvent.move(x, y));
+            domain.execute(() -> {
+                SceneDraggable.Snapshot value = state.snapshot().get();
+                LayoutBox moved = session.pipeline().current().geometry.get(content).layoutBox;
+                LayoutBox movedHandle = session.pipeline().current().geometry.get(handle).layoutBox;
+                require(value.active && value.deltaX == dx && value.deltaY == dy && session.runtime().pressed(drag),
+                        reason + "：移出原盒后仍须捕获并消费完整 MOVE");
+                require(moved.x == before.x + dx && moved.y == before.y + dy
+                        && moved.width == before.width && moved.height == before.height
+                        && movedHandle.x == handleBefore.x + dx && movedHandle.y == handleBefore.y + dy,
+                        reason + "：实际内容与把手几何必须同步移动");
+            });
+            frame(ScenePointerEvent.up(0, x, y));
+            idle(before, reason + " 正常释放回槽");
+        }
+    }
+
+    private void standardDragHandleGeometry() {
+        SceneTheme compact = SceneTheme.light().withDensity(SceneDensity.COMPACT);
+        DragHandlePage p = new DragHandlePage(compact);
+        try {
+            p.frame();
+            p.grab(p.edgePoint(), "紧凑主题边缘");
+            int measured = p.handleMeasures;
+            require(measured > 0, "把手自然占位必须经过正式测量");
+            p.theme(SceneTheme.dark().withDensity(SceneDensity.COMPACT));
+            require(p.handleMeasures == measured, "纯配色变化不得使把手重新测量");
+            p.theme(compact.withMotion(club.heiqi.uilib.ui.scene.motion.MotionSpec.instant(),
+                    club.heiqi.uilib.ui.scene.motion.MotionSpec.instant()));
+            require(p.handleMeasures == measured, "纯运动策略变化不得使把手重新测量");
+            p.theme(compact);
+            SceneTheme comfortable = SceneTheme.light();
+            SceneTheme large = comfortable.withControlSize(SceneControlSize.LARGE);
+            SceneTheme[] changes = {comfortable, large, large.withTextStyle(large.textStyle.withEm(64))};
+            String[] reasons = {"主题密度", "控件大小", "有效字号"};
+            SceneTheme previous = compact;
+            for (int i = 0; i < changes.length; i++) {
+                LayoutBox oldBox = p.box(p.handle);
+                p.theme(changes[i]);
+                LayoutBox newBox = p.box(p.handle);
+                require(newBox.width > oldBox.width && newBox.height > oldBox.height,
+                        reasons[i] + "应改变自然布局盒的两个维度");
+                int[] expanded = p.edgePoint();
+                require(!oldBox.contains(expanded[0], expanded[1]) && newBox.contains(expanded[0], expanded[1]),
+                        "必须选择旧盒外、新盒内的实际留白点");
+                // 同一个点先在旧盒拒绝、再在新盒抓取，同时覆盖缩小后不能遗留旧热区。
+                p.theme(previous);
+                require(SceneGeometryView.sameBox(oldBox, p.box(p.handle)), reasons[i] + "往返不得累计缩放");
+                p.reject(expanded, reasons[i] + "恢复旧盒后");
+                p.theme(changes[i]);
+                p.grab(expanded, reasons[i] + "新增留白");
+                previous = changes[i];
+            }
+            int[] outsideClip = p.edgePoint();
+            p.domain.execute(() -> p.clipped.set(true));
+            p.frame();
+            p.domain.execute(() -> {
+                SceneGeometryView geometry = p.session.pipeline().current().geometry;
+                require(geometry.get(p.handle).layoutBox.contains(outsideClip[0], outsideClip[1])
+                        && !geometry.clipContains(p.handle, outsideClip[0], outsideClip[1]),
+                        "反例必须处于实际把手盒内、祖先 clip 外");
+            });
+            p.reject(outsideClip, "祖先裁剪之外");
+            p.domain.execute(() -> p.clipped.set(false));
+            p.frame();
+            LayoutBox button = p.box(p.button), content = p.box(p.content), handle = p.box(p.handle);
+            require(button.x == handle.x + handle.width, "普通按钮必须紧邻把手，防止扩大热区越界抢占");
+            int x = button.x + 1, y = button.y + button.height / 2;
+            p.frame(ScenePointerEvent.down(0, x, y));
+            p.domain.execute(() -> require(p.session.runtime().pressed(p.button) && !p.state.snapshot().get().active
+                    && !p.state.snapshot().get().pending && !p.session.runtime().pressed(p.drag) && p.clicks.get() == 0,
+                    "相邻普通按钮 DOWN 应持有自己的点击，不能激活拖动或提前执行动作"));
+            p.frame(ScenePointerEvent.move(x + 1, y));
+            p.domain.execute(() -> require(!p.state.snapshot().get().active && !p.state.snapshot().get().pending
+                    && SceneGeometryView.sameBox(content, p.session.pipeline().current().geometry.get(p.content).layoutBox),
+                    "按钮内 MOVE 不得抓取或移动父内容"));
+            p.frame(ScenePointerEvent.up(0, x + 1, y));
+            p.domain.execute(() -> require(p.clicks.get() == 1 && !p.state.snapshot().get().active
+                    && p.session.runtime().pointerRouter().pressedTarget().get() == null,
+                    "相邻普通按钮完整点击必须只执行一次且不残留抓取"));
+        } finally {
+            p.session.close();
+        }
+    }
+
     private void inputCadence() {
         Page p = new Page(); p.host.frameStep = 0;
         java.util.List<Integer> moves = new java.util.ArrayList<>();
@@ -247,6 +463,7 @@ public final class PointerInputScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
         scenario("300Hz连续采样独立于绘制且释放带完整前序", this::inputCadence);
+        scenario("标准把手留白抓取、裁剪及动态主题命中", this::standardDragHandleGeometry);
         scenario("高频同区移动复用绘制计划，跨目标仍刷新悬停", () -> {
             Page p = new Page();
             p.domain.execute(() -> {
