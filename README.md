@@ -25,7 +25,7 @@
 
 当前公开分发入口是 GitHub Release 中的该 Maven ZIP。Maven Central 命名空间 `asia.quanhuzeyu` 已 Verified，可运行 Central workflow，仍使用同一坐标、签名、sources 与 javadoc，不改变 ZIP 与 `-P` 用法。发布 workflow 只接受已存在 tag 与 `PUBLISH <tag>`，从该 tag 完整构建后创建或更新同一 Release，静态说明来自 `.changelogs/<tag>.md`。
 
-Central 发布使用 `publishToMavenCentral`：该任务上传 USER_MANAGED 部署并取得 deployment ID；在 Central Portal 核对状态为 `VALIDATED` 后，再按授权执行公开。workflow 只允许手动 tag + `PUBLISH <tag>`，构建 job 无发布凭据，发布 job 仅注入 `MAVEN_CENTRAL_USERNAME`、`MAVEN_CENTRAL_PASSWORD`、`SIGNING_IN_MEMORY_KEY`、`SIGNING_IN_MEMORY_KEY_ID`、`SIGNING_IN_MEMORY_KEY_PASSWORD`。没有签名或 Central 凭据时，本地 `build`、`releaseAssets` 与 `publishWorkspace` 仍可用。
+Central 发布使用 `publishToMavenCentral`：该任务上传 USER_MANAGED 部署并取得 deployment ID；在 Central Portal 核对状态为 `VALIDATED` 后，再按授权执行公开。同一 Central workflow 可填写 `deploymentId`，配合原 tag 与 `PUBLISH <tag>` 只公开该部署：它会核对本仓本版本的精确 Maven 坐标，不重新构建或上传；留空仍采用原上传流程。公开后以实际 Central 坐标可下载为准。workflow 只允许手动 tag + `PUBLISH <tag>`，构建 job 无发布凭据，发布 job 仅注入 `MAVEN_CENTRAL_USERNAME`、`MAVEN_CENTRAL_PASSWORD`、`SIGNING_IN_MEMORY_KEY`、`SIGNING_IN_MEMORY_KEY_ID`、`SIGNING_IN_MEMORY_KEY_PASSWORD`。没有签名或 Central 凭据时，本地 `build`、`releaseAssets` 与 `publishWorkspace` 仍可用。
 
 自有代码采用 [MIT](<LICENSE>)；[第三方材料](<THIRD-PARTY-NOTICES.md>)保留各自许可。
 
