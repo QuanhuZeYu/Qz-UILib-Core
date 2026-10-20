@@ -116,8 +116,8 @@ public final class SceneFilePicker {
                         .size(Size.fill(1), Size.fill(1))
                         .bind(style.spacing(6, 6))
                         .add(listing(style))
-                        .add(style.label(selection::feedback, .86f, true)
-                                .bind(NodeBinding.value(this::showFeedback, SceneNode::visible)));
+                        .add(style.label(() -> selection.feedback().text, .86f, true)
+                                .bind(NodeBinding.value(() -> selection.feedback().visible, SceneNode::visible)));
         content.control(new Panel());
         SceneNode modal =
                 SceneDialog.create(
@@ -161,13 +161,6 @@ public final class SceneFilePicker {
                 .add(modal);
     }
 
-    private boolean showFeedback() {
-        return selection.busy.get()
-                || selection.path.snapshot().get().error != null
-                || selection.entries.get().isEmpty()
-                || selection.selected.get() != null && selection.currentSelection() == null;
-    }
-
     private SceneNode header(FilePickerStyle style, SceneNode field) {
         SceneNode search = search(style).bind(NodeBinding.value(style.controls, (node, value) ->
                 node.size(Size.fill(1).bounds(0, Math.round(value.textStyle.logicalEm * 25)), Size.natural())));
@@ -193,15 +186,10 @@ public final class SceneFilePicker {
                         FilePickerStyle.Role.GHOST, SceneTextPolicy.ELLIPSIS_SINGLE_LINE))
                 .add(style.action(
                                 () -> selection.extension.get().isEmpty() ? "所有文件" : options.filterName,
-                                null, this::toggleFilter, FilePickerStyle.Role.GHOST,
+                                null, () -> selection.toggleFilter(options.extensions), FilePickerStyle.Role.GHOST,
                                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                         .bind(NodeBinding.value(() -> !options.extensions.isEmpty(), SceneNode::visible)));
         return SceneLayouts.split(query, tools, style.splitOptions(8, 4));
-    }
-
-    private void toggleFilter() {
-        selection.extension.set(selection.extension.get().isEmpty() ? options.extensions : "");
-        selection.refresh();
     }
 
     private SceneNode breadcrumbs(FilePickerStyle style) {

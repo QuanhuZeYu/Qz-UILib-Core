@@ -2,7 +2,9 @@ package club.heiqi.uilib.ui.scene.control;
 
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -10,6 +12,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -662,6 +666,83 @@ public final class FilePickerScenario extends TestApplication {
                         deleteTree(root);
                     }
                 });
+        scenario("手输A核验成功迟到时B草稿保留且重新确认可见", () -> editedPathCompletion(false, true));
+        scenario("手输A核验失败迟到时B草稿保留且重新确认可见", () -> editedPathCompletion(false, false));
+        scenario("手输A导航成功迟到时B草稿保留且前往提示可见", () -> editedPathCompletion(true, true));
+        scenario("手输A导航失败迟到时B草稿保留且重新确认可见", () -> editedPathCompletion(true, false));
+        scenario(
+                "正常目录与选择不占反馈行，忙空态及筛选反馈可见",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 反馈占行");
+                    Path empty = Files.createDirectory(root.resolve("empty"));
+                    Path file = Files.createFile(root.resolve("font.ttf"));
+                    Path other = Files.createFile(root.resolve("other.any"));
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    try {
+                        domain.execute(() -> {
+                            state[0] = new FilePickerSelection(domain, root, p -> {}, () -> {});
+                            state[0].attach();
+                            require(state[0].feedback().visible, "读取进度被隐藏");
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(!state[0].feedback().visible, "正常非空目录仍保留常驻说明");
+                            state[0].activate(new FilePickerDirectory.Entry(file, false));
+                            require(!state[0].feedback().visible, "普通选择仍保留重复说明");
+                            state[0].confirm();
+                            state[0].activate(new FilePickerDirectory.Entry(other, false));
+                            require(state[0].busy.get() && state[0].feedback().visible
+                                            && state[0].feedback().text.contains("核验"),
+                                    "核验期间选择另一文件抹掉了在途反馈");
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(other.equals(state[0].currentSelection())
+                                            && state[0].feedback().visible,
+                                    "后来选择被旧核验替换或缺少重新确认反馈");
+                            state[0].toggleFilter("ttf");
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(state[0].extension.get().equals("ttf")
+                                            && state[0].entries.get().stream().anyMatch(entry -> entry.path.equals(file))
+                                            && state[0].entries.get().stream().noneMatch(entry -> entry.path.equals(other))
+                                            && state[0].entries.get().stream().anyMatch(entry -> entry.path.equals(empty))
+                                            && !state[0].feedback().visible,
+                                    "筛选意图未更新真实查询、隐藏目录或保留常驻说明");
+                            state[0].toggleFilter("ttf");
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(state[0].extension.get().isEmpty()
+                                            && state[0].entries.get().stream().anyMatch(entry -> entry.path.equals(other)),
+                                    "切换所有文件没有恢复任意扩展名");
+                            state[0].search.replaceAll("__uilib_absent__");
+                            state[0].query(state[0].search.request(true));
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(state[0].entries.get().isEmpty() && state[0].feedback().visible
+                                            && state[0].feedback().text.contains("匹配"),
+                                    "无匹配项反馈被隐藏");
+                            state[0].clearQuery();
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> {
+                            require(!state[0].feedback().visible, "清除查询后仍占反馈行");
+                            state[0].navigate(empty);
+                        });
+                        settle(domain, state[0]);
+                        domain.execute(() -> require(state[0].entries.get().isEmpty()
+                                        && state[0].feedback().visible
+                                        && state[0].feedback().text.contains("空目录"),
+                                "空目录反馈被隐藏"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+                        deleteTree(root);
+                    }
+                });
         scenario(
                 "新路径核验进度与失败原因不被旧选择提示覆盖",
                 () -> {
@@ -682,13 +763,16 @@ public final class FilePickerScenario extends TestApplication {
                                     state[0].activate(new FilePickerDirectory.Entry(file, false));
                                     state[0].path.replaceAll(missing.toString());
                                     state[0].confirm();
-                                    require(state[0].feedback().contains("核验"), "核验进度被旧选择提示覆盖");
+                                    require(state[0].feedback().visible
+                                                    && state[0].feedback().text.contains("核验"),
+                                            "核验进度被旧选择提示覆盖或隐藏");
                                 });
                         settle(domain, state[0]);
                         domain.execute(
                                 () -> require(
-                                        state[0].feedback().contains("无法访问路径")
-                                                && state[0].feedback().contains("missing.any")
+                                        state[0].feedback().visible
+                                                && state[0].feedback().text.contains("无法访问路径")
+                                                && state[0].feedback().text.contains("missing.any")
                                                 && state[0].path.text().get().equals(missing.toString()),
                                         "失败原因不可见或错误清除了当前路径"));
                     } finally {
@@ -697,7 +781,7 @@ public final class FilePickerScenario extends TestApplication {
                     }
                 });
         scenario(
-                "路径草稿变更后旧核验不提交与选择提示一致",
+                "列表选择后编辑路径隔离旧核验并显示重新确认",
                 () -> {
                     Path root = Files.createTempDirectory("uilib 选择目标 +");
                     Path a = Files.createFile(root.resolve("A.any")),
@@ -737,8 +821,9 @@ public final class FilePickerScenario extends TestApplication {
                                             "旧核验覆盖了B路径");
                                     require(
                                             state[0].currentSelection() == null
-                                                    && state[0].targetLabel().contains("B.any"),
-                                            "选择提示仍冒充旧A");
+                                                    && state[0].feedback().visible
+                                                    && state[0].feedback().text.contains("重新确认"),
+                                            "旧选择冒充当前目标或重新确认被隐藏");
                                     state[0].confirm();
                                 });
                         settle(domain, state[0]);
@@ -757,29 +842,90 @@ public final class FilePickerScenario extends TestApplication {
                 });
     }
 
-    private static FilePickerDirectory.Result await(FilePickerDirectory reader) throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        FilePickerDirectory.Result result;
-        while ((result = reader.take()) == null) {
-            if (System.nanoTime() > deadline) throw new AssertionError("真实目录读取没有完成");
-            Thread.sleep(2);
+    private static void editedPathCompletion(boolean navigation, boolean succeeds) throws Exception {
+        Path root = Files.createTempDirectory("uilib 手输迟到 +");
+        Path a = root.resolve(navigation ? "A" : "A.any");
+        Path b = Files.createFile(root.resolve("B.any"));
+        if (succeeds) {
+            if (navigation) Files.createDirectory(a);
+            else Files.createFile(a);
         }
+        ReactiveDomain domain = ReactiveDomain.direct();
+        FilePickerSelection[] state = {null};
+        SceneEditState.Snapshot[] laterDraft = {null};
+        List<Path> chosen = new ArrayList<>();
+        try {
+            domain.execute(() -> {
+                state[0] = new FilePickerSelection(domain, root, chosen::add, () -> {});
+                state[0].attach();
+            });
+            settle(domain, state[0]);
+            domain.execute(() -> {
+                require(!state[0].entries.get().isEmpty() && state[0].selected.get() == null
+                                && !state[0].feedback().visible,
+                        "反例必须从非空目录、无列表选择且无常驻说明开始");
+                state[0].path.replaceAll(a.toString());
+                if (navigation) state[0].go(state[0].path.request(true));
+                else state[0].confirm();
+                require(state[0].busy.get() && state[0].feedback().visible, "在途反馈被隐藏");
+                // 同一输入操作内继续编辑，真实worker结果只在操作结束后领取。
+                state[0].path.replaceAll(b.toString());
+                state[0].path.select(0, 1);
+                laterDraft[0] = state[0].path.snapshot().get();
+            });
+            settle(domain, state[0]);
+            domain.execute(() -> {
+                SceneEditState.Snapshot actual = state[0].path.snapshot().get();
+                require(chosen.isEmpty() && state[0].showing.get() && state[0].selected.get() == null
+                                && state[0].currentSelection() == null,
+                        "旧结果提交文件、关闭选择器或冒充当前选择");
+                require(actual.text.equals(b.toString()) && actual.active && actual.error == null
+                                && actual.anchor == laterDraft[0].anchor && actual.caret == laterDraft[0].caret,
+                        "旧结果覆盖B草稿、错误或选区");
+                require(state[0].feedback().visible && state[0].feedback().text.contains("路径已更改")
+                                && state[0].feedback().text.contains("确认"),
+                        "无列表选择时过时结果的重新确认反馈被隐藏");
+                state[0].confirm();
+            });
+            settle(domain, state[0]);
+            require(chosen.equals(Collections.singletonList(b)), "随后确认没有且仅提交当前B");
+            System.out.println("FILE_PICKER_FEEDBACK navigation=" + navigation
+                    + " success=" + succeeds + " selectedNull=true staleResultIgnored=true"
+                    + " laterDraftPreserved=true reconfirmVisible=true callbackOnce=true");
+        } finally {
+            domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+            deleteTree(root);
+        }
+    }
+
+    /** 只等待真实文件worker；不为UI刷新引入固定延时，也不增添生产测试接口。 */
+    private static void awaitWorker(FilePickerDirectory reader) throws Exception {
+        Field latest = FilePickerDirectory.class.getDeclaredField("latest");
+        latest.setAccessible(true);
+        Future<?> work = (Future<?>) latest.get(reader);
+        require(work != null, "真实文件worker没有当前任务");
+        work.get(5, TimeUnit.SECONDS);
+    }
+
+    private static FilePickerDirectory.Result await(FilePickerDirectory reader) throws Exception {
+        awaitWorker(reader);
+        FilePickerDirectory.Result result = reader.take();
+        require(result != null, "真实目录worker完成后没有发布结果");
         return result;
     }
 
     private static void settle(ReactiveDomain domain, FilePickerSelection selection)
             throws Exception {
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        boolean[] busy = {true};
-        do {
-            domain.execute(
-                    () -> {
-                        selection.receiveCompletion();
-                        busy[0] = selection.busy.get();
-                    });
-            if (busy[0]) Thread.sleep(2);
-        } while (busy[0] && System.nanoTime() < deadline);
-        require(!busy[0], "真实文件选择状态没有完成");
+        boolean[] busy = {false};
+        domain.execute(() -> busy[0] = selection.busy.get());
+        if (!busy[0]) return;
+        Field reader = FilePickerSelection.class.getDeclaredField("reader");
+        reader.setAccessible(true);
+        awaitWorker((FilePickerDirectory) reader.get(selection));
+        domain.execute(() -> {
+            selection.receiveCompletion();
+            require(!selection.busy.get(), "真实文件worker完成后选择状态没有结束等待");
+        });
     }
 
     private static void deleteTree(Path root) throws Exception {

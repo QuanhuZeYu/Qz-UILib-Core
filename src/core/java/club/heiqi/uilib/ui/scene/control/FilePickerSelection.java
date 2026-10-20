@@ -14,11 +14,29 @@ import java.util.function.Consumer;
 
 /** 一次选择的唯一状态与目录工作 owner；界面只消费这些信号并发布选择意图。 */
 final class FilePickerSelection {
+    /** 正常状态不占反馈行；视图只消费此值，不从目录或编辑细节重建显隐。 */
+    static final class Feedback {
+        static final Feedback NONE = new Feedback(null);
+        final String text;
+        final boolean visible;
+
+        private Feedback(String text) {
+            visible = text != null;
+            this.text = visible ? text : "";
+        }
+
+        static Feedback show(String text) { return new Feedback(text); }
+    }
+
+    private static final Feedback PATH_EDITED = Feedback.show("路径已更改，确认时将核验当前输入。");
+    private static final Feedback RECONFIRM = Feedback.show("路径已更改，请重新确认。");
+    private static final Feedback RENAVIGATE = Feedback.show("路径已更改，请重新前往或确认。");
+
     final SceneEditState path,search;
     final Signal<String> extension,searchTerm;
     final Signal<FilePickerOrder> order;
     final Signal<List<FilePickerDirectory.Entry>> entries;
-    final Signal<String> message;
+    private final Signal<Feedback> status;
     final Signal<Path> directory, selected, revealTarget;
     final Signal<Boolean> busy, showing, roots, previous, next;
     final Signal<Long> page, revision;
@@ -43,7 +61,7 @@ final class FilePickerSelection {
         extension=domain.signal("");searchTerm=domain.signal("");order=domain.signal(FilePickerOrder.NAME);
         scroll=domain.signal(0);backCount=domain.signal(0);forwardCount=domain.signal(0);
         entries = domain.signal(Collections.emptyList());
-        message = domain.signal("正在读取目录…");
+        status = domain.signal(Feedback.NONE);
         busy = domain.signal(false); showing = domain.signal(true);
         roots = domain.signal(false); previous=domain.signal(false); next = domain.signal(false);
         page = domain.signal(0L); revision = domain.signal(0L);
@@ -75,7 +93,7 @@ final class FilePickerSelection {
             if(!listingPending)history.capture(currentSelection(),scrollPosition.getAsInt());
             revealTarget.set(null);revision.set(id);previous.set(false);next.set(false);selected.set(null);entries.set(Collections.emptyList());
         }
-        listingPending=listingChanges;message.set(status);
+        listingPending=listingChanges;this.status.set(Feedback.show(status));
         return id;
     }
     private void browse(Path target, FilePickerQuery query) {
@@ -93,7 +111,8 @@ final class FilePickerSelection {
         if (entry.directory) browse(entry.path, FilePickerQuery.first());
         else {
             selected.set(entry.path); path.reset(entry.path.toString());
-            message.set("已选择：" + entry.name());
+            // 核验时列表仍可选择；后来选择只更换目标，不抹掉在途反馈。
+            if (!busy.get()) status.set(Feedback.NONE);
         }
     }
     void go(SceneEditState.Submission submission) {
@@ -107,9 +126,10 @@ final class FilePickerSelection {
         }
     }
     private void invalidPath(SceneEditState.Submission submission, RuntimeException failure) {
-        begin("无法访问路径：" + failure.getMessage(),false);
+        String reason = "无法访问路径：" + failure.getMessage();
+        begin(reason,false);
         reader.cancelRead(); busy.set(false);
-        path.reject(submission, message.get());
+        if (!path.reject(submission, reason)) status.set(RECONFIRM);
     }
     private Path parse(String raw){
         if(raw.isEmpty())throw new IllegalArgumentException("请输入目录或文件路径");
@@ -136,6 +156,7 @@ final class FilePickerSelection {
     }
     void query(SceneEditState.Submission submission){if(search.snapshot().get().composing)return;if(search.accept(submission,submission.text)){searchTerm.set(submission.text.trim());refresh();}}
     void clearQuery(){search.reset("");searchTerm.set("");refresh();}
+    void toggleFilter(String extensions){extension.set(extension.get().isEmpty()?extensions:"");refresh();}
     void cycleOrder(){FilePickerOrder[] values=FilePickerOrder.VALUES;int i=java.util.Arrays.asList(values).indexOf(order.get());order.set(values[(i+1)%values.length]);refresh();}
     void refresh() {
         FilePickerQuery changed=FilePickerQuery.first().filter(searchTerm.get(),extension.get()).order(order.get());
@@ -167,11 +188,12 @@ final class FilePickerSelection {
         SceneEditState.Submission submission = pendingPath; pendingPath = null;
         if (result.error != null) {
             String reason="无法访问路径："+result.error;
-            history.beginNavigation();message.set(submission==null||path.reject(submission,reason)?reason:"路径已更改，请重新确认。");
+            history.beginNavigation();
+            status.set(submission==null||path.reject(submission,reason)?Feedback.show(reason):RECONFIRM);
         } else if (result.verified != null) {
             // 编辑状态已拥有当前提交判断；旧核验不能关闭用户后来编辑的路径。
             if(submission==null||!path.accept(submission,result.verified.toString())){
-                message.set("路径已更改，请重新确认。");return;
+                status.set(RECONFIRM);return;
             }
             if(!active()||result.request!=request)return;
             finish(); onSelected.accept(result.verified);
@@ -180,7 +202,7 @@ final class FilePickerSelection {
     private void applyListing(FilePickerDirectory.Result result, SceneEditState.Submission submission) {
         String normalized=result.directory==null?null:(result.selected==null?result.directory:result.selected).toString();
         if(submission!=null&&normalized!=null&&!path.accept(submission,normalized)){
-            message.set("路径已更改，请重新前往或确认。");return;
+            status.set(RENAVIGATE);return;
         }
         Location restore=history.acceptListing(result);
         backCount.set(history.backCount());forwardCount.set(history.forwardCount());
@@ -190,7 +212,7 @@ final class FilePickerSelection {
         // locate实际可能执行AROUND；历史保存worker已执行边界，不保存前往时的FIRST意图。
         readingQuery=result.query;readingScope=result.roots?Scope.rootsAt(directory.get()):Scope.directory(result.directory);scroll.set(position);
         history.current(directory.get(),result.roots,result.query,selected.get(),position);
-        message.set(listingMessage(result));
+        status.set(listingFeedback(result));
         // 仅显式路径定位发布显露意图；历史与刷新沿原滚动位置，不追随选择。
         if(result.selected!=null)revealTarget.set(result.selected);
     }
@@ -207,12 +229,12 @@ final class FilePickerSelection {
         Path candidate=restore.selected;
         if(result.entries.stream().anyMatch(entry->entry.path.equals(candidate))){selected.set(candidate);path.reset(candidate.toString());}
     }
-    private String listingMessage(FilePickerDirectory.Result result) {
-        if (result.selected != null) return "已选择：" + result.selected.getFileName();
-        if(result.entries.isEmpty()&&(!searchTerm.get().isEmpty()||!extension.get().isEmpty()))return "没有匹配项，可清除搜索或切换所有文件。";
-        if(result.entries.isEmpty())return result.page>0?"当前页内容已变化，请刷新或返回上一页。":result.roots?"没有可用根目录。":"空目录";
-        return (result.roots ? "根目录 / 盘符" : "单击目录进入，选择文件后确认。")
-                + "（本页 " + result.entries.size() + " 项）";
+    private Feedback listingFeedback(FilePickerDirectory.Result result) {
+        if (!result.entries.isEmpty() || result.selected != null) return Feedback.NONE;
+        if (!searchTerm.get().isEmpty() || !extension.get().isEmpty())
+            return Feedback.show("没有匹配项，可清除搜索或切换所有文件。");
+        return Feedback.show(result.page > 0 ? "当前页内容已变化，请刷新或返回上一页。"
+                : result.roots ? "没有可用根目录。" : "空目录");
     }
     Path currentSelection(){
         Path chosen=selected.get();
@@ -220,21 +242,11 @@ final class FilePickerSelection {
         try{return chosen.equals(resolve(path.snapshot().get().text))?chosen:null;}
         catch(IllegalArgumentException|SecurityException invalid){return null;}
     }
-    String targetLabel(){
-        String raw=path.snapshot().get().text;
-        if(raw.isEmpty())return "尚未选择文件";
-        try{
-            Path target=resolve(raw);
-            if(target.equals(directory.get())&&currentSelection()==null)return "尚未选择文件";
-            String name=target.getFileName()==null?target.toString():target.getFileName().toString();
-            return (currentSelection()==null?"待核验：":"将打开：")+name;
-        }catch(IllegalArgumentException|SecurityException invalid){return "请检查待打开的文件路径";}
-    }
-    String feedback(){
-        // 当前请求及字段拒绝已有明确反馈，不能被旧选择的通用提示遮住。
-        if(busy.get()||path.snapshot().get().error!=null)return message.get();
-        if(selected.get()!=null&&currentSelection()==null)return "路径已更改，确认时将核验当前输入。";
-        return message.get();
+    Feedback feedback(){
+        Feedback current = status.get();
+        // 忙、拒绝和过时结果的重新确认先于旧选择提示；正常目录不保留说明占行。
+        if (current.visible) return current;
+        return selected.get()!=null&&currentSelection()==null ? PATH_EDITED : current;
     }
     private void finish() { finished = true; showing.set(false); detach(); }
     void cancel() { if (active()) { finish(); onCancelled.run(); } }
