@@ -40,6 +40,9 @@ public final class SceneFilePicker {
             ReadableSignal<SceneTheme> theme, Consumer<Path> onSelected, Runnable onCancelled) {
         return create(context,initialDirectory,theme,new Options(),onSelected,onCancelled);
     }
+    public static SceneNode create(ScenePageContext context,Path initialDirectory,Options options,Consumer<Path> onSelected,Runnable onCancelled){
+        return create(context,initialDirectory,context.theme(),options,onSelected,onCancelled);
+    }
     public static SceneNode create(ScenePageContext context,Path initialDirectory,ReadableSignal<SceneTheme> theme,Options options,Consumer<Path> onSelected,Runnable onCancelled){
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(initialDirectory, "initialDirectory");
@@ -93,7 +96,7 @@ public final class SceneFilePicker {
     private SceneNode breadcrumbs(FilePickerStyle style){
         SceneNode crumbs=FilePickerStyle.row(3).scrollable(true);
         crumbs.bind(NodeBinding.repeat(this::breadcrumbPaths,part->part,item->SceneTooltip.attach(context,
-                style.action(()->breadcrumbLabel(item.get()),null,()->selection.navigate(item.get()),FilePickerStyle.Role.GHOST)
+                style.action(()->breadcrumbLabel(item.get()),null,()->selection.navigate(item.get()),FilePickerStyle.Role.GHOST,SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                         .size(Size.fill(1),Size.natural()),()->SceneTooltip.Content.text(item.get().toString()),()->new SceneTooltip.Options(),theme)));
         return crumbs.bind(NodeBinding.value(()->context.viewportHeight().get()>=700,SceneNode::visible));
     }

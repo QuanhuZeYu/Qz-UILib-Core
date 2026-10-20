@@ -39,6 +39,12 @@ public final class SceneDocument {
     private SceneDocument() {}
 
     public static SceneNode create(
+            ScenePageContext context, ReadableSignal<DocumentContent> content,
+            DocumentResources resources, Consumer<String> activate) {
+        return create(context, content, context.theme(), resources, activate);
+    }
+
+    public static SceneNode create(
             ScenePageContext context,
             ReadableSignal<DocumentContent> content,
             ReadableSignal<SceneTheme> theme,
@@ -56,6 +62,12 @@ public final class SceneDocument {
                         block -> block,
                         signal -> createBlockChild(context, signal, theme, resources, activate)));
         return root;
+    }
+
+    public static SceneNode paragraph(
+            ScenePageContext context, ReadableSignal<TextContent> content,
+            DocumentResources resources, Consumer<String> activate) {
+        return paragraph(context, content, context.theme(), resources, activate);
     }
 
     public static SceneNode paragraph(
@@ -142,8 +154,8 @@ public final class SceneDocument {
         DocumentResources.ImageReference reference = resources.reference(item.source);
         ReadableSignal<ImageSource> source =
                 reference == null ? () -> resources.source(item.source) : reference.source;
-        return SceneImage.themed(
-                resources.images, source, () -> imageOptions(item, reference), scoped);
+        return SceneImage.create(
+                context, resources.images, source, () -> imageOptions(item, reference), scoped);
     }
 
     private static ImageOptions imageOptions(

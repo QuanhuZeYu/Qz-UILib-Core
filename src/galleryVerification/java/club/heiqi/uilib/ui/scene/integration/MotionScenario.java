@@ -51,6 +51,9 @@ public final class MotionScenario extends TestApplication {
         scenario("退场片段跟随父视口回弹的当前空间", this::presenceBounce);
         scenario("弹性排序完全落定后往返滚动不复活旧反馈", () -> sortableScroll(true));
         scenario("弹性排序落下中滚动父容器立即同步且不重启位移", () -> sortableScroll(false));
+        scenario("排序同批真实采集速度与输入门内持续呈现", this::sortableSampling);
+        scenario("排序取消与卸载释放呈现且不提交", this::sortableCancellation);
+        scenario("排序UP后曲线失败清空所属呈现且保留原异常", this::sortableFailure);
         scenario("拖拽释放保留位置和速度且单次意图", this::dragRelease);
         scenario("停手释放不甩出且碰壁后立即回槽", this::dragReleaseFeedback);
         scenario("碰壁按实际时刻推进且预览沿视口回槽", this::boundedRelease);
@@ -923,6 +926,260 @@ public final class MotionScenario extends TestApplication {
             require(page.pipeline().current().geometry.get(content[0]).box.x == 0 && drops[0] == 1, "取消复活旧释放或重复业务意图");
         });
     }
+    private void sortableSampling() {
+        for (long capture : new long[] {10_000_000L, 50_000_000L, 100_000_000L}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            host.width = 320; host.height = 320; host.frameTime = 1_000_000_000L; host.frameStep = 0;
+            SceneNode[] board = {null}, preview = {null}; Map<String, SceneNode> rows = new java.util.LinkedHashMap<>();
+            int[] moves = {0}; MotionSpec spring = MotionSpec.spring(.4, .75);
+            ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+                board[0] = SceneSortable.create(context,
+                        () -> Collections.singletonList(new SceneSortable.Group<>("group", Arrays.asList("a", "b", "c", "d"))), value -> value,
+                        key -> { SceneNode items = new SceneNode().size(Size.fixed(240), Size.natural());
+                            return new SceneSortable.Container(items, items, SceneSortable.Layout.VERTICAL); },
+                        value -> { SceneNode content = new SceneNode().size(Size.fill(1), Size.fixed(40));
+                            rows.put(value.get(), content); return new SceneSortable.Row(content); },
+                        value -> preview[0] = new SceneNode().background(0xff876543), move -> moves[0]++,
+                        () -> new SceneSortable.Options<String, String>().autoScroll(false)
+                                .reorderMotion(MotionSpec.tween(100_000_000L, MotionSpec.LINEAR)).dropMotion(spring));
+                context.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).add(board[0]));
+            }));
+            page.frame(); long down = host.frameTime;
+            // 三条输入在同一批结算；最后一组先移动再停手，UP 必须覆盖整个静止窗口。
+            boolean paused = capture == 100_000_000L;
+            page.pointer(ScenePointerEvent.down(0, 20, 20).at(down));
+            page.pointer(ScenePointerEvent.move(20, 100).at(down + (paused ? 10_000_000L : capture)));
+            page.pointer(ScenePointerEvent.up(0, 20, 100).at(down + capture));
+            host.frameTime += 200_000_000L; page.frame();
+            domain.execute(() -> {
+                SceneGeometryView initial = page.pipeline().current().geometry;
+                LayoutBox from = initial.get(preview[0]).box, target = initial.get(rows.get("a")).box;
+                require(moves[0] == 1, "同批排序未发布唯一 Move");
+                long now = page.runtime().inputNanos(), inputTick = inputSampleTime(page.runtime());
+                double speed = paused ? 0 : 80 * 1_000_000_000.0 / capture;
+                MotionValue reference = new MotionValue(); reference.release(from.y, speed, target.y, spring, now);
+                host.frameTime += 2_000_000L; reference.advance(host.frameTime); page.frame();
+                club.heiqi.uilib.ui.scene.runtime.ScenePresentation current = page.pipeline().current();
+                require(inputSampleTime(page.runtime()) == inputTick, "门内帧推进了主动输入");
+                int actual = current.geometry.get(preview[0]).box.y, expected = (int) Math.round(reference.value());
+                require(actual == expected, "排序释放未使用真实采集间隔：capture=" + capture + " actual=" + actual + " expected=" + expected);
+                page.runtime().preparePresentation(host.frameTime);
+                require(page.pipeline().current() == current, "同刻 prepare 重复推进排序");
+                host.frameTime += 3_000_000_000L; page.frame();
+                require(!sortableActive(board[0]) && preview[0].destroyed(), "排序落定未释放活跃呈现");
+                require(sortableResourcesReleased(board[0]), "排序落定仍持有调度或几何观察");
+                club.heiqi.uilib.ui.scene.runtime.ScenePresentation stopped = page.pipeline().current();
+                host.frameTime += 1_000_000L; page.frame();
+                require(page.pipeline().current() == stopped && moves[0] == 1, "排序静止未复用呈现或重复提交");
+            });
+            page.close();
+        }
+    }
+    private void sortableFailure() throws Exception {
+        AssertionError failures = null;
+        for (String entry : new String[] {"frame", "geometry", "policy"})
+                for (boolean explicit : new boolean[] {false, true}) for (boolean cleanupFails : new boolean[] {false, true}) {
+            try { sortableFailure(entry, explicit, cleanupFails); }
+            catch (Throwable failure) {
+                if (failures == null) failures = new AssertionError("排序曲线失败清理未满足合同", failure);
+                else failures.addSuppressed(failure);
+            }
+        }
+        if (failures != null) throw failures;
+    }
+    private void sortableFailure(String entry, boolean explicit, boolean cleanupFails) throws Exception {
+        String mode = entry + "/" + (explicit ? "Tween" : "Transition") + "/cleanup=" + cleanupFails;
+        ReactiveDomain domain = ReactiveDomain.direct();
+        SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+        host.width = 320; host.height = 320; host.frameTime = 1_000_000_000L; host.frameStep = 0;
+        RuntimeException primary = new IllegalStateException("排序曲线失败/" + mode);
+        Throwable[] cleanup = {new AssertionError("偏移b释放失败"), new IllegalStateException("偏移c释放失败"),
+                new AssertionError("预览释放失败"), new IllegalStateException("忙碌标记释放失败")};
+        boolean[] armed = {false}, primaryRaised = {false}; int[] moves = {0}, calls = {0};
+        Signal<List<String>>[] order = new Signal[1]; Signal<Integer>[] inset = new Signal[1];
+        Signal<SceneSortable.Options<String, String>>[] configured = new Signal[1];
+        SceneNode[] board = {null}, preview = {null}; Object[] motion = {null}, model = {null}; club.heiqi.uilib.ui.reactive.Owner[] observerOwner = {null};
+        java.util.function.DoubleUnaryOperator easing = progress -> {
+            if (armed[0] && "frame".equals(entry) && progress > 0) {
+                primaryRaised[0] = true; calls[0]++; throw primary;
+            }
+            return progress;
+        };
+        SceneSortable.Options<String, String> base = new SceneSortable.Options<String, String>().autoScroll(false)
+                .reorderMotion(MotionSpec.tween(1_000_000_000L, MotionSpec.LINEAR));
+        SceneSortable.Options<String, String> options = explicit
+                ? base.dropMotion(MotionSpec.tween(250_000_000L, easing))
+                : base.dropAnimation(new SceneSortable.Transition(250, easing));
+        ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+            order[0] = domain.signal(Arrays.asList("a", "b", "c", "d"));
+            inset[0] = domain.signal(0); configured[0] = domain.signal(options);
+            board[0] = SceneSortable.create(context,
+                    () -> Collections.singletonList(new SceneSortable.Group<>("group", order[0].get())), value -> value,
+                    key -> { SceneNode items = new SceneNode().size(Size.fixed(240), Size.natural())
+                            .bind(NodeBinding.value(inset[0], SceneNode::padding));
+                        return new SceneSortable.Container(items, items, SceneSortable.Layout.VERTICAL); },
+                    value -> new SceneSortable.Row(new SceneNode().size(Size.fill(1), Size.fixed(40))),
+                    value -> preview[0] = new SceneNode().background(0xff876543), move -> {
+                        moves[0]++; order[0].set(Arrays.asList("b", "c", "a", "d"));
+                    }, configured[0]);
+            context.mountOwned(new SceneNode().add(board[0]));
+        }));
+        try {
+            page.frame(); page.pointer(ScenePointerEvent.down(0, 20, 20).at(host.frameTime));
+            page.pointer(ScenePointerEvent.move(20, 100).at(host.frameTime + 20_000_000L));
+            host.frameTime += 20_000_000L; page.frame();
+            host.frameTime += 20_000_000L; page.frame();
+            page.pointer(ScenePointerEvent.up(0, 20, 100).at(host.frameTime)); page.frame();
+            domain.execute(() -> {
+                motion[0] = sortableMotion(board[0]);
+                try { model[0] = sortableField(board[0].control(), "model"); }
+                catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+                require(moves[0] == 1 && sortableActive(motion[0]), "未建立UP后的活动排序：" + mode);
+                observerOwner[0] = domain.owner();
+                // Flights 的身份容器不承诺行顺序；第一条真实通知才是首错，清理故障须在它之后启用。
+                if (!"frame".equals(entry)) for (String key : new String[] {"b", "c"})
+                    domain.observe(observerOwner[0], sortableRowOffset(model[0], key)::get, () -> {
+                        if (armed[0] && !primaryRaised[0]) {
+                            primaryRaised[0] = true; calls[0]++;
+                            System.out.println("SORTABLE_FAILURE_PRIMARY mode=" + mode + " row=" + key);
+                            throw primary;
+                        }
+                    }).refresh();
+                if (cleanupFails) {
+                    observeSortableCleanup(domain, observerOwner[0], sortableRowOffset(model[0], "b"),
+                            () -> sortableOffsetY(model[0], "b") == 0, primaryRaised, cleanup[0]);
+                    observeSortableCleanup(domain, observerOwner[0], sortableRowOffset(model[0], "c"),
+                            () -> sortableOffsetY(model[0], "c") == 0, primaryRaised, cleanup[1]);
+                    try {
+                        ReadableSignal<?> shown = (ReadableSignal<?>) sortableField(motion[0], "preview");
+                        ReadableSignal<?> busy = (ReadableSignal<?>) sortableField(motion[0], "busy");
+                        observeSortableCleanup(domain, observerOwner[0], shown, () -> shown.get() == null, primaryRaised, cleanup[2]);
+                        observeSortableCleanup(domain, observerOwner[0], busy, () -> Boolean.FALSE.equals(busy.get()), primaryRaised, cleanup[3]);
+                    } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+                }
+                require(sortableOffsetY(model[0], "b") != 0 && sortableOffsetY(model[0], "c") != 0,
+                        "没有触达多条活动让位：" + mode);
+                armed[0] = true;
+            });
+            Throwable caught = null;
+            try {
+                if ("frame".equals(entry)) host.frameTime += 2_000_000L;
+                else domain.execute(() -> {
+                    if ("geometry".equals(entry)) inset[0].set(10);
+                    else configured[0].set(options.reorderMotion(MotionSpec.instant()).dropMotion(MotionSpec.instant()));
+                });
+                page.frame();
+            } catch (RuntimeException | Error failure) { caught = failure; }
+            require(caught == primary, "没有保留UP后曲线原异常：" + mode + " caught=" + caught);
+            domain.execute(() -> {
+                boolean active = sortableActive(motion[0]), released = sortableResourcesReleased(motion[0]);
+                System.out.println("SORTABLE_FAILURE mode=" + mode + " calls=" + calls[0]
+                        + " active=" + active + " resourcesReleased=" + released + " suppressed=" + primary.getSuppressed().length);
+                require(!active && released, "UP后曲线失败残留排序轨迹/预览/调度/观察：" + mode);
+                require(sortableOffsetY(model[0], "b") == 0 && sortableOffsetY(model[0], "c") == 0,
+                        "一条让位清理失败阻断另一条：" + mode);
+                if (cleanupFails) for (Throwable next : cleanup)
+                    require(hasSuppressed(primary, next), "清理异常未附到原异常：" + mode + " cleanup=" + next);
+            });
+            host.frameTime += 2_000_000L; page.frame();
+            domain.execute(() -> {
+                require(calls[0] == 1 && moves[0] == 1, "失败轨迹重试或重复提交：" + mode);
+                require(preview[0].destroyed(), "失败后的预览节点未释放：" + mode);
+            });
+        } finally {
+            armed[0] = false;
+            domain.execute(() -> { if (observerOwner[0] != null) observerOwner[0].close(); });
+            page.close();
+        }
+    }
+    private static void observeSortableCleanup(ReactiveDomain domain, club.heiqi.uilib.ui.reactive.Owner owner,
+            ReadableSignal<?> signal, java.util.function.BooleanSupplier cleared, boolean[] primaryRaised, Throwable failure) {
+        club.heiqi.uilib.ui.reactive.Observation[] observation = {null};
+        observation[0] = domain.observe(owner, signal::get, () -> {
+            observation[0].refresh();
+            if (primaryRaised[0] && cleared.getAsBoolean()) {
+                if (failure instanceof Error) throw (Error) failure;
+                throw (RuntimeException) failure;
+            }
+        });
+        observation[0].refresh();
+    }
+    private static ReadableSignal<?> sortableRowOffset(Object model, String key) {
+        try {
+            Object row = ((Map<?, ?>) sortableField(model, "rows")).get(key);
+            return (ReadableSignal<?>) sortableField(row, "offset");
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    private static int sortableOffsetY(Object model, String key) {
+        try { return (Integer) sortableField(sortableRowOffset(model, key).get(), "y"); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    private static boolean hasSuppressed(Throwable primary, Throwable expected) {
+        for (Throwable next : primary.getSuppressed()) if (next == expected || hasSuppressed(next, expected)) return true;
+        return false;
+    }
+    private void sortableCancellation() {
+        for (boolean unmount : new boolean[] {false, true}) {
+            ReactiveDomain domain = ReactiveDomain.direct();
+            SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
+            host.width = 320; host.height = 320; host.frameTime = 1_000_000_000L; host.frameStep = 0;
+            Signal<Boolean>[] present = new Signal[1]; SceneNode[] board = {null}, neighbor = {null}; int[] moves = {0};
+            Object[] observedMotion = {null};
+            ScenePageSession page = own(ScenePageSession.open(domain, host, host, context -> {
+                present[0] = domain.signal(true);
+                board[0] = SceneSortable.create(context,
+                        () -> Collections.singletonList(new SceneSortable.Group<>("group", Arrays.asList("a", "b", "c"))), value -> value,
+                        key -> { SceneNode items = new SceneNode().size(Size.fixed(240), Size.natural());
+                            return new SceneSortable.Container(items, items, SceneSortable.Layout.VERTICAL); },
+                        value -> { SceneNode content = new SceneNode().size(Size.fill(1), Size.fixed(40));
+                            if ("b".equals(value.get())) neighbor[0] = content; return new SceneSortable.Row(content); },
+                        value -> new SceneNode().background(0xff876543), move -> moves[0]++,
+                        () -> new SceneSortable.Options<String, String>().autoScroll(false)
+                                .reorderMotion(MotionSpec.tween(80_000_000L, MotionSpec.LINEAR)).dropMotion(MotionSpec.spring(.36, .68)));
+                context.mountOwned(new SceneNode().bind(NodeBinding.ownedChildren(
+                        () -> present[0].get() ? Collections.singletonList(board[0]) : Collections.emptyList())));
+            }));
+            page.frame(); page.pointer(ScenePointerEvent.down(0, 20, 20).at(host.frameTime));
+            page.pointer(ScenePointerEvent.move(20, 100).at(host.frameTime + 20_000_000L));
+            host.frameTime += 20_000_000L; page.frame();
+            domain.execute(() -> {
+                // ownedChildren 移除后会清空 board.control；先保留同一生产轨迹，销毁后仍核验其清理。
+                observedMotion[0] = sortableMotion(board[0]);
+                require(sortableActive(observedMotion[0]), "没有触达活动排序");
+                int before = page.pipeline().current().geometry.get(neighbor[0]).box.y;
+                long tick = inputSampleTime(page.runtime()); host.frameTime += 2_000_000L; page.frame();
+                int after = page.pipeline().current().geometry.get(neighbor[0]).box.y;
+                require(after < before, "输入门内让位没有继续呈现：" + before + "->" + after);
+                require(inputSampleTime(page.runtime()) == tick, "让位推进了主动输入帧");
+            });
+            if (unmount) domain.execute(() -> present[0].set(false));
+            else page.pointer(ScenePointerEvent.cancel().at(host.frameTime));
+            page.frame(); page.pointer(ScenePointerEvent.up(0, 20, 100).at(host.frameTime)); page.frame();
+            host.frameTime += 3_000_000_000L; page.frame();
+            domain.execute(() -> {
+                if (unmount) require(board[0].destroyed() && board[0].control() == null
+                        && page.pipeline().current().geometry.get(board[0]) == null, "拥有移除未结束节点及当前几何");
+                require(moves[0] == 0 && !sortableActive(observedMotion[0]), "取消/卸载提交了 Move 或保留运动");
+                require(sortableResourcesReleased(observedMotion[0]), "取消/卸载没有对称释放呈现资源");
+            });
+            page.close();
+        }
+    }
+    private static long inputSampleTime(SceneRuntime runtime) {
+        try { return (Long) sortableField(runtime, "inputNanos"); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    private static Object sortableMotion(SceneNode board) {
+        try { return sortableField(sortableField(board.control(), "model"), "motion"); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
+    private static boolean sortableResourcesReleased(SceneNode board) { return sortableResourcesReleased(sortableMotion(board)); }
+    private static boolean sortableResourcesReleased(Object motion) {
+        try {
+            return sortableField(motion, "scheduled") == null && sortableField(motion, "geometryObservation") == null;
+        } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
+    }
     private void sortableScroll(boolean settled) {
         ReactiveDomain domain = ReactiveDomain.direct();
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
@@ -992,9 +1249,9 @@ public final class MotionScenario extends TestApplication {
         }
     }
     /** 仅测试观测：区分肉眼落定与 elevation/亚像素仍活跃，不给生产增加探针。 */
-    private static boolean sortableActive(SceneNode board) {
+    private static boolean sortableActive(SceneNode board) { return sortableActive(sortableMotion(board)); }
+    private static boolean sortableActive(Object motion) {
         try {
-            Object model = sortableField(board.control(), "model"), motion = sortableField(model, "motion");
             Object landing = sortableField(motion, "landing"), flights = sortableField(motion, "flights");
             boolean preview = ((ReadableSignal<?>) sortableField(motion, "preview")).get() != null;
             boolean busy = (Boolean) ((ReadableSignal<?>) sortableField(motion, "busy")).get();

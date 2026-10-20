@@ -180,6 +180,58 @@ public final class StandardControlsScenario extends TestApplication {
         scenario("Enter和空格按压门等待历史释放且repeat一次", this::keyPressSegments);
         scenario("业务目标激活不抢焦点且屏外按钮不投影提示", this::activationAndViewport);
         scenario("全部鼠标释放清除按下颜色与失活owner呈现", this::releasePresentation);
+        scenario("现代动作默认换行及组合内容共享唯一焦点名称和省略提示", this::modernActions);
+    }
+
+    private void modernActions() {
+        ReactiveDomain domain = ReactiveDomain.direct(); TextHost host = new TextHost();
+        Signal<String>[] name = new Signal[1]; Signal<Boolean>[] enabled = new Signal[1], selected = new Signal[1];
+        SceneNode[] actions = new SceneNode[3], label = new SceneNode[1]; int[] clicks = {0};
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            page.motionPolicy(() -> club.heiqi.uilib.ui.scene.motion.MotionPolicy.OFF);
+            name[0] = domain.signal(LONG); enabled[0] = domain.signal(true); selected[0] = domain.signal(false);
+            label[0] = SceneLabel.create(page, name[0], page.theme(), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
+                    .size(Size.fill(1), Size.natural());
+            SceneNode content = new SceneNode().size(Size.fill(1), Size.natural()).add(label[0]);
+            actions[0] = club.heiqi.uilib.ui.scene.control.SceneAppearance.button(page, name[0], content, page.theme(),
+                    () -> clicks[0]++, club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.ENTRY, selected[0])
+                    .size(Size.fixed(110), Size.natural()).bind(NodeBinding.value(enabled[0], SceneNode::enabled));
+            actions[1] = club.heiqi.uilib.ui.scene.control.SceneAppearance.button(page, () -> "名称需要自然换行", page.theme(),
+                    () -> {}, club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.OUTLINE).size(Size.fixed(110), Size.natural());
+            actions[2] = club.heiqi.uilib.ui.scene.control.SceneAppearance.button(page, () -> "名称需要自然换行", page.theme(),
+                    () -> {}, club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.OUTLINE, SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
+                    .size(Size.fixed(110), Size.natural());
+            page.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).initialFocus(actions[0])
+                    .add(actions[0]).add(actions[1]).add(actions[2]));
+        }); onClose(session::close); session.frame();
+        domain.execute(() -> {
+            require(session.pipeline().current().semantics.entries.stream().filter(e -> e.focusable).count() == actions.length,
+                    "组合内容产生额外焦点或隐藏动作");
+            require(entry(session, actions[0]).text.logicalText.isEmpty() && ellipsis(entry(session, label[0]).text),
+                    "组合根仍绘制名称或子内容未走正式受限呈现");
+            require(entry(session, actions[1]).text.lines().size() > entry(session, actions[2]).text.lines().size()
+                    && entry(session, actions[1]).box.height > entry(session, actions[2]).box.height,
+                    "现代默认没有自然换行或显式单行策略失效");
+            PaintCommand last = host.last.commands().get(host.last.commands().size()-1);
+            require(last.kind == PaintCommand.Kind.TEXT && LONG.equals(last.text.logicalText), "键盘焦点缺组合动作完整提示");
+        });
+        club.heiqi.uilib.ui.scene.input.SceneKeyEvent space = new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(
+                club.heiqi.uilib.ui.scene.input.SceneKey.SPACE, false, false, false, false, false, null);
+        session.key(space); session.frame(); require(clicks[0] == 0, "组合Space在DOWN提前激活");
+        session.key(space.withPhase(club.heiqi.uilib.ui.scene.input.SceneKeyEvent.Phase.UP)); session.frame();
+        require(clicks[0] == 1, "组合Space没有在原UP单次激活");
+        session.key(new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(
+                club.heiqi.uilib.ui.scene.input.SceneKey.ENTER, false, false, false, false, false, null)); session.frame();
+        require(clicks[0] == 2, "组合Enter未经过标准动作");
+        domain.execute(() -> { name[0].set("更新后的完整名称仍可读"); selected[0].set(true); }); session.frame();
+        domain.execute(() -> {
+            require(session.pipeline().current().semantics.entries.stream().anyMatch(e -> e.focusable
+                    && name[0].get().equals(e.values.name) && Boolean.TRUE.equals(e.values.selected)),
+                    "组合名称或选中语义没有随来源更新");
+            enabled[0].set(false);
+        }); session.frame();
+        domain.execute(() -> session.runtime().dispatchClick(actions[0])); session.frame();
+        require(clicks[0] == 2, "禁用组合动作仍激活");
     }
 
     private void releasePresentation() {

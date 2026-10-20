@@ -119,6 +119,18 @@ public final class SceneMath implements SceneControl {
     }
 
     public static SceneNode create(
+            ScenePageContext context, ReadableSignal<MathContent> source,
+            MathStyle mathStyle, Map<String, Embed> embeds) {
+        return create(context, source, context.theme(), mathStyle, embeds);
+    }
+
+    public static SceneNode create(
+            ScenePageContext context, ReadableSignal<MathContent> source, MathStyle mathStyle,
+            Map<String, Embed> embeds, ReadableSignal<Integer> initialEquationNumber) {
+        return create(context, source, context.theme(), mathStyle, embeds, initialEquationNumber);
+    }
+
+    public static SceneNode create(
             ScenePageContext context,
             ReadableSignal<MathContent> source,
             ReadableSignal<SceneTheme> theme,

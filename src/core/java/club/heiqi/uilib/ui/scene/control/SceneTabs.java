@@ -69,8 +69,10 @@ public final class SceneTabs<K> {
                     .position(tabs.get().indexOf(current.get()) + 1, tabs.get().size())
                     .actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE, SceneSemantics.Action.SELECT).build()));
             targets.put(key, button); button.own(() -> targets.remove(key, button));
-            return new SceneNode().size(Size.natural(), Size.natural())
-                    .control(new Label(button, theme, () -> Objects.equals(selected.get(), key))).add(button);
+            SceneNode label = new SceneNode().size(Size.natural(), Size.natural());
+            ReadableSignal<Float> marker = SceneControlMotion.progress(label, theme,
+                    () -> Objects.equals(selected.get(), key) ? 1f : 0f, false);
+            return label.control(new Label(button, theme, marker)).add(button);
         }));
         SceneScrollArea.Area scroll = SceneScrollArea.create(page, labels,
                 () -> new SceneScrollArea.Options().axes(SceneScrollArea.Axes.HORIZONTAL), theme);
@@ -122,11 +124,11 @@ public final class SceneTabs<K> {
     private static final class Label implements SceneControl {
         private final SceneNode button;
         private final ReadableSignal<SceneTheme> theme;
-        private final ReadableSignal<Boolean> selected;
-        Label(SceneNode button, ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> selected) {
-            this.button = button; this.theme = theme; this.selected = selected;
+        private final ReadableSignal<Float> marker;
+        Label(SceneNode button, ReadableSignal<SceneTheme> theme, ReadableSignal<Float> marker) {
+            this.button = button; this.theme = theme; this.marker = marker;
         }
-        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, selected); }
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, marker); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
             MeasuredSize actual = children.measureChild(button, limits);
@@ -138,8 +140,10 @@ public final class SceneTabs<K> {
         }
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {
             SceneGeometryView.Entry entry = geometry.get(node);
-            if (selected.get() && entry != null) paint.add(PaintCommand.rect(new LayoutBox(entry.box.x, entry.box.y + Math.max(0, entry.box.height - 2),
-                    entry.box.width, Math.min(2, entry.box.height)), entry.clip, theme.get().focus));
+            int color = theme.get().focus;
+            int alpha = Math.round((color >>> 24) * Math.max(0f, Math.min(1f, marker.get())));
+            if (alpha > 0 && entry != null) paint.add(PaintCommand.rect(new LayoutBox(entry.box.x, entry.box.y + Math.max(0, entry.box.height - 2),
+                    entry.box.width, Math.min(2, entry.box.height)), entry.clip, (color & 0x00ffffff) | (alpha << 24)));
         }
     }
     public SceneNode node() { return node; }

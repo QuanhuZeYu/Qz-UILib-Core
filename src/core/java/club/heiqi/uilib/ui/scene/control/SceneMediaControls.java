@@ -134,6 +134,9 @@ public final class SceneMediaControls {
         }
     }
     /** 观看区域自身取得焦点后处理快捷键；工具栏、文字编辑与模态仍沿各自当前目标。 */
+    public static SceneNode viewing(ScenePageContext page,MediaSession session,SceneNode content){
+        return viewing(page,session,content,page.theme());
+    }
     public static SceneNode viewing(ScenePageContext page,MediaSession session,SceneNode content,ReadableSignal<SceneTheme> theme){
         SceneNode area=new SceneNode().control(new Viewing(session)).size(Size.fill(1),Size.fill(1)).focusable(true).clickFocus(true).onClick(()->{}).add(content);
         return SceneTooltip.attach(page,area,()->SceneTooltip.Content.text("播放区域","Space 播放/暂停 · ←/→ 5秒 · ↑/↓ 音量 · M 静音"),()->new SceneTooltip.Options().width(30),theme);

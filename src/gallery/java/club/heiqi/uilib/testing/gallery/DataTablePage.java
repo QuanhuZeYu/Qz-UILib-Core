@@ -48,8 +48,8 @@ public final class DataTablePage {
         SceneCommand sort = SceneCommand.of(() -> source.get().size() > 1, () -> ascending.set(!ascending.get()));
         SceneDataTable.Column<Task, String> title = new SceneDataTable.Column<>("title",
                 () -> Size.fill(2).bounds(wider.get() ? 320 : 220, 700),
-                () -> GalleryStyle.button(page, () -> "任务名称 " + (ascending.get() ? "↑" : "↓"), theme, sort::tryExecute)
-                        .size(Size.fill(1), Size.natural()).bind(NodeBinding.value(sort.executable(), SceneNode::enabled)),
+                () -> GalleryStyle.button(page, () -> "任务名称 " + (ascending.get() ? "↑" : "↓"), theme, sort)
+                        .size(Size.fill(1), Size.natural()),
                 row -> GalleryStyle.button(page, () -> row.get().title, theme,
                         () -> feedback.set("已打开：" + row.get().title)).size(Size.fill(1), Size.natural()));
         SceneDataTable.Column<Task, String> status = new SceneDataTable.Column<>("status", () -> Size.fixed(100),
@@ -75,8 +75,8 @@ public final class DataTablePage {
                         for (Task task : source.get()) next.add(task.id == row.get().id ? new Task(task.id, task.title, !task.done) : task);
                         source.set(next); feedback.set("已更新：" + row.get().title);
                     });
-                    return GalleryStyle.button(page, () -> row.get().done ? "重新打开" : "完成任务", theme, toggle::tryExecute)
-                            .size(Size.fill(1), Size.natural()).bind(NodeBinding.value(toggle.executable(), SceneNode::enabled));
+                    return GalleryStyle.button(page, () -> row.get().done ? "重新打开" : "完成任务", theme, toggle)
+                            .size(Size.fill(1), Size.natural());
                 });
         ReadableSignal<List<SceneDataTable.Column<Task, String>>> columns = page.domain().computed(owner,
                 () -> notesShown.get() ? Arrays.asList(title, status, note, action) : Arrays.asList(title, status, action));

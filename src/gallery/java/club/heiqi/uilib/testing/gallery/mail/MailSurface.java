@@ -1,6 +1,9 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
+import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
@@ -26,13 +29,42 @@ class MailSurface implements SceneControl {
     private final ReadableSignal<Integer> color;
     private final float radius;
     private final boolean feedback;
-    private final MailMotion transition=new MailMotion();
+    private Signal<Integer> presentedColor;
     MailSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius) {
         this(theme,color,radius,true);
     }
     MailSurface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius, boolean feedback) {
         this.theme = theme; this.color = color; this.radius = radius; this.feedback=feedback;
     }
+    /** 与正式控件一样在声明期安装；挂载拥有观察及轨迹，绘制只读取发布后的颜色。 */
+    void install(SceneNode node) {
+        if (!feedback) return;
+        node.bind((runtime, self, owner) -> {
+            presentedColor = runtime.domain().signal(color.get());
+            return SceneMotion.color(() -> {
+                runtime.interactionRevision().get();
+                runtime.pointerRouter().hoverTarget().get();
+                runtime.pointerRouter().pressedTarget().get();
+                runtime.keyboardPressedTarget().get();
+                return targetColor(self);
+            }, () -> self.feedbackMotion() == null ? fillMotion(self) : self.feedbackMotion(),
+                    "mail.surface.fill", (n, value) -> {
+                        presentedColor.set(value);
+                        runtime.invalidatePaint();
+                    }).activate(runtime, self, owner);
+        });
+    }
+    protected int targetColor(SceneNode node) {
+        if (node.clickAction() != null && node.runtime().interactive(node)) {
+            if (node.runtime().pressed(node)) return theme.get().pressed;
+            if (node.runtime().pointerRouter().hoverTarget().get() == node) return theme.get().hover;
+        }
+        return color.get();
+    }
+    protected MotionSpec fillMotion(SceneNode node) {
+        return node.clickAction() == null || node.runtime().pressed(node) ? MotionSpec.instant() : MailMotion.STANDARD;
+    }
+    protected final int presentedColor() { return presentedColor == null ? color.get() : presentedColor.get(); }
     @Override public TextLayout layoutText(SceneNode n, SceneTextMeasurer text, int width) {
         return text.layout("", n.style(), width);
     }
@@ -53,22 +85,16 @@ class MailSurface implements SceneControl {
         }
         return new ChildPlacements(entries);
     }
-    @Override public List<ReadableSignal<?>> paintDependencies(SceneNode n) { return Arrays.asList(theme, color); }
+    @Override public List<ReadableSignal<?>> paintDependencies(SceneNode n) { return Arrays.asList(theme, this::presentedColor); }
     @Override public void paint(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {
         SceneGeometryView.Entry e = g.get(n); if (e == null) return;
-        SceneTheme t = theme.get(); int background = color.get();
-        if (feedback && n.clickAction() != null && n.runtime().interactive(n)) {
-            if (n.runtime().pointerRouter().pressed(n)) background = t.pressed;
-            else if (n.runtime().pointerRouter().hovered(g) == n) background = t.hover;
-        }
-        if(feedback&&n.clickAction()!=null)background=transition.color(background,n.runtime().pointerRouter().pressed(n)?0:150000000L);
+        SceneTheme t = theme.get(); int background = presentedColor();
         if ((background >>> 24) != 0) paintBackground(n,e,target,background,
                 Math.max(0, Math.round(t.textStyle.logicalEm * radius)));
     }
     protected void paintBackground(SceneNode node,SceneGeometryView.Entry entry,PaintPlanBuilder target,int color,int radius) {
         ScenePaintShapes.rounded(target,entry.box,entry.clip,color,radius);
     }
-    @Override public long nextPaintNanos(SceneNode n) {return transition.nextPaintNanos();}
     @Override public void paintAfterChildren(SceneNode n, SceneGeometryView g, PaintPlanBuilder target) {
         if (!feedback || !n.runtime().focusRouter().focusVisible(n)) return;
         SceneGeometryView.Entry e = g.get(n); if (e == null) return;

@@ -72,6 +72,13 @@ public final class SceneTheme {
     public SceneTheme withTextStyle(TextStyle style) {
         return copy(style, false, feedbackMotion, spatialMotion, density, controlSize);
     }
+    /** 只替换角色色；字号、间距的声明来源及密度、尺寸和动效角色完整延续。 */
+    public SceneTheme withColors(int panel, int button, int hover, int pressed, int focus,
+            int disabled, int disabledText, int tooltip, int tooltipText) {
+        return new SceneTheme(baseTextStyle, panel, button, hover, pressed, focus, disabled, disabledText,
+                tooltip, tooltipText, basePadding, baseGap, feedbackMotion, spatialMotion, density, controlSize,
+                inheritedText, inheritedPadding, inheritedGap);
+    }
     private SceneTheme copy(TextStyle style, boolean inheritText, MotionSpec feedback, MotionSpec spatial,
             SceneDensity density, SceneControlSize size) {
         return new SceneTheme(style, panel, button, hover, pressed, focus, disabled, disabledText, tooltip, tooltipText,

@@ -43,7 +43,7 @@ public final class SceneDragHandle extends SceneSymbolControl {
         return new MeasuredSize(side, side);
     }
 
-    @Override void symbol(LayoutBox box, PaintPlanBuilder paint, LayoutBox clip, int color) {
+    @Override void symbol(LayoutBox box, PaintPlanBuilder paint, LayoutBox clip, int color, boolean enabled) {
         int dot = Math.max(1, Math.round(box.width / 8f));
         int gap = Math.max(1, dot);
         int side = dot * 2 + gap;

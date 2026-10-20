@@ -18,6 +18,8 @@ final class SceneDragSupport {
         void attach(SceneRuntime runtime, SceneNode node, Runnable cancel);
         void detach(SceneNode node);
         void cancel(SceneNode node);
+        /** 只有真实 DOWN/MOVE/UP 调用；世界坐标和采集时刻不受呈现换基影响。 */
+        default void pointerSample(SceneNode node, int x, int y, long timeNanos) {}
         void update(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y);
         Runnable normalDrop(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y);
         LayoutBox keyboardTarget(SceneNode node, SceneGeometryView geometry, SceneEditEvent.Command direction);

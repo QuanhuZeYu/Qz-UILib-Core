@@ -50,6 +50,7 @@ public final class PopupControlsScenario extends TestApplication {
         scenario("原触发器按下即展开并可拖入选项释放选择", this::pointerOpening);
         scenario("关闭弹层释放失败后不执行旧Tab续行", this::failedTabExit);
         scenario("选择器语义区分预览业务值且旧弹层ID拒绝", this::semanticSelection);
+        scenario("字符跳转使用正式批次时间而非处理墙钟", this::typeaheadTime);
     }
     private static SceneKeyEvent key(SceneKey value, boolean repeat) { return new SceneKeyEvent(value, false, false, false, false, repeat, null); }
     private static SceneSemanticSnapshot semantics(ReactiveDomain domain, ScenePageSession session) {
@@ -136,6 +137,31 @@ public final class PopupControlsScenario extends TestApplication {
         f.domain.execute(() -> require(f.modal() == null && f.focused() == f.trigger(), "失败后后续帧继续了旧Tab退出意图"));
     }
 
+    private void typeaheadTime() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        MultilineEditingScenario.PlainHost text = new MultilineEditingScenario.PlainHost();
+        long[] now = {1_000_000_000L};
+        club.heiqi.uilib.ui.scene.host.SceneHost host = new club.heiqi.uilib.ui.scene.host.SceneHost() {
+            public int width() { return text.width; }
+            public int height() { return text.height; }
+            public long metricsRevision() { return 0; }
+            public long frameNanos() { return now[0]; }
+            public void replay(club.heiqi.uilib.ui.scene.paint.PaintPlan plan) { text.replay(plan); }
+        };
+        Signal<String>[] selected = new Signal[1];
+        try (ScenePageSession session = ScenePageSession.open(domain, host, text, page -> {
+            selected[0] = domain.signal("bravo");
+            page.mount(SceneSelect.create(page, () -> Arrays.asList(
+                    new SceneSelect.Option<>("cafe", () -> "Café"), new SceneSelect.Option<>("cava", () -> "Cava"),
+                    new SceneSelect.Option<>("bravo", () -> "Bravo")), selected[0], selected[0]::set));
+        })) {
+            session.frame(); session.edit(SceneEditEvent.text("c")); session.edit(SceneEditEvent.text("a")); session.frame();
+            domain.execute(() -> require("cafe".equals(selected[0].get()), "同批前缀没有选择真实匹配项"));
+            now[0] += 2_000_000_000L;
+            session.edit(SceneEditEvent.text("b")); session.frame();
+            domain.execute(() -> require("bravo".equals(selected[0].get()), "正式帧已跨超时，处理墙钟仍保留旧前缀"));
+        }
+    }
     private void menuOpening() {
         ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         ScenePageContext[] context = new ScenePageContext[1]; int[] count = {0};

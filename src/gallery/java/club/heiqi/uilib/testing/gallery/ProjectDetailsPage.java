@@ -63,8 +63,7 @@ public final class ProjectDetailsPage {
             body.add(SceneTextArea.create(page, notes, theme, () -> false, request -> apply.accept(name.request(true), request))
                     .size(Size.fill(1), Size.fill(1).bounds(100, 420))
                     .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(notesLabel).build())));
-            body.add(GalleryStyle.primary(page, () -> "保存项目", theme, saveCommand::tryExecute)
-                    .bind(NodeBinding.value(saveCommand.executable(), SceneNode::enabled))); return body;
+            body.add(GalleryStyle.primary(page, () -> "保存项目", theme, saveCommand)); return body;
         });
         SceneTabs.Tab<String> history = new SceneTabs.Tab<>("history", () -> "活动记录", historyAvailable, () -> {
             SceneNode body = GalleryStyle.card(theme).size(Size.fill(1), Size.fill(1)).scrollable(true);

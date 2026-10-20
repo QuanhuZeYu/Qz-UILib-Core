@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 public final class MailNavigationDeclaration {
     private MailNavigationDeclaration() {}
     public static void verify(FontTextService fonts) {
+        MailMotionPresentation.verify(fonts);
         ReactiveDomain domain=ReactiveDomain.direct();
         final class Host implements SceneHost {
             int width=1400;

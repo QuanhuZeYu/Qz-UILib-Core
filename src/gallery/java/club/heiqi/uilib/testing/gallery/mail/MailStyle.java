@@ -3,9 +3,7 @@ package club.heiqi.uilib.testing.gallery.mail;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
-import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.control.SceneTextPolicy;
@@ -18,17 +16,22 @@ final class MailStyle {
         return surface(theme,color,radius,true);
     }
     static SceneNode surface(ReadableSignal<SceneTheme> theme, ReadableSignal<Integer> color, float radius, boolean feedback) {
-        return new SceneNode().control(new MailSurface(theme,color,radius,feedback))
-                .bind(NodeBinding.value(theme,(n,t)->n.style(t.textStyle)));
+        return surface(theme, new MailSurface(theme, color, radius, feedback));
+    }
+    static SceneNode surface(ReadableSignal<SceneTheme> theme, MailSurface control) {
+        SceneNode node = new SceneNode().control(control)
+                .bind(NodeBinding.value(theme, (n, t) -> n.style(t.textStyle)));
+        control.install(node);
+        return node;
     }
     static SceneNode single(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme) {
         return SceneLabel.create(p,text,theme,SceneTextPolicy.ELLIPSIS_SINGLE_LINE);
     }
     static SceneTheme buttonTheme(SceneTheme t, boolean selected) {
         int surface = selected ? t.pressed : 0x00000000;
-        return new SceneTheme(t.textStyle, t.panel, surface, t.hover,
-                t.pressed, t.focus, t.disabled, t.disabledText,
-                t.tooltip, t.tooltipText, Math.max(4, t.padding / 2), t.gap);
+        // 这里只派生状态色；图标与复选的内距继续由正式控件度量和节点明确声明决定。
+        return t.withColors(t.panel, surface, t.hover, t.pressed, t.focus,
+                t.disabled, t.disabledText, t.tooltip, t.tooltipText);
     }
     static SceneNode button(ScenePageContext p, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme, Runnable action) {
         return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(p,text,theme,action,club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.GHOST);

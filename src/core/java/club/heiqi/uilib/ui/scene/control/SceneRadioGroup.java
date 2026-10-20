@@ -7,6 +7,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
+import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.paint.ScenePaintShapes;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.Arrays;
@@ -32,7 +33,7 @@ public final class SceneRadioGroup<K> {
     private final SceneNode node;
 
     private SceneRadioGroup(ScenePageContext page, ReadableSignal<List<Option<K>>> options, ReadableSignal<K> selected,
-            Consumer<K> change, ReadableSignal<SceneTheme> theme) {
+            Consumer<K> change, ReadableSignal<SceneTheme> theme, SceneTextPolicy policy) {
         SceneChoiceNavigation<Option<K>, K> navigation = new SceneChoiceNavigation<>(page, options, option -> option.key,
                 option -> option.enabled.get(), nodes, selected, change, true);
         node = new SceneNode().size(Size.fill(1), Size.natural()).control(navigation);
@@ -42,24 +43,39 @@ public final class SceneRadioGroup<K> {
         node.bind(NodeBinding.repeat(options, option -> option.key, current -> {
             K key = current.get().key;
             ReadableSignal<Boolean> checked = () -> Objects.equals(selected.get(), current.get().key);
-            SceneNode item = SceneSymbolControl.node(page, () -> current.get().name.get(), new Mark(theme, checked), () -> navigation.select(key));
+            SceneNode item = SceneSymbolControl.node(page, () -> current.get().name.get(), new Mark(theme, checked, policy), () -> navigation.select(key));
             item.size(Size.fill(1), Size.natural()).bind(NodeBinding.value(() -> current.get().enabled.get(), SceneNode::enabled));
             nodes.put(key, item); item.own(() -> nodes.remove(key, item)); return item;
         }));
     }
     public static <K> SceneRadioGroup<K> create(ScenePageContext page, ReadableSignal<List<Option<K>>> options,
             ReadableSignal<K> selected, Consumer<K> change, ReadableSignal<SceneTheme> theme) {
+        return create(page, options, selected, change, theme, SceneTextPolicy.WRAP);
+    }
+    public static <K> SceneRadioGroup<K> create(ScenePageContext page, ReadableSignal<List<Option<K>>> options,
+            ReadableSignal<K> selected, Consumer<K> change, ReadableSignal<SceneTheme> theme, SceneTextPolicy policy) {
         Objects.requireNonNull(page, "page").domain().checkWrite();
         return new SceneRadioGroup<>(page, Objects.requireNonNull(options, "选项来源"), Objects.requireNonNull(selected, "选中来源"),
-                Objects.requireNonNull(change, "选择意图"), Objects.requireNonNull(theme, "主题"));
+                Objects.requireNonNull(change, "选择意图"), Objects.requireNonNull(theme, "主题"), Objects.requireNonNull(policy, "文案策略"));
     }
     public static <K> SceneRadioGroup<K> create(ScenePageContext page, ReadableSignal<List<Option<K>>> options,
             ReadableSignal<K> selected, Consumer<K> change) { return create(page, options, selected, change, page.theme()); }
+    public static <K> SceneRadioGroup<K> create(ScenePageContext page, ReadableSignal<List<Option<K>>> options,
+            ReadableSignal<K> selected, Consumer<K> change, SceneTextPolicy policy) {
+        return create(page, options, selected, change, page.theme(), policy);
+    }
     public SceneNode node() { return node; }
 
     private static final class Mark extends SceneSymbolControl {
         private final ReadableSignal<Boolean> checked;
-        Mark(ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> checked) { super(theme, true); this.checked = checked; }
+        private ReadableSignal<Float> selected;
+        Mark(ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> checked, SceneTextPolicy policy) {
+            super(theme, true, policy); this.checked = checked;
+        }
+        @Override void installPresentation(SceneNode node) {
+            selected = SceneControlMotion.progress(node, theme,
+                    () -> Objects.requireNonNull(checked.get(), "单选状态") ? 1f : 0f, false);
+        }
         @Override public SceneSemantics semantics(SceneNode node) {
             boolean selected = Objects.requireNonNull(checked.get(), "单选状态");
             SceneSemantics.Builder result = super.semantics(node).toBuilder().role(SceneSemantics.Role.RADIO)
@@ -69,16 +85,15 @@ public final class SceneRadioGroup<K> {
             return result.build();
         }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, checked); }
-        @Override void symbol(LayoutBox box, PaintPlanBuilder paint, LayoutBox clip, int color) {
+        @Override void symbol(LayoutBox box, PaintPlanBuilder paint, LayoutBox clip, int color, boolean enabled) {
             ScenePaintShapes.rounded(paint, box, clip, color, box.width / 2);
             int edge = Math.max(1, box.width / 9);
             LayoutBox inside = new LayoutBox(box.x + edge, box.y + edge, Math.max(0, box.width - edge * 2), Math.max(0, box.height - edge * 2));
             ScenePaintShapes.rounded(paint, inside, clip, theme.get().panel, inside.width / 2);
-            if (checked.get()) {
-                int inset = Math.max(edge + 1, box.width / 4);
-                LayoutBox dot = new LayoutBox(box.x + inset, box.y + inset, Math.max(0, box.width - inset * 2), Math.max(0, box.height - inset * 2));
-                ScenePaintShapes.rounded(paint, dot, clip, color, dot.width / 2);
-            }
+            int inset = Math.max(edge + 1, box.width / 4);
+            LayoutBox dot = new LayoutBox(box.x + inset, box.y + inset, Math.max(0, box.width - inset * 2), Math.max(0, box.height - inset * 2));
+            ScenePaintShapes.rounded(paint, dot, clip,
+                    SceneMotion.alpha(color, Math.max(0, Math.min(1, selected.get()))), dot.width / 2);
         }
     }
 }

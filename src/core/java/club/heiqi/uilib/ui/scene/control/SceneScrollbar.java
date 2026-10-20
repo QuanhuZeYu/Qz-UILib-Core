@@ -88,7 +88,7 @@ public final class SceneScrollbar {
             throw new IllegalArgumentException("滚动条与视口必须属于同一运行时");
         Control control = new Control(context.runtime(), viewport, Objects.requireNonNull(theme, "theme"));
         SceneNode node = control.createNode(Objects.requireNonNull(options, "options"));
-        if (hoverScope != null) hoverScope.bind(NodeBinding.hoverWithin(0, (self, inside) -> control.visibility.areaHover(inside)));
+        if (hoverScope != null) hoverScope.bind(NodeBinding.hoverWithin(0, (self, inside) -> control.areaHover(inside)));
         return node;
     }
     /** 运行时原生装饰仍复用同一Control，只有位置与焦点参与方式不同。 */
@@ -110,7 +110,10 @@ public final class SceneScrollbar {
         private final SceneScrollVisibility visibility;
         private final SceneScrollPage page;
         private final Object target = new Object(), trackTarget = new Object();
-        private boolean dragging, automatic;
+        private boolean dragging, automatic, mounted;
+        private SceneNode node;
+        // 分页、隐藏期限和淡出共用呈现登记；真正的MOVE仍由原输入管线采样。
+        private AutoCloseable scheduled;
         private int grab;
         Control(SceneRuntime runtime, SceneScrollViewport viewport, ReadableSignal<SceneTheme> theme) {
             this.runtime = runtime; this.viewport = viewport; this.theme = theme;
@@ -118,20 +121,29 @@ public final class SceneScrollbar {
             axis = runtime.domain().signal(viewport.axis());
             hasRange = runtime.domain().signal(false); present = runtime.domain().signal(false);
             semanticViewport = runtime.domain().signal(null);
-            visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(runtime.domain());
+            visibility = new SceneScrollVisibility(runtime, configuration); page = new SceneScrollPage(runtime, viewport);
         }
         SceneNode createNode(ReadableSignal<Options> source) {
             SceneNode node = new SceneNode().clickFocus(false).control(this);
+            this.node = node;
             node.bind((active, self, owner) -> {
                 // 声明可在挂载前移动；真正的所属关系在激活点核验，同runtime重挂载仍合法。
                 if (!viewport.belongsTo(active)) throw new IllegalArgumentException("滚动条挂载运行时与视口不同");
-                if (automatic) owner.own(runtime.observeScrollHover(viewport.node(), visibility::areaHover));
+                mounted = true;
+                owner.own(() -> {
+                    mounted = false;
+                    try { stop(); visibility.close(); } finally { semanticViewport.set(null); }
+                });
+                if (automatic) owner.own(runtime.observeScrollHover(viewport.node(), this::areaHover));
                 else owner.own(runtime.claimScrollbar(viewport));
+                owner.own(runtime.observeScrollInput(viewport, () -> { page.stop(); schedule(); }));
                 owner.own(viewport.observe(this::viewportChanged));
-                owner.own(() -> { try { stop(); visibility.close(); } finally { semanticViewport.set(null); } });
                 return new BindingActivation() { public void refresh() {} public void close() {} };
             });
-            node.bind(NodeBinding.hoverWithin(0, (self, inside) -> visibility.hover(inside)));
+            node.bind(NodeBinding.hoverWithin(0, (self, inside) -> { visibility.hover(inside); schedule(); }));
+            node.bind(SceneControlBindings.declaration(() -> {
+                runtime.interactionRevision().get(); return runtime.motionPolicy().get();
+            }, (self, policy) -> refreshMotion()));
             node.bind(SceneControlBindings.declaration(() -> Objects.requireNonNull(source.get(), "scroll options").resolve(theme.get()),
                     (self, value) -> configure(value)));
             if (!automatic) node.bind(NodeBinding.value(hasRange, SceneNode::focusable));
@@ -142,12 +154,13 @@ public final class SceneScrollbar {
             if (previous.autoHide != next.autoHide || previous.hideDelayMillis != next.hideDelayMillis || previous.fadeMillis != next.fadeMillis)
                 visibility.configure();
             if (!next.clickOnTrack) page.stop();
+            schedule();
         }
         private void viewportChanged(SceneScrollViewport.Snapshot next) {
             // 只保留原位置所有者已发布的不可变范围事实；所有改变仍回原端口。
             semanticViewport.set(next);
             axis.set(viewport.axis()); present.set(next != null); hasRange.set(next != null && next.maximum > 0);
-            if (hasRange.get()) visibility.activity(); else stop();
+            if (hasRange.get()) { page.constrain(next.maximum); visibility.activity(); schedule(); } else stop();
         }
         @Override public SceneSemantics semantics(SceneNode node) {
             SceneScrollViewport.Snapshot view = semanticViewport.get();
@@ -178,7 +191,7 @@ public final class SceneScrollbar {
                     page.stop(); viewport.moveToPixels(offset); break;
                 default: return false;
             }
-            visibility.activity();
+            visibility.activity(); schedule();
             return true;
         }
 
@@ -231,33 +244,58 @@ public final class SceneScrollbar {
             visibility.activity(); int coordinate = current.coordinate(event.x, event.y);
             if (current.onThumb(coordinate)) {
                 dragging = true; grab = current.grab(coordinate); visibility.drag(true);
-            } else if (configuration.get().clickOnTrack) page.begin(current.view, current.direction(coordinate), runtime.inputNanos());
+            } else if (configuration.get().clickOnTrack) page.begin(current.view, current.direction(coordinate));
+            schedule();
         }
         private void move(SceneScrollbarGeometry current, ScenePointerEvent event) {
             if (!dragging) return;
             if (!current.scrollable()) { endDrag(); return; }
-            viewport.moveToPixels(current.offset(current.coordinate(event.x, event.y), grab)); visibility.activity();
+            viewport.moveToPixels(current.offset(current.coordinate(event.x, event.y), grab)); visibility.activity(); schedule();
         }
-        private void endDrag() { dragging = false; grab = 0; visibility.drag(false); }
-        private void stop() { dragging = false; grab = 0; page.stop(); visibility.stop(); }
-        @Override public void captureLost(SceneNode node) { endDrag(); page.stop(); }
-        @Override public long nextInputNanos(SceneNode node) { return page.active.get() ? 0 : visibility.next(); }
-        @Override public void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {
-            SceneScrollViewport.Snapshot view = viewport.snapshot(geometry);
-            if (!runtime.interactive(node) || view == null || view.maximum == 0) { stop(); return; }
-            page.advance(viewport, view, now); visibility.advance(now);
+        private void areaHover(boolean inside) { visibility.areaHover(inside); schedule(); }
+        private void endDrag() { dragging = false; grab = 0; visibility.drag(false); schedule(); }
+        private void stop() { dragging = false; grab = 0; page.stop(); visibility.stop(); stopScheduled(); }
+        @Override public void captureLost(SceneNode node) { endDrag(); page.stop(); schedule(); }
+        private boolean available() {
+            return mounted && hasRange.get() && runtime.interactive(node) && runtime.interactive(viewport.node());
+        }
+        private void refreshMotion() {
+            if (!available()) { stop(); return; }
+            page.policy(); visibility.policy(); schedule();
+        }
+        private void schedule() {
+            boolean active = available() && (page.active() || visibility.active());
+            if (!active) { stopScheduled(); return; }
+            if (scheduled == null) scheduled = runtime.animate(this::advance);
+        }
+        private boolean advance(long now) {
+            if (!available()) { stop(); return false; }
+            try {
+                page.advance(now); visibility.advance(now);
+                boolean active = page.active() || visibility.active();
+                if (!active) scheduled = null;
+                return active;
+            } catch (RuntimeException | Error failure) {
+                stop(); throw failure;
+            }
+        }
+        private void stopScheduled() {
+            if (scheduled == null) return;
+            try { scheduled.close(); }
+            catch (Exception failure) { throw new IllegalStateException("滚动条呈现释放失败", failure); }
+            finally { scheduled = null; }
         }
         @Override public void inputFrameCancelled(SceneNode node) { stop(); }
         @Override public boolean scrollableContent() { return true; }
         @Override public SceneNode scrollMotionViewport(SceneNode node) { return viewport.node(); }
         @Override public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-            page.stop();
+            page.stop(); schedule();
             return SceneScrollResult.moved(viewport.moveByPixels(SceneControlViewport.wheelPixels(event.delta, viewport.node().scrollStep())));
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
             Integer delta = geometry(node, geometry).command(event.command, viewport.node().scrollStep());
             if (delta == null) return false;
-            page.stop(); viewport.moveByPixels(delta); visibility.activity(); return true;
+            page.stop(); viewport.moveByPixels(delta); visibility.activity(); schedule(); return true;
         }
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
             boolean active = dragging || runtime.pointerRouter().passiveHovered(geometry) == node || runtime.focusRouter().focused().get() == node;

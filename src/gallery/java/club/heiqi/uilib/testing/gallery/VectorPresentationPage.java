@@ -73,8 +73,8 @@ public final class VectorPresentationPage {
         SceneCommand advance = SceneCommand.of(() -> progress.get() < 100, () -> {
             progress.set(Math.min(100, progress.get() + 25)); task.set(progress.get() == 100 ? "已完成" : "进行中");
         });
-        card.add(actions(theme).add(GalleryStyle.primary(page, () -> "推进进度", theme, advance::tryExecute)
-                        .size(Size.fill(1), Size.natural()).bind(NodeBinding.value(advance.executable(), SceneNode::enabled)))
+        card.add(actions(theme).add(GalleryStyle.primary(page, () -> "推进进度", theme, advance)
+                        .size(Size.fill(1), Size.natural()))
                 .add(GalleryStyle.button(page, () -> "重置进度", theme, () -> { progress.set(0); task.set("待开始"); })
                         .size(Size.fill(1), Size.natural())));
         return GalleryStyle.frame(card, theme);
@@ -173,8 +173,7 @@ public final class VectorPresentationPage {
         SceneNode label = GalleryStyle.label(page, () -> "视口备注", theme, 16, false);
         form.add(label).add(SceneTextField.create(page, draft, theme, () -> false, save)
                 .bind(NodeBinding.semantics(() -> SceneSemantics.builder().labelledBy(label).build())));
-        form.add(GalleryStyle.primary(page, () -> "保存备注", theme, saveCommand::tryExecute)
-                .bind(NodeBinding.value(saveCommand.executable(), SceneNode::enabled)));
+        form.add(GalleryStyle.primary(page, () -> "保存备注", theme, saveCommand));
         Diagram diagram = new Diagram(360, 300);
         diagram.add(form, 0, 0, 360, 300);
         card.add(diagram.node(theme, 18));

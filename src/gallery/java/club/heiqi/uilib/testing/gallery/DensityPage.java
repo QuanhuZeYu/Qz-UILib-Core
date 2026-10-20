@@ -81,8 +81,7 @@ public final class DensityPage {
                 .bind(NodeBinding.semantics(()->SceneSemantics.builder().name("任务进度").labelledBy(progressLabel).build())));
         card.add(SceneSwitch.create(page,notify,()->"完成后通知",theme,notify::set));
         SceneNode actions=GalleryStyle.centeredRow().size(Size.fill(1),Size.natural()).gap(12);
-        actions.add(GalleryStyle.primary(page,()->"保存设置",theme,save::tryExecute)
-                .bind(NodeBinding.value(save.executable(),SceneNode::enabled)));
+        actions.add(GalleryStyle.primary(page,()->"保存设置",theme,save));
         actions.add(GalleryStyle.button(page,()->"撤销编辑",theme,title::cancel));
         return GalleryStyle.frame(card.add(actions),theme);
     }

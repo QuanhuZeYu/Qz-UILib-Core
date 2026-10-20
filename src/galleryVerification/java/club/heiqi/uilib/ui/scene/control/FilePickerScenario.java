@@ -15,6 +15,17 @@ import java.util.stream.Stream;
 /** 用真实目录与编辑提交防住混排、跨页漏项及旧确认覆盖新草稿。 */
 public final class FilePickerScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
+        scenario("共享字符前缀保留文件窗口并支持重复首字母",()->{
+            List<String> names=Arrays.asList("Café","Cava","Bravo");
+            SceneTypeahead files=new SceneTypeahead(800_000_000L,128), other=new SceneTypeahead();
+            require(files.find(names,value->value,2,"c",0)==0&&other.find(names,value->value,2,"c",0)==0,"首次字符跳转未消费共同名称匹配");
+            require(files.find(names,value->value,0,"b",900_000_000L)==2,"文件选择器失去原有较短窗口");
+            require(other.find(names,value->value,0,"b",900_000_000L)==-1,"普通集合窗口被文件策略改写");
+            files.reset();
+            require(files.find(names,value->value,2,"c",0)==0&&files.find(names,value->value,0,"c",100_000_000L)==1,"重复首字母未循环同前缀项");
+            files.reset();
+            require(files.find(names,value->value,2,"caf",0)==0,"名称重音未沿共同规则归一化");
+        });
         scenario("目录优先自然名称及超长数字段",()->{
             List<FilePickerDirectory.Entry> entries=new ArrayList<>();
             for(String name:Arrays.asList("片10","片02","片2","片1","目录10","目录2"))entries.add(new FilePickerDirectory.Entry(Paths.get(name),name.startsWith("目录")));

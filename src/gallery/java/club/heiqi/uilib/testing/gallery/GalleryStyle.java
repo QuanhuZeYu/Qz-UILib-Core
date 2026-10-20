@@ -43,6 +43,16 @@ final class GalleryStyle {
     static SceneNode primary(ScenePageContext context,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,Runnable action){
         return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(context,text,theme,action,club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.PRIMARY);
     }
+    static SceneNode button(ScenePageContext context, ReadableSignal<String> value, ReadableSignal<SceneTheme> theme,
+                            club.heiqi.uilib.ui.scene.control.SceneCommand command) {
+        return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(context,value,theme,command,
+                club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.OUTLINE);
+    }
+    static SceneNode primary(ScenePageContext context, ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
+                             club.heiqi.uilib.ui.scene.control.SceneCommand command) {
+        return club.heiqi.uilib.ui.scene.control.SceneAppearance.button(context,text,theme,command,
+                club.heiqi.uilib.ui.scene.control.SceneAppearance.Role.PRIMARY);
+    }
     static SceneNode header(ScenePageContext context,ReadableSignal<SceneTheme> theme,String title,String description,Runnable back){
         SceneNode heading=centeredRow().size(Size.fill(1),Size.natural()).gap(16);
         heading.add(label(context,()->title,theme,28,false).size(Size.fill(1),Size.natural()));

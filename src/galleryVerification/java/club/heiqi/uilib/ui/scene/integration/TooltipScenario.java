@@ -41,7 +41,7 @@ public final class TooltipScenario extends TestApplication {
             ReactiveDomain domain=ReactiveDomain.direct();Host host=new Host();SceneNode[] button={null};int[] calls={0},fallback={0};
             try(ScenePageSession page=ScenePageSession.open(domain,host,host,ctx->{
                 button[0]=SceneButton.create(ctx,()->"操作",()->SceneAppearance.theme(false),()->calls[0]++).size(Size.fixed(100),Size.fixed(40));
-                SceneNode same=SceneTooltip.attach(ctx,button[0],()->SceneTooltip.Content.text("补充说明","Space"),()->new SceneTooltip.Options(),()->SceneAppearance.theme(false));
+                SceneNode same=SceneTooltip.attach(ctx,button[0],()->SceneTooltip.Content.text("补充说明","Space"));
                 require(same==button[0],"Tooltip替换了触发器");ctx.mount(new SceneNode().size(Size.fill(1),Size.fill(1)).padding(60).add(same));
             })){
                 page.frame();LayoutBox box=box(page,button[0]);point(page,box.x+10,box.y+10);

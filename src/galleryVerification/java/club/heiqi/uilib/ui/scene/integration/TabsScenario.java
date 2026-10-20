@@ -36,6 +36,7 @@ public final class TabsScenario extends TestApplication {
         scenario("正式项目详情保存名称备注并跨面板显示结果", this::projectDetails);
         scenario("纯文字面板自身参与Tab而编辑面板直接进入子项", this::plainPanel);
         scenario("标签语义沿真实选择重排更新且旧面板动作拒绝", this::semanticTabs);
+        scenario("选中语义和面板即时更新但标记使用有限反馈", this::markerFeedback);
         scenario("通知偏好标签说明与业务选择经正式语义请求更新", this::preferencesSemantics);
     }
     private static SceneKeyEvent key(SceneKey key, boolean repeat) { return new SceneKeyEvent(key, false, false, false, false, repeat, null); }
@@ -232,6 +233,55 @@ public final class TabsScenario extends TestApplication {
         CompletableFuture<SceneSemanticRequest.Result> rejected = session.semantic(SceneSemanticRequest.of(
                 semanticEntry(disabled, Role.RADIO, "每周汇总").id, Action.SELECT));
         session.frame(); require(rejected.join() == SceneSemanticRequest.Result.REJECTED, "禁用频率仍接受语义选择");
+    }
+    private void markerFeedback() {
+        ReactiveDomain domain = ReactiveDomain.direct(); MultilineEditingScenario.PlainHost text = new MultilineEditingScenario.PlainHost();
+        long[] now = {1_000_000_000L};
+        club.heiqi.uilib.ui.scene.host.SceneHost host = new club.heiqi.uilib.ui.scene.host.SceneHost() {
+            public int width() { return text.width; }
+            public int height() { return text.height; }
+            public long metricsRevision() { return 0; }
+            public long frameNanos() { return now[0]; }
+            public void replay(club.heiqi.uilib.ui.scene.paint.PaintPlan plan) { text.replay(plan); }
+        };
+        Signal<String>[] selected = new Signal[1]; SceneTabs<String>[] tabs = new SceneTabs[1];
+        club.heiqi.uilib.ui.scene.control.SceneTheme markerTheme = club.heiqi.uilib.ui.scene.control.SceneTheme.light().withMotion(
+                club.heiqi.uilib.ui.scene.motion.MotionSpec.tween(140_000_000L, club.heiqi.uilib.ui.scene.motion.MotionSpec.LINEAR),
+                club.heiqi.uilib.ui.scene.control.SceneTheme.light().spatialMotion);
+        try (ScenePageSession page = ScenePageSession.open(domain, host, text, context -> {
+            selected[0] = domain.signal("a");
+            tabs[0] = SceneTabs.create(context, () -> Arrays.asList(
+                    new SceneTabs.Tab<>("a", () -> "甲", () -> SceneButton.create(context, () -> "面板甲", context.theme(), () -> { })),
+                    new SceneTabs.Tab<>("b", () -> "乙", () -> SceneButton.create(context, () -> "面板乙", context.theme(), () -> { }))), selected[0], selected[0]::set, () -> markerTheme);
+            context.mount(tabs[0].node());
+        })) {
+            page.frame();
+            SceneNode[] labels = new SceneNode[2];
+            domain.execute(() -> { labels[0] = Fixture.find(tabs[0].node(), "甲").parent(); labels[1] = Fixture.find(tabs[0].node(), "乙").parent(); });
+            require(markerAlpha(domain, page, text.lastPlan, labels[0]) == 255, "首次挂载标记不应从零入场");
+            now[0] += 1_000_000L; domain.execute(() -> selected[0].set("b")); page.frame();
+            domain.execute(() -> require(Fixture.find(tabs[0].node(), "面板乙") != null && Fixture.find(tabs[0].node(), "面板甲") == null,
+                    "反馈动效延迟了真实活动面板切换"));
+            now[0] += 70_000_000L; page.frame();
+            int fading = markerAlpha(domain, page, text.lastPlan, labels[0]), appearing = markerAlpha(domain, page, text.lastPlan, labels[1]);
+            require(fading > 0 && fading < 255 && appearing > 0 && appearing < 255, "选中标记跳过共享反馈中间值");
+            now[0] += 1_000_000_000L; page.frame();
+            require(markerAlpha(domain, page, text.lastPlan, labels[0]) == 0 && markerAlpha(domain, page, text.lastPlan, labels[1]) == 255,
+                    "有限标记反馈没有落定");
+        }
+    }
+    private static int markerAlpha(ReactiveDomain domain, ScenePageSession page, club.heiqi.uilib.ui.scene.paint.PaintPlan plan, SceneNode label) {
+        club.heiqi.uilib.ui.scene.layout.LayoutBox[] target = {null};
+        domain.execute(() -> {
+            club.heiqi.uilib.ui.scene.layout.LayoutBox box = page.pipeline().current().geometry.get(label).box;
+            target[0] = new club.heiqi.uilib.ui.scene.layout.LayoutBox(box.x, box.y + Math.max(0, box.height - 2), box.width, Math.min(2, box.height));
+        });
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : plan.commands())
+            // LayoutBox不定义值相等；新建期望盒必须比较四个坐标，不能按对象身份漏掉真实标记。
+            if (command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT
+                    && command.box.x == target[0].x && command.box.y == target[0].y
+                    && command.box.width == target[0].width && command.box.height == target[0].height) return command.color >>> 24;
+        return 0;
     }
     private static final class Fixture {
         final ReactiveDomain domain = ReactiveDomain.direct(); final MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();

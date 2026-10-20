@@ -12,6 +12,17 @@ public final class SceneRichText {
     private SceneRichText() {}
 
     public static SceneNode create(
+            ScenePageContext context, ReadableSignal<TextContent> content, Consumer<String> activate) {
+        return create(context, content, context.theme(), activate);
+    }
+
+    public static SceneNode create(
+            ScenePageContext context, ReadableSignal<TextContent> content,
+            DocumentResources resources, Consumer<String> activate) {
+        return create(context, content, context.theme(), resources, activate);
+    }
+
+    public static SceneNode create(
             ScenePageContext context,
             ReadableSignal<TextContent> content,
             ReadableSignal<SceneTheme> theme,

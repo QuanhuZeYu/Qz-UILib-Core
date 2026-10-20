@@ -57,6 +57,12 @@ public final class SceneTooltip {
         public final SceneTheme theme;
         public Hint(Content content,Options options,SceneTheme theme){this.content=Objects.requireNonNull(content);this.options=Objects.requireNonNull(options);this.theme=Objects.requireNonNull(theme);}
     }
+    public static SceneNode attach(ScenePageContext page,SceneNode trigger,ReadableSignal<Content> content){
+        return attach(page,trigger,content,Options::new);
+    }
+    public static SceneNode attach(ScenePageContext page,SceneNode trigger,ReadableSignal<Content> content,ReadableSignal<Options> options){
+        return attach(page,trigger,content,options,page.theme());
+    }
     public static SceneNode attach(ScenePageContext page,SceneNode trigger,ReadableSignal<Content> content,ReadableSignal<Options> options,ReadableSignal<SceneTheme> theme){
         Objects.requireNonNull(page).domain().checkWrite();
         return Objects.requireNonNull(trigger).bind(NodeBinding.tooltip(content,options,theme));

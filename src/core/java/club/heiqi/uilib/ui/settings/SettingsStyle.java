@@ -4,7 +4,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
-import club.heiqi.uilib.ui.scene.control.SceneButton;
 import club.heiqi.uilib.ui.scene.control.SceneAppearance;
 import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
@@ -85,18 +84,24 @@ final class SettingsStyle {
                 primary?SceneAppearance.Role.PRIMARY:ghost?SceneAppearance.Role.GHOST:SceneAppearance.Role.OUTLINE);
         return new Button(control,control);
     }
+    static Button button(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Palette> p,
+            club.heiqi.uilib.ui.scene.control.SceneCommand command,boolean primary,boolean ghost) {
+        SceneNode control=SceneAppearance.button(ctx,text,
+                () -> p.get().theme(SettingsTypography.style(14,p.get().text,500),10,false),command,
+                primary?SceneAppearance.Role.PRIMARY:ghost?SceneAppearance.Role.GHOST:SceneAppearance.Role.OUTLINE);
+        return new Button(control,control);
+    }
     static SceneNode navigationButton(ScenePageContext ctx,ReadableSignal<String> text,ReadableSignal<Boolean> selected,
             ReadableSignal<Palette> p,SceneIconButton.Symbol symbol,Runnable action) {
-        SceneNode button=SceneButton.create(ctx,text,() -> p.get().theme(
-                SettingsTypography.style(14,p.get().text,selected.get()?600:400),9,true),action)
-                .size(Size.fill(1),Size.natural());
         SceneNode icon=SceneIconButton.graphic(ctx,() -> symbol,() -> p.get().theme(14,p.get().text,0,true))
                 .size(Size.fixed(18),Size.fixed(20));
-        SceneNode label=SceneLabel.create(ctx,text,() -> p.get().theme(SettingsTypography.style(14,p.get().text,selected.get()?600:400),0,true));
-        return button.control(new NavigationSurface(p,selected,button))
-                .bind(NodeBinding.semantics(() -> club.heiqi.uilib.ui.scene.semantics.SceneSemantics.builder(
-                        club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role.BUTTON).name(text.get()).selected(selected.get()).build()))
-                .add(row(12).add(icon).add(label));
+        SceneNode label=SceneLabel.create(ctx,text,() -> p.get().theme(
+                SettingsTypography.style(14,p.get().text,selected.get()?600:400),0,true),
+                club.heiqi.uilib.ui.scene.control.SceneTextPolicy.ELLIPSIS_SINGLE_LINE).size(Size.fill(1),Size.natural());
+        SceneNode content=row(12).padding(1).add(icon).add(label);
+        return SceneAppearance.button(ctx,text,content,() -> p.get().theme(
+                SettingsTypography.style(14,p.get().text,selected.get()?600:400),9,false),action,
+                SceneAppearance.Role.ENTRY,selected).padding(9).size(Size.fill(1),Size.natural());
     }
     static SceneNode toggle(ScenePageContext ctx,ReadableSignal<Boolean> checked,ReadableSignal<Palette> p,Runnable action) {
         SceneNode button=club.heiqi.uilib.ui.scene.control.SceneSwitch.create(ctx,checked,
@@ -114,17 +119,15 @@ final class SettingsStyle {
     static SceneNode line(ReadableSignal<Palette> p){return column(0).size(Size.fill(1),Size.fixed(1)).bind(NodeBinding.value(p,(n,v) -> n.background(v.border)));}
     static SceneNode themeChoice(ScenePageContext ctx,String label,boolean dark,ReadableSignal<Boolean> selected,
             ReadableSignal<Palette> p,Runnable action) {
-        SceneNode button=SceneButton.create(ctx,() -> label,() -> p.get().theme(14,p.get().text,12,true),action)
-                .size(Size.fill(1),Size.natural());
         SceneNode preview=column(0).size(Size.fill(1),Size.fixed(96)).control(new ThemePreview(dark,p,selected))
                 .bind(SceneMotion.translateY(() -> selected.get()?-3f:0f,() -> p.get().source.spatialMotion));
-        // 只扩展标准按钮的内容与装饰；整张选项仍只有一个动作与键盘焦点。
         SceneNode mark=SceneIconButton.graphic(ctx,() -> SceneIconButton.Symbol.CHECK,() -> p.get().theme(14,p.get().text,0,true))
                 .size(Size.fixed(16),Size.fixed(20)).bind(NodeBinding.value(selected,SceneNode::visible));
-        return button.control(new NavigationSurface(p,selected,button))
-                .bind(NodeBinding.semantics(() -> club.heiqi.uilib.ui.scene.semantics.SceneSemantics.builder(
-                        club.heiqi.uilib.ui.scene.semantics.SceneSemantics.Role.BUTTON).name(label).selected(selected.get()).build()))
-                .add(column(10).add(preview).add(row(8).add(label(ctx,() -> label,p,14,false).size(Size.fill(1),Size.natural())).add(mark)));
+        SceneNode name=SceneLabel.create(ctx,() -> label,() -> p.get().theme(14,p.get().text,0,true),
+                club.heiqi.uilib.ui.scene.control.SceneTextPolicy.ELLIPSIS_SINGLE_LINE).size(Size.fill(1),Size.natural());
+        SceneNode content=column(10).padding(1).add(preview).add(row(8).add(name).add(mark));
+        return SceneAppearance.button(ctx,() -> label,content,() -> p.get().theme(14,p.get().text,12,false),action,
+                SceneAppearance.Role.ENTRY,selected).padding(12).size(Size.fill(1),Size.natural());
     }
     private static class Surface extends Arrangement {
         final ReadableSignal<Palette> colors;final boolean primary,ghost,muted;
@@ -157,15 +160,6 @@ final class SettingsStyle {
             if(!enabled())fill=p.panel;
             int edge=focused()?p.accent:primary?fill:ghost?fill:p.border;
             rounded(paint,e,edge,fill,radius);
-        }
-    }
-    private static final class NavigationSurface extends Surface {
-        final ReadableSignal<Boolean> selected;
-        NavigationSurface(ReadableSignal<Palette> p,ReadableSignal<Boolean> selected,SceneNode button){super(p,false,true,button,8,false);this.selected=selected;}
-        public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,selected);}
-        public void paint(SceneNode n,SceneGeometryView g,PaintPlanBuilder paint) {
-            Palette p=colors.get();int fill=selected.get()?p.selected:hovered(g)?p.hover:p.background;
-            rounded(paint,g.get(n),focused()?p.accent:fill,fill,8);
         }
     }
     private static void rounded(PaintPlanBuilder p,SceneGeometryView.Entry e,int edge,int fill,int radius) {

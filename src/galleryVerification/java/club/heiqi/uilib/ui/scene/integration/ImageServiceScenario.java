@@ -4,6 +4,18 @@ import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneAppearance;
+import club.heiqi.uilib.ui.scene.control.SceneImage;
+import club.heiqi.uilib.ui.scene.control.SceneTheme;
+import club.heiqi.uilib.ui.scene.host.ScenePageSession;
+import club.heiqi.uilib.ui.scene.image.ImageOptions;
+import club.heiqi.uilib.ui.scene.layout.LayoutBox;
+import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.node.SceneNode;
+import club.heiqi.uilib.ui.scene.paint.PaintPlan;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.image.ImageContent;
 import club.heiqi.uilib.ui.scene.image.ImageService;
 import club.heiqi.uilib.ui.scene.image.ImageSource;
@@ -19,8 +31,61 @@ public final class ImageServiceScenario extends TestApplication {
         scenario("显式重载通知失败不截断共享消费者", this::reload);
         scenario("资源包换代通知失败仍重载其余来源", this::resourcesReloaded);
         scenario("呈现反馈通知失败仍递交独立消费者", this::presentation);
+        scenario("页面图像默认主题、同字号换色和租约沿挂载生效", this::sceneTheme);
     }
 
+    private void sceneTheme() {
+        ReactiveDomain domain = ReactiveDomain.direct();
+        MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
+        ImageSource source = ImageSource.resource("test:scene-theme");
+        Signal<ImageState>[] status = new Signal[1];
+        Signal<SceneTheme>[] theme = new Signal[1];
+        SceneNode[] images = new SceneNode[2];
+        int[] acquired = {0}, released = {0};
+        ImageService service = new ImageService() {
+            public Lease acquire(ImageSource requested, ReactiveDomain target) {
+                require(target == domain, "图像租约没有消费显式页面域"); acquired[0]++;
+                return new Lease() {
+                    public ReadableSignal<ImageState> state() { return status[0]; }
+                    public void close() { released[0]++; }
+                };
+            }
+            public void reload(ImageSource requested) { }
+        };
+        SceneTheme light = SceneTheme.light();
+        SceneTheme darkPanel = new SceneTheme(
+                light.textStyle, SceneTheme.dark().panel, light.button, light.hover,
+                light.pressed, light.focus, light.disabled, light.disabledText, light.tooltip, light.tooltipText, light.padding, light.gap);
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
+            status[0] = domain.signal(ImageState.loading(source, 1)); theme[0] = domain.signal(light);
+            ReadableSignal<ImageOptions> options = () ->
+                    ImageOptions.defaults().size(
+                            Size.fixed(40), Size.fixed(30));
+            images[0] = SceneImage.create(context, service, () -> source, options);
+            images[1] = SceneImage.create(context, service, () -> source, options, theme[0]);
+            context.mount(new SceneNode().add(images[0]).add(images[1]));
+        })) {
+            page.frame();
+            require(imageColor(domain, page, host.lastPlan, images[0]) == light.panel, "页面默认图像仍使用固定深色占位");
+            domain.execute(() -> theme[0].set(darkPanel)); page.frame();
+            require(imageColor(domain, page, host.lastPlan, images[1]) == darkPanel.panel, "同字号仅改主题角色没有刷新占位");
+            domain.execute(() -> status[0].set(ImageState.failure(source, 1, false, "load", "验证失败占位"))); page.frame();
+            require(imageColor(domain, page, host.lastPlan, images[1]) == new SceneAppearance.Palette(darkPanel).error,
+                    "失败占位没有使用当前主题错误角色");
+            domain.execute(() -> theme[0].set(light)); page.frame();
+            require(imageColor(domain, page, host.lastPlan, images[1]) == new SceneAppearance.Palette(light).error,
+                    "同字号亮暗变化没有更新错误角色");
+        }
+        require(acquired[0] == 2 && released[0] == acquired[0], "页面结束没有对称释放借用服务的每个租约");
+    }
+    private static int imageColor(ReactiveDomain domain, ScenePageSession page,
+            PaintPlan plan, SceneNode image) {
+        LayoutBox[] box = {null};
+        domain.execute(() -> box[0] = page.pipeline().current().geometry.get(image).box);
+        for (PaintCommand command : plan.commands())
+            if (command.kind == PaintCommand.Kind.RECT && command.box.equals(box[0])) return command.color;
+        throw new AssertionError("正式计划缺少图像占位盒");
+    }
     private static final class Consumer implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final RuntimeException failure;

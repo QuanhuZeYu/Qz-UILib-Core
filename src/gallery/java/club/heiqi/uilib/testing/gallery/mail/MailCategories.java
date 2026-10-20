@@ -26,9 +26,8 @@ final class MailCategories {
             ReadableSignal<Boolean> selected=() -> model.category.get()==category;
             ReadableSignal<SceneTheme> tabTheme=() -> theme.get().withTextStyle(theme.get().textStyle
                     .withColor(selected.get()?palette.get().accent:palette.get().mutedText));
-            SceneNode tab=MailStyle.surface(tabTheme,() -> 0x00000000,0).axis(SceneNode.Axis.ROW)
+            SceneNode tab=MailStyle.surface(tabTheme,new TabSurface(tabTheme,palette,selected)).axis(SceneNode.Axis.ROW)
                     .text("分类："+label).focusable(true).clickFocus(true).onClick(() -> model.setCategory(category));
-            tab.control(new TabSurface(tabTheme,palette,selected));
             tab.bind(NodeBinding.value(() -> roomy.get()+":"+theme.get().textStyle.logicalEm,(n,value) -> {
                 SceneTheme t=theme.get();n.padding(MailStyle.px(t,12)).gap(MailStyle.px(t,16))
                         .size(roomy.get()?Size.fixed(MailStyle.px(t,244)):Size.fill(1),
@@ -52,7 +51,8 @@ final class MailCategories {
             super(theme,() -> 0x00000000,0);this.palette=palette;this.selected=selected;
         }
         @Override public java.util.List<ReadableSignal<?>> paintDependencies(SceneNode n) {
-            return java.util.Arrays.asList(palette,selected);
+            java.util.List<ReadableSignal<?>> sources=new java.util.ArrayList<>(super.paintDependencies(n));
+            sources.add(palette);sources.add(selected);return sources;
         }
         @Override public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder target) {
             super.paint(n,geometry,target);

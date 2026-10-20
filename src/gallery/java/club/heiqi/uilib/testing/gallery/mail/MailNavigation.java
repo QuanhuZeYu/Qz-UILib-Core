@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
@@ -27,16 +28,17 @@ final class MailNavigation {
         labeled=() -> !wide.get()||!collapsed.get()||preview.get();
         mutedTheme=() -> theme.get().withTextStyle(theme.get().textStyle.withColor(theme.get().disabledText));
         // 导航覆盖区自身接住空白点击和滚轮，正式路由不会继续落到下面的邮件列表。
-        node=new SceneNode().clip(true).onClick(() -> {}).onScroll(delta -> {});
-        node.control(new MailSurface(theme,() -> MailMotion.alpha(palette.get().canvas,hoverWidth.get()),0,false) {
+        node=MailStyle.surface(theme, new MailSurface(theme,() -> SceneMotion.alpha(palette.get().canvas,hoverWidth.get()),0,false) {
             @Override public boolean passiveHover() {return true;}
-        });
+        }).clip(true).onClick(() -> {}).onScroll(delta -> {});
         node.bind(NodeBinding.hoverWithin(() -> {
             p.viewportWidth().get();p.viewportHeight().get();theme.get();
             return wide.get()&&collapsed.get();
         },350000000L,(n,value) -> hovered.set(value)));
-        node.bind(NodeBinding.transition(() -> preview.get()?1f:0f,150000000L,MailMotion::standard,(n,value) -> hoverWidth.set(value)));
-        node.bind(NodeBinding.transition(() -> labeled.get()?1f:0f,150000000L,MailMotion::standard,(n,value) -> expansion.set(value)));
+        node.bind(NodeBinding.motion(() -> preview.get()?1f:0f, () -> MailMotion.STANDARD,
+                true, "mail.navigation.preview", (n,value) -> hoverWidth.set(value)));
+        node.bind(NodeBinding.motion(() -> labeled.get()?1f:0f, () -> MailMotion.STANDARD,
+                true, "mail.navigation.expansion", (n,value) -> expansion.set(value)));
         node.bind(NodeBinding.value(theme,(n,t) -> n.axis(wide.get()?SceneNode.Axis.COLUMN:SceneNode.Axis.ROW).padding(0).gap(0)
                 .size(wide.get()?Size.fixed(MailStyle.px(t,collapsed.get()?72+184*hoverWidth.get():256)):Size.fill(1),
                         wide.get()?Size.fill(1):Size.natural())));
@@ -46,10 +48,9 @@ final class MailNavigation {
         return primary(() -> label,() -> icon,action);
     }
     MailNavigation primary(ReadableSignal<String> label,ReadableSignal<SceneIconButton.Symbol> icon,Runnable action) {
-        SceneNode button=MailStyle.surface(theme,() -> palette.get().receive,1.1f)
+        SceneNode button=MailStyle.surface(theme,new MailReceiveSurface(theme,() -> palette.get().receive,expansion))
                 .focusable(true).clickFocus(true).onClick(action)
                 .bind(NodeBinding.value(label,SceneNode::text));
-        button.control(new MailReceiveSurface(theme,() -> palette.get().receive,expansion));
         button.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,16))
                 .size(Size.natural(),Size.natural().bounds(MailStyle.px(t,56),Integer.MAX_VALUE))));
         SceneNode content=MailStyle.surface(theme,() -> 0,0,false).axis(SceneNode.Axis.ROW).size(Size.fill(1),Size.natural()).clip(true);
@@ -71,10 +72,9 @@ final class MailNavigation {
     }
     MailNavigation item(ReadableSignal<String> label,ReadableSignal<SceneIconButton.Symbol> icon,ReadableSignal<Boolean> selected,
                         ReadableSignal<Integer> count,Runnable action) {
-        SceneNode entry=MailStyle.surface(theme,() -> selected.get()?palette.get().navigation:0,16f/14f)
+        SceneNode entry=MailStyle.surface(theme,new MailNavigationSurface(theme,() -> selected.get()?palette.get().navigation:0,expansion))
                 .axis(SceneNode.Axis.ROW).focusable(true).clickFocus(true).onClick(action)
                 .bind(NodeBinding.value(label,SceneNode::text));
-        entry.control(new MailNavigationSurface(theme,() -> selected.get()?palette.get().navigation:0,expansion));
         entry.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,4)).gap(0)
                 .size(wide.get()?Size.fixed(MailStyle.px(t,32+208*expansion.get())):Size.fill(1),
                         Size.natural().bounds(MailStyle.px(t,32),Integer.MAX_VALUE))));

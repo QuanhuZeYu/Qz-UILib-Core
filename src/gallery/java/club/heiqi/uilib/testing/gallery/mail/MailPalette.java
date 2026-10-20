@@ -29,9 +29,9 @@ final class MailPalette {
         text=p.text;
         accent=p.accent;
         TextStyle style = MailTypography.style(base.textStyle).withColor(text);
-        theme = new SceneTheme(style, surface, 0x00000000, hover, selected, accent,
-                p.surface,mutedText,p.primary,p.onPrimary,
-                base.padding, base.gap);
+        // 字族、字号和配色是案例的明确局部样式；密度、尺寸、间距来源及动效角色沿当前主题。
+        theme = base.withTextStyle(style).withColors(surface, 0x00000000, hover, selected, accent,
+                p.surface, mutedText, p.primary, p.onPrimary);
     }
 
     static MailPalette from(SceneTheme base, ThemeMode mode) {

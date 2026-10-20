@@ -8,6 +8,7 @@ import club.heiqi.uilib.ui.scene.control.DocumentArrangementScenario;
 import club.heiqi.uilib.ui.scene.control.FilePickerScenario;
 import club.heiqi.uilib.ui.scene.control.VirtualCollectionIndexScenario;
 import club.heiqi.uilib.ui.scene.integration.*;
+import club.heiqi.uilib.ui.scene.motion.ElasticMappingChecks;
 import club.heiqi.uilib.ui.scene.text.math.MathStructureScenario;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -31,7 +32,8 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 GalleryNavigationScenario::new, SettingsWorkspaceScenario::new, VectorPresentationScenario::new,
                 DensityPresentationScenario::new, InspectionPresentationScenario::new),
         new Module("state", "状态与生命周期", "派生读取、动态结构、资源归属与动效时序",
-                SceneCoreLoopTest::new, ReactiveLifecycleScenario::new, PageSessionScenario::new, DynamicStructureScenario::new, MotionScenario::new),
+                SceneCoreLoopTest::new, ReactiveLifecycleScenario::new, PageSessionScenario::new, DynamicStructureScenario::new, MotionScenario::new,
+                ElasticMappingChecks::new),
         new Module("input", "指针与焦点", "物理按压、焦点范围、方向导航、滚动显露与退出",
                 PointerInputScenario::new, FocusInputScenario::new, FocusScopeScenario::new,
                 FocusNavigationScenario::new, FocusRevealScenario::new, DirectionalNavigationScenario::new,
@@ -40,7 +42,7 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 EditingScenario::new, MultilineEditingScenario::new, CompositionIdentityScenario::new, CommandScenario::new),
         new Module("controls", "标准控件", "按钮、状态选择、标签页、弹层、滑杆与提示的正式输入",
                 StandardControlsScenario::new, StateControlsScenario::new, TabsScenario::new,
-                PopupControlsScenario::new, SliderScenario::new, TooltipScenario::new),
+                PopupControlsScenario::new, SliderScenario::new, ScrollbarScenario::new, TooltipScenario::new),
         new Module("collections", "有限集合", "索引与选择、可变行高、表格列宽、树投影及屏外导航",
                 VirtualCollectionIndexScenario::new, VirtualCollectionScenario::new, DataTableScenario::new, TreeViewScenario::new),
         new Module("presentation", "呈现与检查", "仿射与精确裁剪、绘制载荷、密度、场景检查和语义动作",

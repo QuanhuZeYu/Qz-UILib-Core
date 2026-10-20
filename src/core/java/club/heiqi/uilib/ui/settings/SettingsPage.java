@@ -326,9 +326,9 @@ public final class SettingsPage implements ScenePage {
             SceneNode status=SettingsStyle.column(5).add(text(this::state,13,false)).add(feedback);
             status.add(text(() -> model.dirty().get()?"应用全部分类的更改后，才能保存到文件。":model.unsaved().get()?"当前运行使用新的配置；保存后用于下次启动。":"可以继续编辑；应用与保存分别执行。",12,true));
             status.add(error(model.error()));
-            SceneNode controls=actions(enabledButton(() -> "放弃编辑",discard::tryExecute,false,true,discard.executable()),
-                    enabledButton("保存到文件",save::tryExecute,save.executable()),
-                    enabledButton(() -> "应用全部更改",apply::tryExecute,true,false,apply.executable()));
+            SceneNode controls=actions(SettingsStyle.button(ctx,() -> "放弃编辑",palette,discard,false,true).view,
+                    SettingsStyle.button(ctx,() -> "保存到文件",palette,save,false,false).view,
+                    SettingsStyle.button(ctx,() -> "应用全部更改",palette,apply,true,false).view);
             return SettingsStyle.column(14).add(SettingsStyle.line(palette))
                     .add(SettingsStyle.column(0).control(new SettingsLayout.Footer()).add(status).add(controls));
         }

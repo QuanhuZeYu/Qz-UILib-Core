@@ -77,8 +77,7 @@ public final class InspectionPage {
             SceneNode panel=GalleryStyle.card(theme).gap(14);
             SceneNode actions=GalleryStyle.centeredRow().size(Size.fill(1),Size.natural()).gap(12);
             actions.add(GalleryStyle.label(page,()->"当前检查",theme,20,false).size(Size.fill(1),Size.natural()));
-            actions.add(GalleryStyle.primary(page,()->busy.get()?"读取中":"更新检查 · F8",theme,refresh::tryExecute)
-                    .bind(NodeBinding.value(refresh.executable(),SceneNode::enabled)));
+            actions.add(GalleryStyle.primary(page,()->busy.get()?"读取中":"更新检查 · F8",theme,refresh));
             panel.add(actions).add(SceneSwitch.create(page,recording,()->"记录准备原因",theme,recording::set));
             panel.add(GalleryStyle.label(page,message,theme,14,true));
             SceneNode label=GalleryStyle.label(page,()->"检查对象",theme,14,true);

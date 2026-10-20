@@ -95,8 +95,28 @@ public class SceneAppearance {
                         (n,s)->n.size(Size.fixed(s),Size.fixed(s))));
     }
     public SceneNode action(String text,SceneIconButton.Symbol icon,Runnable action,Role role){return action(()->text,icon,action,role);}
+    public SceneNode action(String text,SceneIconButton.Symbol icon,Runnable action,Role role,SceneTextPolicy policy){return action(()->text,icon,action,role,policy);}
+    public SceneNode action(String text,SceneIconButton.Symbol icon,SceneCommand command,Role role){return action(()->text,icon,command,role);}
+    public SceneNode action(String text,SceneIconButton.Symbol icon,SceneCommand command,Role role,SceneTextPolicy policy){return action(()->text,icon,command,role,policy);}
     public SceneNode action(ReadableSignal<String> text,SceneIconButton.Symbol icon,Runnable action,Role role){
-        return SceneButton.createModern(page,text,colors,action,role,icon==null?null:()->icon);
+        return action(text,icon,action,role,SceneTextPolicy.WRAP);
+    }
+    /** 文字策略与标准按钮一致；导航或路径需单行时在声明末尾明确选择。 */
+    public SceneNode action(ReadableSignal<String> text,SceneIconButton.Symbol icon,Runnable action,Role role,SceneTextPolicy policy){
+        return SceneButton.createModern(page,text,colors,action,role,icon==null?null:()->icon,policy);
+    }
+    public SceneNode action(ReadableSignal<String> text,SceneIconButton.Symbol icon,SceneCommand command,Role role){
+        return action(text,icon,command,role,SceneTextPolicy.WRAP);
+    }
+    public SceneNode action(ReadableSignal<String> text,SceneIconButton.Symbol icon,SceneCommand command,Role role,SceneTextPolicy policy){
+        return SceneControlBindings.command(action(text,icon,command::tryExecute,role,policy),command);
+    }
+    /** 内容只负责布局和显示；名称、焦点、激活、选中与反馈仍由唯一标准动作根承担。 */
+    public SceneNode action(ReadableSignal<String> name,SceneNode content,Runnable action,Role role,ReadableSignal<Boolean> selected){
+        return SceneButton.createModern(page,name,content,colors,action,role,selected);
+    }
+    public SceneNode action(ReadableSignal<String> name,SceneNode content,SceneCommand command,Role role,ReadableSignal<Boolean> selected){
+        return SceneControlBindings.command(action(name,content,command::tryExecute,role,selected),command);
     }
     public static SceneTheme theme(boolean dark){
         Palette p=new Palette(dark);
@@ -104,18 +124,39 @@ public class SceneAppearance {
                 p.surface,p.muted,p.primary,p.onPrimary,CONTROL_PADDING,GAP);
     }
     public static SceneNode button(ScenePageContext page,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,Runnable action,Role role){
+        return button(page,text,theme,action,role,SceneTextPolicy.WRAP);
+    }
+    public static SceneNode button(ScenePageContext page,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,Runnable action,Role role,SceneTextPolicy policy){
         club.heiqi.uilib.ui.reactive.Owner owner=page.scope().child();
         ReadableSignal<Palette> colors=page.domain().computed(owner,()->new Palette(theme.get()));
-        return SceneButton.createModern(page,text,colors,action,role,null).own(owner);
+        return SceneButton.createModern(page,text,colors,action,role,null,policy).own(owner);
     }
-    public SceneNode card(SceneNode content){return column(0).control(new Surface(colors,Role.CARD,null,()->false)).add(content);}
+    public static SceneNode button(ScenePageContext page,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,SceneCommand command,Role role){
+        return button(page,text,theme,command,role,SceneTextPolicy.WRAP);
+    }
+    public static SceneNode button(ScenePageContext page,ReadableSignal<String> text,ReadableSignal<SceneTheme> theme,SceneCommand command,Role role,SceneTextPolicy policy){
+        return SceneControlBindings.command(button(page,text,theme,command::tryExecute,role,policy),command);
+    }
+    public static SceneNode button(ScenePageContext page,ReadableSignal<String> name,SceneNode content,ReadableSignal<SceneTheme> theme,Runnable action,Role role,ReadableSignal<Boolean> selected){
+        club.heiqi.uilib.ui.reactive.Owner owner=page.scope().child();
+        ReadableSignal<Palette> colors=page.domain().computed(owner,()->new Palette(theme.get()));
+        return SceneButton.createModern(page,name,content,colors,action,role,selected).own(owner);
+    }
+    public static SceneNode button(ScenePageContext page,ReadableSignal<String> name,SceneNode content,ReadableSignal<SceneTheme> theme,SceneCommand command,Role role,ReadableSignal<Boolean> selected){
+        return SceneControlBindings.command(button(page,name,content,theme,command::tryExecute,role,selected),command);
+    }
+    public SceneNode card(SceneNode content){
+        Surface surface=new Surface(colors,Role.CARD,null,()->false);
+        SceneNode node=column(0).control(surface).add(content);surface.install(node);return node;
+    }
     public SceneNode field(SceneNode editor) {
         SceneNode scrollbar=SceneScrollbar.create(page,SceneScrollViewport.of(page,editor,SceneNode.Axis.ROW),
                 ()->new SceneScrollbar.Options().dimensions(4,24,1).colors(0,colors.get().border,colors.get().muted),
                 ()->colors.get().editorTheme()).size(Size.fill(1),Size.natural());
         // 显式复用同一编辑视口，替代自动条；条位于字段底部，不覆盖路径文字。
-        return column(0).size(Size.fill(1),Size.natural()).control(new Surface(colors,Role.FIELD,editor,()->false))
-                .add(editor).add(scrollbar);
+        Surface surface=new Surface(colors,Role.FIELD,editor,()->false);
+        SceneNode node=column(0).size(Size.fill(1),Size.natural()).control(surface).add(editor).add(scrollbar);
+        surface.install(node);return node;
 
     }
     public SceneNode line() {return column(0).size(Size.fill(1),Size.fixed(1)).bind(NodeBinding.value(colors,(n,p)->n.background(p.border)));}
@@ -141,16 +182,13 @@ public class SceneAppearance {
         private final ReadableSignal<Boolean> selected;
         private final SceneNode target;
         private final Role role;
+        private final SceneControlMotion motion=new SceneControlMotion();
         public Surface(ReadableSignal<Palette> colors,Role role,SceneNode target,ReadableSignal<Boolean> selected){
             this.colors=colors;this.role=role;this.target=target;this.selected=selected;
         }
+        void install(SceneNode node){motion.install(node,()->colors.get().source.feedbackMotion,this::fill);}
         public List<ReadableSignal<?>> paintDependencies(SceneNode n){return Arrays.asList(colors,selected);}
         private boolean enabled(){for(SceneNode at=target;at!=null;at=at.parent())if(!at.enabled())return false;return true;}
-        private boolean hovered(SceneGeometryView geometry){
-            if(target==null||target.runtime()==null)return false;
-            for(SceneNode at=target.runtime().pointerRouter().hovered(geometry);at!=null;at=at.parent())if(at==target)return true;
-            return false;
-        }
         int fill(SceneNode node) {
             Palette p = colors.get(); boolean active = enabled();
             SceneNode hit = target == null || target.runtime() == null ? null : target.runtime().pointerRouter().hoverTarget().get();
@@ -162,17 +200,12 @@ public class SceneAppearance {
             if ((hover || pressed) && active) fill = role == Role.PRIMARY ? p.muted : p.hover;
             return active ? fill : p.surface;
         }
-        public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint){ paint(n, geometry, paint, fill(n)); }
+        public void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint){ paint(n, geometry, paint, motion.color(fill(n))); }
         void paint(SceneNode n,SceneGeometryView geometry,PaintPlanBuilder paint,int animatedFill){
             SceneGeometryView.Entry e=geometry.get(n);if(e==null)return;
-            Palette p=colors.get();boolean active=enabled();
+            Palette p=colors.get();
             boolean focused=target!=null&&target.runtime()!=null&&target.runtime().focusRouter().focusVisible(target);
-            boolean pressed=target!=null&&target.runtime()!=null&&target.runtime().pressed(target);
-            int fill=role==Role.PRIMARY?p.primary:role==Role.GHOST||role==Role.ENTRY?0:p.background;
-            if(role==Role.ENTRY&&selected.get())fill=p.hover;
-            if(hovered(geometry)&&active||pressed&&active)fill=role==Role.PRIMARY?p.muted:p.hover;
-            if(!active)fill=p.surface;
-            fill=animatedFill;
+            int fill=animatedFill;
             int edge=focused?p.muted:role==Role.OUTLINE||role==Role.FIELD||role==Role.PANEL||role==Role.CARD?p.border:fill;
             if(role==Role.PANEL){
                 for(int spread=6;spread>=2;spread-=2)ScenePaintShapes.rounded(paint,

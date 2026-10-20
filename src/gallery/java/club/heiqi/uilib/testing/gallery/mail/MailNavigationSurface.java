@@ -14,11 +14,10 @@ import java.util.List;
 final class MailNavigationSurface extends MailSurface {
     private final ReadableSignal<Float> expansion;
     private final ReadableSignal<SceneTheme> theme;
-    private final ReadableSignal<Integer> color;
     MailNavigationSurface(ReadableSignal<SceneTheme> theme,ReadableSignal<Integer> color,ReadableSignal<Float> expansion) {
-        super(theme,color,16f/14f);this.theme=theme;this.color=color;this.expansion=expansion;
+        super(theme,color,16f/14f);this.theme=theme;this.expansion=expansion;
     }
-    @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) {return Arrays.asList(theme,color,expansion);}
+    @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) {return Arrays.asList(theme,this::presentedColor,expansion);}
     @Override protected void paintBackground(SceneNode node,SceneGeometryView.Entry e,PaintPlanBuilder target,int color,int radius) {
         LayoutBox b=e.box;int half=b.width/2;
         LayoutBox left=new LayoutBox(b.x,b.y,half,b.height),right=new LayoutBox(b.x+half,b.y,b.width-half,b.height);

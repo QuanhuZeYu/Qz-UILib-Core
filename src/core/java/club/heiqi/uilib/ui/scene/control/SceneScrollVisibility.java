@@ -2,23 +2,28 @@ package club.heiqi.uilib.ui.scene.control;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
+import club.heiqi.uilib.ui.scene.motion.MotionValue;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 只持有滑块的有限可见性，不持有滚动位置；挂载结束后释放计时状态。 */
+/** 活动后的有限等待与淡出；只拥有 alpha，不持有滚动位置或输入时钟。 */
 final class SceneScrollVisibility {
     final Signal<Float> opacity;
-    final Signal<Long> wake;
     private final SceneRuntime runtime;
     private final ReadableSignal<SceneScrollbar.Options> source;
-    private boolean hovered, areaHovered, dragging;
-    private long fadeAt;
+    private final MotionValue alpha = new MotionValue();
+    private boolean hovered, areaHovered, dragging, waiting;
+    private long fadeAt, fadeMillis = -1;
+    private MotionSpec fade;
+    private MotionPolicy policy;
 
     SceneScrollVisibility(SceneRuntime runtime, ReadableSignal<SceneScrollbar.Options> source) {
         this.runtime = runtime; this.source = source;
-        opacity = runtime.domain().signal(0f); wake = runtime.domain().signal(Long.MAX_VALUE);
+        opacity = runtime.domain().signal(0f);
     }
     void activity() {
-        opacity.set(1f);
+        alpha.snap(1, runtime.inputNanos()); opacity.set(1f);
         schedule();
     }
     void hover(boolean inside) {
@@ -35,21 +40,40 @@ final class SceneScrollVisibility {
         if (active) activity(); else schedule();
     }
     private void schedule() {
+        alpha.snap(opacity.get(), runtime.inputNanos());
         SceneScrollbar.Options options = source.get();
         fadeAt = runtime.inputNanos() + options.hideDelayMillis * 1_000_000L;
-        wake.set(options.autoHide && !hovered && !areaHovered && !dragging && opacity.get() > 0 ? fadeAt : Long.MAX_VALUE);
+        waiting = options.autoHide && !hovered && !areaHovered && !dragging && opacity.get() > 0;
+        if (waiting && options.hideDelayMillis == 0) advance(runtime.inputNanos());
     }
-    long next() { return source.get().autoHide ? wake.get() : Long.MAX_VALUE; }
+    boolean active() { return waiting || alpha.active(); }
     float alpha() { return source.get().autoHide ? opacity.get() : 1f; }
-    void advance(long now) {
-        SceneScrollbar.Options options = source.get();
-        if (!options.autoHide || hovered || areaHovered || dragging) { wake.set(Long.MAX_VALUE); return; }
-        long elapsed = now - fadeAt;
-        if (elapsed < 0) return;
-        float value = options.fadeMillis == 0 ? 0 : Math.max(0f, 1f - (float) ((double) elapsed / (options.fadeMillis * 1_000_000L)));
-        opacity.set(value); wake.set(value > 0 ? 0L : Long.MAX_VALUE);
+    private MotionSpec motion() {
+        long duration = source.get().fadeMillis;
+        MotionPolicy current = runtime.motionPolicy().get();
+        if (duration != fadeMillis || current != policy) {
+            fadeMillis = duration; policy = current;
+            fade = current.resolve(MotionSpec.tween(duration * 1_000_000L, MotionSpec.LINEAR), false);
+        }
+        return fade;
     }
-    // 范围暂时归零只结束时间线；悬停事实仍由正式绑定持有，恢复范围时继续消费。
-    void stop() { dragging = false; opacity.set(0f); wake.set(Long.MAX_VALUE); }
-    void close() { hovered = false; areaHovered = false; stop(); }
+    void policy() {
+        if (!alpha.active()) return;
+        alpha.retarget(0, motion(), runtime.inputNanos());
+        opacity.set((float) alpha.value());
+    }
+    void advance(long now) {
+        if (waiting) {
+            if (now - fadeAt < 0) return;
+            waiting = false;
+            // 等待是交互期限；迟到帧按实际经过时间采样，不重新延长淡出。
+            alpha.snap(opacity.get(), fadeAt);
+            alpha.retarget(0, motion(), fadeAt);
+        }
+        if (alpha.active()) alpha.retarget(0, motion(), now);
+        opacity.set((float) alpha.value());
+    }
+    // 范围归零只结束所属时间线，正式悬停事实在恢复范围后继续消费。
+    void stop() { dragging = waiting = false; alpha.snap(0, runtime.inputNanos()); opacity.set(0f); }
+    void close() { hovered = areaHovered = false; stop(); }
 }

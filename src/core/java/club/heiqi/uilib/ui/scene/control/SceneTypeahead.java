@@ -9,12 +9,22 @@ import java.util.function.Function;
 final class SceneTypeahead {
     private String query = "";
     private long lastInput;
-    <T> int find(List<T> items, Function<T, String> name, int focused, String text) {
+    private final long timeoutNanos;
+    private final int maximumLength;
+
+    SceneTypeahead() { this(1_000_000_000L, Integer.MAX_VALUE); }
+    SceneTypeahead(long timeoutNanos, int maximumLength) {
+        if (timeoutNanos <= 0 || maximumLength <= 0) throw new IllegalArgumentException("字符导航窗口与前缀长度必须为正");
+        this.timeoutNanos = timeoutNanos; this.maximumLength = maximumLength;
+    }
+
+    /** 只消费所属输入批次的时刻；匹配本身不采钟，也不推进框架时间。 */
+    <T> int find(List<T> items, Function<T, String> name, int focused, String text, long now) {
         if (text == null || text.trim().isEmpty() || text.codePoints().anyMatch(Character::isISOControl)) return -1;
-        long now = System.nanoTime();
-        if (now - lastInput > 1_000_000_000L) query = "";
+        if (now - lastInput > timeoutNanos) query = "";
         lastInput = now;
         String input = normalize(text); if (input.isEmpty()) return -1; query += input;
+        if (query.length() > maximumLength) query = query.substring(query.length() - maximumLength);
         // 连续输入同一字符循环同前缀项；不同字符组成完整前缀。
         boolean repeated = query.codePoints().allMatch(value -> value == query.codePointAt(0));
         String prefix = repeated ? new String(Character.toChars(query.codePointAt(0))) : query;

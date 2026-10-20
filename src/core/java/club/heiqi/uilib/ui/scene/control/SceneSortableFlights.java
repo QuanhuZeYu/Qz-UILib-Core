@@ -119,7 +119,18 @@ final class SceneSortableFlights<T, K, C> {
     /** 临时几何仅为当前交互续接服务；静止后不保留节点和业务快照。 */
     void forget() { previous.clear(); }
     void clear() {
-        for (SceneSortableModel.RowEntry<T, K, C> row : flights.keySet()) offset(row, 0, 0);
+        java.util.List<SceneSortableModel.RowEntry<T, K, C>> rows = new java.util.ArrayList<>(flights.keySet());
+        // 先脱离轨迹归属；一条偏移的外部观察者失败不保留旧轨迹，也不阻断其它行归零。
         flights.clear(); forget(); pending = null;
+        Throwable failure = null;
+        for (SceneSortableModel.RowEntry<T, K, C> row : rows) {
+            try { offset(row, 0, 0); } catch (Throwable next) {
+                if (failure == null) failure = next;
+                else if (next != failure) failure.addSuppressed(next);
+            }
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure != null) throw new IllegalStateException("排序让位释放失败", failure);
     }
 }

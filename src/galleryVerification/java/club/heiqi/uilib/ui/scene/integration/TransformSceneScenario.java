@@ -180,7 +180,7 @@ public final class TransformSceneScenario extends TestApplication {
                     paint.add(PaintCommand.rect(own.box,own.clip,0xff3456ab));
                 }
             });
-            image[0]=SceneImage.create(service,()->source,()->new ImageOptions(Size.fixed(80),Size.fixed(60),ImageOptions.Fit.STRETCH,0,0,80,60,"",false),fallback);
+            image[0]=SceneImage.create(ctx,service,()->source,()->new ImageOptions(Size.fixed(80),Size.fixed(60),ImageOptions.Fit.STRETCH,0,0,80,60,"",false),ctx.theme(),fallback);
             ctx.mount(new SceneNode().size(Size.fill(1),Size.fill(1)).add(new SceneNode().size(Size.fixed(100),Size.fixed(80)).transform(rotated()).clip(SceneShape.ellipse()).add(image[0])));
         })) {
             page.frame();PaintCommand before=colored(host.lastPlan,0x3456ab);require(before!=null,"loading未回放正规备用子树");

@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Observation;
+import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.image.ImageSource;
 import club.heiqi.uilib.ui.scene.image.ImageState;
 import club.heiqi.uilib.ui.scene.image.ImageOptions;
@@ -41,6 +42,8 @@ public final class SceneImage implements SceneControl {
     private final SceneNode placeholder;
     private boolean documentPolicy;
     private SceneTheme theme = SceneTheme.dark();
+    private final ReadableSignal<SceneTheme> themeSource;
+    private int failureColor = new SceneAppearance.Palette(theme).error;
     private club.heiqi.uilib.ui.scene.text.TextLayout quantityText;
     private club.heiqi.uilib.ui.scene.image.ItemImageFacts quantityFacts;
     private TextStyle quantityStyle;
@@ -48,30 +51,42 @@ public final class SceneImage implements SceneControl {
     private long quantityMetrics = -1;
     private InkBounds quantityInk;
 
-    /** 可选主题绑定与其他正式控件一致，字号/提示背景变化自动失效。 */
+    /** 页面拥有状态域与默认主题；图像服务仍由调用方提供并持有。 */
+    public static SceneNode create(
+            ScenePageContext page, ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<ImageOptions> options) {
+        return create(page, service, source, options, page.theme());
+    }
+
+    public static SceneNode create(
+            ScenePageContext page, ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<ImageOptions> options, ReadableSignal<SceneTheme> theme) {
+        return create(page, service, source, options, theme, null);
+    }
+
+    /** 自定义占位沿同一子树呈现，优先于默认主题占位。 */
+    public static SceneNode create(
+            ScenePageContext page, ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<ImageOptions> options, ReadableSignal<SceneTheme> theme, SceneNode placeholder) {
+        Objects.requireNonNull(page, "page").domain().checkWrite();
+        return create(page.domain(), service, source, options, Objects.requireNonNull(theme, "theme"), placeholder);
+    }
+
+    /** 保留低层调用入口；已有显式主题仍沿同一挂载与资源路径更新。 */
     public static SceneNode themed(
-            ImageService service,
-            ReadableSignal<ImageSource> source,
-            ReadableSignal<ImageOptions> options,
-            ReadableSignal<SceneTheme> theme) {
-        SceneNode node = create(service, source, options);
-        SceneImage control = (SceneImage) node.control();
-        node.bind(
-                NodeBinding.value(
-                        theme,
-                        (target, value) -> {
-                            control.theme = value;
-                            target.style(value.textStyle);
-                        }));
-        return node;
+            ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<ImageOptions> options, ReadableSignal<SceneTheme> theme) {
+        return create(ReactiveDomain.current(), service, source, options, Objects.requireNonNull(theme, "theme"), null);
     }
 
     private SceneImage(
-            ImageService service, ReadableSignal<ImageSource> source, SceneNode placeholder) {
+            ReactiveDomain domain, ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<SceneTheme> theme, SceneNode placeholder) {
         this.service = Objects.requireNonNull(service, "service");
         this.source = Objects.requireNonNull(source, "source");
         this.placeholder = placeholder;
-        current = ReactiveDomain.current().signal(ImageState.loading(source.get(), 0));
+        this.themeSource = theme;
+        current = domain.signal(ImageState.loading(source.get(), 0));
     }
 
     /** 只读呈现状态；其他正规控件可绑定来源/stage诊断，无业务缓存轮询。 */
@@ -93,8 +108,20 @@ public final class SceneImage implements SceneControl {
             ReadableSignal<ImageSource> source,
             ReadableSignal<ImageOptions> options,
             SceneNode placeholder) {
-        SceneImage control = new SceneImage(service, source, placeholder);
+        return create(ReactiveDomain.current(), service, source, options, null, placeholder);
+    }
+
+    private static SceneNode create(
+            ReactiveDomain domain, ImageService service, ReadableSignal<ImageSource> source,
+            ReadableSignal<ImageOptions> options, ReadableSignal<SceneTheme> theme, SceneNode placeholder) {
+        domain.checkWrite();
+        SceneImage control = new SceneImage(domain, service, source, theme, placeholder);
         SceneNode node = new SceneNode().control(control);
+        if (theme != null) node.bind(NodeBinding.value(theme, (target, value) -> {
+            control.theme = Objects.requireNonNull(value, "theme value");
+            control.failureColor = new SceneAppearance.Palette(value).error;
+            target.defaultStyle(value.textStyle);
+        }));
         if (placeholder != null) node.add(placeholder);
         node.bind(
                 NodeBinding.value(
@@ -211,6 +238,11 @@ public final class SceneImage implements SceneControl {
                         Collections.singletonList(
                                 new ChildPlacements.Entry(
                                         placeholder, new LayoutBox(0, 0, box.width, box.height))));
+    }
+
+    @Override
+    public java.util.List<ReadableSignal<?>> paintDependencies(SceneNode node) {
+        return themeSource == null ? Collections.emptyList() : Collections.singletonList(themeSource);
     }
 
     @Override
@@ -434,7 +466,7 @@ public final class SceneImage implements SceneControl {
             SceneNode node, SceneGeometryView.Entry entry, boolean failed) {
         LayoutBox clip = entry.clip == null ? entry.box : entry.clip.intersect(entry.box);
         PaintPlanBuilder target = new PaintPlanBuilder();
-        target.add(PaintCommand.rect(entry.box, clip, failed ? 0xFF642D35 : 0xFF39434F));
+        target.add(PaintCommand.rect(entry.box, clip, failed ? failureColor : theme.panel));
         if (!node.text().isEmpty()) target.add(PaintCommand.text(entry.box, clip, entry.text));
         return target.build();
     }

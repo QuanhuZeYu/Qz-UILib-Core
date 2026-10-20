@@ -23,6 +23,16 @@ public final class SceneIconButton {
             ReadableSignal<SceneTheme> theme, Runnable action) {
         return SceneSymbolControl.node(page,name,new Control(theme,symbol),action);
     }
+    /** 命令同时提供本地可用资格和执行前检查，调用方不再拆成两处绑定。 */
+    public static SceneNode create(ScenePageContext page, Symbol symbol, ReadableSignal<String> name,
+            ReadableSignal<SceneTheme> theme, SceneCommand command) {
+        Objects.requireNonNull(symbol); return create(page, () -> symbol, name, theme, command);
+    }
+    public static SceneNode create(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<String> name,
+            ReadableSignal<SceneTheme> theme, SceneCommand command) {
+        Objects.requireNonNull(command, "命令");
+        return SceneControlBindings.command(create(page, symbol, name, theme, command::tryExecute), command);
+    }
     /** 复合动作内的纯装饰，使用相同标记但不建立额外的输入目标。 */
     public static SceneNode graphic(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<SceneTheme> theme) {
         return SceneSymbolControl.graphic(page,new Control(theme,symbol));
@@ -31,7 +41,7 @@ public final class SceneIconButton {
         private final ReadableSignal<Symbol> shape;
         Control(ReadableSignal<SceneTheme> theme, ReadableSignal<Symbol> shape) {super(theme,false);this.shape=Objects.requireNonNull(shape);}
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) {return Arrays.asList(theme,shape);}
-        @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color) {
+        @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color, boolean enabled) {
             SceneIconGlyph.paint(Objects.requireNonNull(shape.get(),"图标标记"),box,target,clip,color);
         }
     }

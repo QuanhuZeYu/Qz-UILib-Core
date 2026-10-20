@@ -43,8 +43,8 @@ final class MediaCatalogView {
         SceneNode cover = new SceneNode().size(Size.fixed(96), Size.fixed(54))
                 .bind(NodeBinding.value(() -> page.viewportWidth().get() >= 720, SceneNode::visible));
         cover.bind(NodeBinding.repeat(this::posters, uri -> uri,
-                poster -> SceneImage.create(environment.images(), () -> ImageSource.http(poster.get().toString()),
-                        () -> new ImageOptions(Size.fixed(96), Size.fixed(54), ImageOptions.Fit.COVER, .5f, .5f, 96, 54, "媒体封面", false))));
+                poster -> SceneImage.create(page, environment.images(), () -> ImageSource.http(poster.get().toString()),
+                        () -> new ImageOptions(Size.fixed(96), Size.fixed(54), ImageOptions.Fit.COVER, .5f, .5f, 96, 54, "媒体封面", false), theme)));
         return cover;
     }
 

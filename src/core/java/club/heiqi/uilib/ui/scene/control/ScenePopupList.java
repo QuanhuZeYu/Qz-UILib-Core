@@ -178,7 +178,7 @@ final class ScenePopupList<T, K> {
                 }
                 return true;
             }
-            next = closedTypeahead.find(choices, label, index, event.text);
+            next = closedTypeahead.find(choices, label, index, event.text, page.runtime().inputNanos());
             if (next < 0) return false;
             confirm.accept(choices.get(next)); return true;
         }
@@ -335,7 +335,7 @@ final class ScenePopupList<T, K> {
             if (!accepts(focused)) return false;
             List<T> choices = available.get(); int index = -1; K identity = identities.get(focused);
             for (int i = 0; i < choices.size(); i++) if (Objects.equals(key.apply(choices.get(i)), identity)) { index = i; break; }
-            int match = typeahead.find(choices, label, index, event.text);
+            int match = typeahead.find(choices, label, index, event.text, page.runtime().inputNanos());
             if (match < 0) return false;
             rows.focus(key.apply(choices.get(match))); return true;
         }

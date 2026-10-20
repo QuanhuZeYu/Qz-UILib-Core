@@ -459,17 +459,19 @@ public final class CommandScenario extends TestApplication {
         ReactiveDomain domain = ReactiveDomain.direct();
         MultilineEditingScenario.PlainHost host = new MultilineEditingScenario.PlainHost();
         Signal<Boolean>[] dirty = new Signal[1], unsaved = new Signal[1];
-        SceneCommand[] save = new SceneCommand[1]; SceneNode[] button = new SceneNode[1];
+        SceneCommand[] save = new SceneCommand[1]; SceneNode[] button = new SceneNode[1], menu = new SceneNode[1];
         int[] saved = {0}, legacy = {0};
         ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
             dirty[0] = domain.signal(true); unsaved[0] = domain.signal(true);
             save[0] = SceneCommand.of(() -> !dirty[0].get() && unsaved[0].get(), () -> {
                 saved[0]++; unsaved[0].set(false);
             });
-            button[0] = SceneButton.create(page, () -> "保存", page.theme(), save[0]::tryExecute)
-                    .bind(NodeBinding.value(save[0].executable(), SceneNode::enabled));
+            button[0] = SceneButton.create(page, () -> "保存", page.theme(), save[0]);
             SceneNode oldButton = SceneButton.create(page, () -> "旧动作", page.theme(), () -> legacy[0]++);
-            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(button[0]).add(oldButton));
+            menu[0] = club.heiqi.uilib.ui.scene.control.SceneMenu.create(page, () -> "共享保存菜单",
+                    () -> java.util.Collections.singletonList(new club.heiqi.uilib.ui.scene.control.SceneMenu.Item<>(
+                            "save", () -> "菜单保存", save[0])), page.theme());
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(button[0]).add(oldButton).add(menu[0]));
         }); onClose(session::close); session.frame();
         domain.execute(() -> {
             require(!save[0].tryExecute() && saved[0] == 0, "有未应用修改仍执行保存");
@@ -483,6 +485,22 @@ public final class CommandScenario extends TestApplication {
         int x = box[0].x + box[0].width / 2, y = box[0].y + box[0].height / 2;
         session.pointer(ScenePointerEvent.down(0, x, y)); session.pointer(ScenePointerEvent.up(0, x, y)); session.frame();
         require(saved[0] == 2 && legacy[0] == 0, "按钮未使用共享保存动作");
+        domain.execute(() -> unsaved[0].set(true)); session.frame();
+        domain.execute(() -> {
+            require(button[0].enabled(), "命令重载没有同步可用呈现");
+            dirty[0].set(true);
+            session.runtime().dispatchClick(button[0]);
+            require(saved[0] == 2, "命令按钮沿用了上一帧enabled许可");
+            dirty[0].set(false);
+            SceneNode trigger = session.pipeline().current().geometry.ordered().stream()
+                    .map(e -> e.node).filter(n -> n.focusable() && n.text().equals("共享保存菜单")).findFirst().get();
+            box[0] = session.pipeline().current().geometry.get(trigger).box;
+        });
+        int menuX = box[0].x + box[0].width/2, menuY = box[0].y + box[0].height/2;
+        session.pointer(ScenePointerEvent.down(0, menuX, menuY)); session.pointer(ScenePointerEvent.up(0, menuX, menuY)); session.frame();
+        session.key(plain(SceneKey.ENTER)); session.frame();
+        require(saved[0] == 3 && legacy[0] == 0, "菜单没有执行同一保存命令");
+        domain.execute(() -> require(!button[0].enabled(), "菜单执行后的命令状态没有回到同一按钮"));
         domain.execute(() -> {
             RuntimeException failure = new RuntimeException("保存失败");
             SceneCommand broken = SceneCommand.of(() -> true, () -> { throw failure; });

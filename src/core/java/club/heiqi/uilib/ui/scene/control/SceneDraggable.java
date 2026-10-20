@@ -457,7 +457,7 @@ public final class SceneDraggable {
                 if (visible == 0 || limit == 0) return 0;
                 // 共同几何已取整到像素；在同一像素内反求阻力前的位置，接管不重复压缩软边缘。
                 double amount = Math.min(Math.abs(visible), Math.max(0, limit - .25));
-                double input = Math.copySign(limit * amount / (.55 * (limit - amount)), visible);
+                double input = options.elastic.overshoot(Math.copySign(amount, visible), runtime.motionPolicy().get());
                 return SceneDragSupport.integer(Math.round(input - visible));
             }
             Offset resolve() {
@@ -555,6 +555,7 @@ public final class SceneDraggable {
             else state.publish(false, true, 0, 0);
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             Offset point = state.preferred.get(); release.sample(point.x, point.y, event.timeNanos);
+            sampleObserver(node, event);
         }
         private void continuePointer(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             Snapshot current = state.snapshot.get();
@@ -563,6 +564,7 @@ public final class SceneDraggable {
             if (current.pending) pending(runtime.inputNanos());
             update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             Offset point = state.preferred.get(); release.sample(point.x, point.y, event.timeNanos);
+            sampleObserver(node, event);
         }
         @Override public void preparePointerRelease(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
             geometry = dragFrame(node, geometry); event = event.in(geometry);
@@ -580,6 +582,7 @@ public final class SceneDraggable {
             if (options().preserveSlot && options().overlay == null) update(node, geometry, SceneDragSupport.AutoScroll.Shift.NONE);
             Offset preferred = state.preferred.get();
             release.sample(preferred.x, preferred.y, event.timeNanos);
+            sampleObserver(node, event);
             drop(node, geometry);
         }
         @Override public boolean edit(SceneNode node, SceneEditEvent event, SceneGeometryView geometry) {
@@ -651,6 +654,10 @@ public final class SceneDraggable {
         private LayoutBox worldBox(SceneGeometryView geometry, LayoutBox box) {
             return SceneGeometryView.bounds(club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(box.x, box.y, box.width, box.height)
                     .transformed(geometry.coordinateTransform()));
+        }
+        private void sampleObserver(SceneNode node, ScenePointerEvent event) {
+            if (observer != null) observer.pointerSample(node, (int) Math.round(event.worldX),
+                    (int) Math.round(event.worldY), event.timeNanos);
         }
         private void notifyObserver(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
             club.heiqi.uilib.ui.scene.geometry.SceneTransform frame = geometry.coordinateTransform();

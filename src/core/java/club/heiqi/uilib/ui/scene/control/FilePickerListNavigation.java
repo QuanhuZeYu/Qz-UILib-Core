@@ -5,13 +5,11 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /** 列表只把正式按钮焦点移动到下一项；字段和组字仍由原编辑目标处理。 */
 final class FilePickerListNavigation extends SceneAppearance.Flow {
     private final FilePickerSelection selection;
-    private String prefix="";
-    private long typedAt;
+    private final SceneTypeahead typeahead = new SceneTypeahead(800_000_000L, 128);
     FilePickerListNavigation(FilePickerSelection selection){this.selection=selection;}
 
     @Override public boolean editActivator(SceneNode node,SceneNode focused,SceneEditEvent event){
@@ -24,13 +22,16 @@ final class FilePickerListNavigation extends SceneAppearance.Flow {
         List<SceneNode> targets=targets(node);
         if(targets.isEmpty())return true;
         int current=targets.indexOf(node.runtime().focusRouter().focused().get());
-        Integer next=next(targets,current,event);
+        Integer next=next(node,targets,current,event);
         if(next==null)return false;
         if(next>=0)node.runtime().focusRouter().navigateTo(node.runtime().captureMount(targets.get(next)));
         return true;
     }
-    private Integer next(List<SceneNode> targets,int current,SceneEditEvent event){
-        if(event.command==null)return prefix(targets,current,event.text);
+    private Integer next(SceneNode node,List<SceneNode> targets,int current,SceneEditEvent event){
+        if(event.command==null){
+            int found=typeahead.find(targets,SceneNode::text,current,event.text,node.runtime().inputNanos());
+            return found<0?current:found;
+        }
         return command(event.command,current,targets.size());
     }
     private static List<SceneNode> targets(SceneNode node){
@@ -39,17 +40,6 @@ final class FilePickerListNavigation extends SceneAppearance.Flow {
             if(child.focusable()&&child.clickAction()!=null&&node.runtime().interactive(child))result.add(child);
         }
         return result;
-    }
-    private int prefix(List<SceneNode> targets,int current,String text){
-        long now=System.nanoTime();
-        if(now-typedAt>800_000_000L)prefix="";
-        typedAt=now;prefix+=text.toLowerCase(Locale.ROOT);
-        if(prefix.length()>128)prefix=prefix.substring(prefix.length()-128);
-        for(int i=1;i<=targets.size();i++){
-            int index=(Math.max(0,current)+i)%targets.size();
-            if(targets.get(index).text().toLowerCase(Locale.ROOT).startsWith(prefix))return index;
-        }
-        return current;
     }
     private static Integer command(SceneEditEvent.Command command,int current,int size){
         switch(command){

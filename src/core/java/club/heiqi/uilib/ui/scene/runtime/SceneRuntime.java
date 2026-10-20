@@ -68,10 +68,23 @@ public final class SceneRuntime implements AutoCloseable {
     void configureScrollMotion(SceneNode node, club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions options) { scrollMotions.configure(node, options); }
     void removeScrollMotion(SceneNode node) { scrollMotions.remove(node); }
     public int scrollPresentationOffset(SceneNode node) { return scrollMotions.offset(node); }
-    void cancelScrollMotions() { scrollMotions.cancelAll(); }
+    void cancelScrollMotions() { cancelScrollPresentation(null); }
     private SceneNode scrollMotionViewport(SceneNode node) { return node.control() == null ? node : domain.readOnly(() -> node.control().scrollMotionViewport(node)); }
     void endScrollMotionSequence(SceneNode node) { scrollMotions.endSequence(scrollMotionViewport(node)); }
-    void cancelScrollMotion(SceneNode node) { scrollMotions.cancel(scrollMotionViewport(node), true); }
+    void cancelScrollMotion(SceneNode node) { cancelScrollPresentation(scrollMotionViewport(node)); }
+    /** 两类所属呈现均尝试取消，保留原失败为主异常；通知失败不能跳过旧滚动资源。 */
+    private void cancelScrollPresentation(SceneNode viewport) {
+        Throwable failure = null;
+        try { if (viewport == null) scrollMotions.cancelAll(); else scrollMotions.cancel(viewport, true); }
+        catch (RuntimeException | Error next) { failure = next; }
+        try { scrollObservers.input(viewport); }
+        catch (RuntimeException | Error next) {
+            if (failure == null) failure = next;
+            else if (next != failure && !java.util.Arrays.asList(failure.getSuppressed()).contains(next)) failure.addSuppressed(next);
+        }
+        if (failure instanceof Error) throw (Error) failure;
+        if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+    }
     void scrollMotionInput(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { scrollMotions.input(scrollMotionViewport(node), event); }
     void scrollMotionRelease(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { scrollMotions.release(scrollMotionViewport(node), event); }
     boolean scrollMotionBoundary(SceneNode node, club.heiqi.uilib.ui.scene.input.ScenePointerEvent event) { return scrollMotions.boundary(scrollMotionViewport(node), event); }
@@ -1452,6 +1465,15 @@ public final class SceneRuntime implements AutoCloseable {
                 geometry != null && geometry.get(node) != null ? geometry : null;
         AutoCloseable observation = scrollObservers.observe(inputGeometryReady ? read.apply(inputGeometry) : null,
                 read, (left, right) -> left == right, Objects.requireNonNull(changed, "changed"));
+        return () -> { domain.checkWrite(); observation.close(); };
+    }
+
+    /** 同一视口的新输入接管暂态呈现；所属挂载负责释放，位置与范围发布不触发。 */
+    public AutoCloseable observeScrollInput(SceneScrollViewport viewport, Runnable takeover) {
+        domain.checkWrite(); checkAlive();
+        if (!Objects.requireNonNull(viewport, "viewport").belongsTo(this))
+            throw new IllegalArgumentException("滚动输入观察运行时与视口不同");
+        AutoCloseable observation = scrollObservers.observeInput(scrollMotionViewport(viewport.node()), Objects.requireNonNull(takeover, "takeover"));
         return () -> { domain.checkWrite(); observation.close(); };
     }
 

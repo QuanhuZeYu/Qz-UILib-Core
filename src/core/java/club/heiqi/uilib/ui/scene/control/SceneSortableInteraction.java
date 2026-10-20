@@ -35,7 +35,6 @@ final class SceneSortableInteraction<T, K, C> {
     }
     private void clear(SceneSortableModel.RowEntry<T, K, C> row) { if (active == row) clear(); }
     private void publish(LayoutBox box) {
-        model.motion.sample(token, box);
         Feedback<T, K, C> old = feedback.get();
         if (old != null && old.row == active && SceneSortableSelection.same(old.position, position)
                 && old.box.x == box.x && old.box.y == box.y && old.box.width == box.width && old.box.height == box.height) return;
@@ -88,6 +87,10 @@ final class SceneSortableInteraction<T, K, C> {
         @Override public void attach(SceneRuntime runtime, SceneNode node, Runnable cancel) { delegate.attach(runtime, node, cancel); }
         @Override public void detach(SceneNode node) { try { delegate.detach(node); } finally { clear(row); } }
         @Override public void cancel(SceneNode node) { try { delegate.cancel(node); } finally { clear(row); } }
+        @Override public void pointerSample(SceneNode node, int x, int y, long timeNanos) {
+            delegate.pointerSample(node, x, y, timeNanos);
+            if (active == row) model.motion.sample(token, x, y, timeNanos);
+        }
         @Override public void update(SceneNode node, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
             delegate.update(node, geometry, keyboard, box, x, y);
             if (!ownsSession(row)) { clear(row); return; }

@@ -28,7 +28,8 @@ final class SceneTextControl implements SceneControl {
     private final SceneTextPolicy policy;
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
-    private boolean trailingIcon;
+    private boolean trailingIcon, composed;
+    private ReadableSignal<Boolean> selected;
     private SceneAppearance.Surface modernSurface;
     private final SceneControlMotion motion = new SceneControlMotion();
     private TextLayout source, presented;
@@ -56,6 +57,12 @@ final class SceneTextControl implements SceneControl {
     }
 
     private static SceneNode create(ReadableSignal<String> text, SceneTextControl control) {
+        return create(text, control, null, null, null);
+    }
+
+    private static SceneNode create(ReadableSignal<String> text, SceneTextControl control,
+            ReadableSignal<SceneAppearance.Palette> colors, SceneAppearance.Role role,
+            ReadableSignal<Boolean> selected) {
         Objects.requireNonNull(text, "text");
         ReadableSignal<SceneTheme> theme = Objects.requireNonNull(control.theme, "theme");
         SceneTextPolicy policy = Objects.requireNonNull(control.policy, "policy");
@@ -66,6 +73,11 @@ final class SceneTextControl implements SceneControl {
                                 policy == SceneTextPolicy.WRAP
                                         ? TextPolicy.NORMAL
                                         : TextPolicy.NO_WRAP);
+        if (colors != null) {
+            control.selected = selected;
+            control.modernSurface = new SceneAppearance.Surface(colors, role, node,
+                    selected == null ? () -> false : selected);
+        }
         node.bind(NodeBinding.value(text, SceneNode::text));
         node.bind(
                 NodeBinding.value(
@@ -77,9 +89,9 @@ final class SceneTextControl implements SceneControl {
                             if (control.button) target.defaultPadding(metrics.padding).defaultGap(metrics.iconGap);
                         }));
         if (control.button) {
-            control.motion.install(node, () -> theme.get().feedbackMotion,
-                    self -> control.modernSurface == null ? SceneControlMotion.target(self, theme.get())
-                            : control.modernSurface.fill(self));
+            if (control.modernSurface != null) control.modernSurface.install(node);
+            else control.motion.install(node, () -> theme.get().feedbackMotion,
+                    self -> SceneControlMotion.target(self, theme.get()));
         }
         return node;
     }
@@ -91,14 +103,27 @@ final class SceneTextControl implements SceneControl {
         return create(text, control);
     }
 
-    static SceneNode createModern(ReadableSignal<String> text,ReadableSignal<SceneAppearance.Palette> colors,
-            SceneAppearance.Role role,ReadableSignal<SceneIconButton.Symbol> icon){
-        SceneTextControl control = new SceneTextControl(()->colors.get().defaultTheme(1,
-                role==SceneAppearance.Role.PRIMARY?colors.get().onPrimary:colors.get().text,10),
-                SceneTextPolicy.ELLIPSIS_SINGLE_LINE,true,icon);
-        SceneNode node = create(text, control);
-        control.modernSurface = new SceneAppearance.Surface(colors,role,node,()->false);
-        return node;
+    static SceneNode createModern(ReadableSignal<String> text, ReadableSignal<SceneAppearance.Palette> colors,
+            SceneAppearance.Role role, ReadableSignal<SceneIconButton.Symbol> icon, SceneTextPolicy policy) {
+        SceneTextControl control = modern(colors, role, icon, policy);
+        return create(text, control, colors, role, null);
+    }
+
+    /** 内容模式从创建起复用标准动作声明，完整名称不参与视觉测量，也不创建隐藏文字按钮。 */
+    static SceneNode createModern(ReadableSignal<String> name, SceneNode content,
+            ReadableSignal<SceneAppearance.Palette> colors, SceneAppearance.Role role, ReadableSignal<Boolean> selected) {
+        SceneTextControl control = modern(colors, role, null, SceneTextPolicy.WRAP);
+        control.composed = true;
+        return create(name, control, colors, role, Objects.requireNonNull(selected, "selected"))
+                .add(Objects.requireNonNull(content, "content"));
+    }
+
+    private static SceneTextControl modern(ReadableSignal<SceneAppearance.Palette> colors, SceneAppearance.Role role,
+            ReadableSignal<SceneIconButton.Symbol> icon, SceneTextPolicy policy) {
+        Objects.requireNonNull(colors, "colors"); Objects.requireNonNull(role, "role");
+        return new SceneTextControl(() -> colors.get().defaultTheme(1,
+                role == SceneAppearance.Role.PRIMARY ? colors.get().onPrimary : colors.get().text, 10),
+                policy, true, icon);
     }
     @Override public SceneSemantics semantics(SceneNode node) {
         SceneSemantics.Builder result = SceneSemantics.builder(button ? SceneSemantics.Role.BUTTON : SceneSemantics.Role.LABEL)
@@ -107,6 +132,7 @@ final class SceneTextControl implements SceneControl {
             if (node.focusable()) result.actions(SceneSemantics.Action.FOCUS, SceneSemantics.Action.ACTIVATE);
             else result.actions(SceneSemantics.Action.ACTIVATE);
         }
+        if (selected != null) result.selected(selected.get());
         return result.build();
     }
 
@@ -121,11 +147,12 @@ final class SceneTextControl implements SceneControl {
         return leadingIcon==null?Collections.singletonList(theme):java.util.Arrays.asList(theme,leadingIcon);
     }
     @Override public TextLayout layoutText(SceneNode node,SceneTextMeasurer text,int width) {
-        return text.layout(node.text(),node.style(),Math.max(0,width-iconSpace(node)),node.textPolicy());
+        return text.layout(composed ? "" : node.text(),node.style(),Math.max(0,width-iconSpace(node)),node.textPolicy());
     }
     @Override
     public MeasuredSize measure(
             SceneNode node, Constraints constraints, SceneTextMeasurer measurer) {
+        if (composed) return new MeasuredSize(0, 0);
         TextLayout full =
                 layoutText(node,measurer,constraints.availableWidth);
         float width = 0, height = 0;
@@ -137,14 +164,21 @@ final class SceneTextControl implements SceneControl {
         return new MeasuredSize((int) Math.ceil(width)+iconSpace(node),Math.max(iconSize(node),(int) Math.ceil(height)));
     }
 
+    @Override public MeasuredSize measure(SceneNode node, Constraints constraints, SceneTextMeasurer text,
+            SceneChildMeasurer children) {
+        return composed ? modernSurface.measure(node, constraints, text, children) : measure(node, constraints, text);
+    }
+
     @Override
     public ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer childMeasurer) {
-        return new ChildPlacements(Collections.emptyList());
+        return composed ? modernSurface.arrange(node, allocated, childMeasurer)
+                : new ChildPlacements(Collections.emptyList());
     }
 
     @Override
     public TextLayout presentText(
             SceneNode node, TextLayout full, int width, int height, SceneTextMeasurer measurer) {
+        if (composed) return full;
         width=Math.max(0,width-iconSpace(node));
         if (source != full || presentWidth != width || presentHeight != height) {
             source = full;
@@ -166,7 +200,7 @@ final class SceneTextControl implements SceneControl {
             enabled &= cursor.enabled();
         boolean focused =
                 enabled && runtime != null && runtime.focusRouter().focusVisible(node);
-        if(modernSurface!=null)modernSurface.paint(node,geometry,target,motion.color(modernSurface.fill(node)));
+        if(modernSurface!=null)modernSurface.paint(node,geometry,target);
         else if (button) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
@@ -178,6 +212,7 @@ final class SceneTextControl implements SceneControl {
             target.add(PaintCommand.rect(entry.box, entry.clip, motion.color(color)));
             if (focused) border(target, entry.box, entry.clip, style.focus);
         }
+        if (composed) return;
         LayoutBox inner = inner(entry.box, node.padding());
         if(leadingIcon!=null){
             int side=Math.min(iconSize(node),Math.min(inner.width,inner.height));
@@ -200,10 +235,25 @@ final class SceneTextControl implements SceneControl {
     }
 
     @Override public SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){
-        SceneGeometryView.Entry entry=geometry.get(node);
-        if(source==null||presented==source||entry==null||entry.text!=presented)return null;
-        String full=source.originalText==null?source.logicalText:source.originalText;
+        if (!truncated(node, geometry)) return null;
+        String full = composed ? node.text() : source.originalText == null ? source.logicalText : source.originalText;
         return new SceneTooltip.Hint(SceneTooltip.Content.text(full),new SceneTooltip.Options().width(Float.MAX_VALUE),theme.get());
     }
 
+    private boolean truncated(SceneNode node, SceneGeometryView geometry) {
+        if (composed) return contentTruncated(node, geometry);
+        SceneGeometryView.Entry entry = geometry.get(node);
+        return source != null && presented != source && entry != null && entry.text == presented;
+    }
+
+    /** 组合内容沿标准文字的省略事实返回根完整名称，不暴露内容把手或产生中间提示对象。 */
+    private static boolean contentTruncated(SceneNode node, SceneGeometryView geometry) {
+        for (SceneNode child : node.children()) {
+            if (!child.visible()) continue;
+            SceneControl control = child.control();
+            if (control instanceof SceneTextControl && ((SceneTextControl) control).truncated(child, geometry)) return true;
+            if (!(control instanceof SceneTextControl) && contentTruncated(child, geometry)) return true;
+        }
+        return false;
+    }
 }

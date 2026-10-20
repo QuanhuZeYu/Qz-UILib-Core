@@ -58,6 +58,10 @@ public final class SceneSlider {
         public final double value;
         Preview(boolean active,double value){this.active=active;this.value=value;}
     }
+    /** 使用页面主题；预览变化与最终提交仍由调用方分别声明。 */
+    public static SceneNode create(ScenePageContext page,ReadableSignal<Model> model,DoubleConsumer onChange,DoubleConsumer onCommit){
+        return create(page,model,onChange,onCommit,page.theme());
+    }
     public static SceneNode create(ScenePageContext page,ReadableSignal<Model> model,DoubleConsumer onChange,DoubleConsumer onCommit,ReadableSignal<SceneTheme> theme){
         Objects.requireNonNull(page).domain().checkWrite();
         Control control=new Control(page,Objects.requireNonNull(onChange),Objects.requireNonNull(onCommit),Objects.requireNonNull(theme));
@@ -403,17 +407,8 @@ public final class SceneSlider {
             }
 
             private double rawOffset(double displacement, int width) {
-                if (displacement == 0) return 0;
-                double low = 0, high = width, target = Math.abs(displacement);
-                ElasticOptions options = model.elastic;
-                MotionPolicy policy = runtime.motionPolicy().get();
-                // 拾取时反求共享阻力输入，避免对当前呈现再次压缩。
-                for (int i = 0; i < 48; i++) {
-                    double middle = (low + high) * .5;
-                    if (options.displacement(middle, policy) < target) low = middle;
-                    else high = middle;
-                }
-                return Math.copySign((low + high) * .5, displacement);
+                // 拾取只反求共享曲线；轨道尺寸继续限制本控件的输入预算。
+                return clamp(model.elastic.overshoot(displacement, runtime.motionPolicy().get()), -width, width);
             }
 
             void follow(double raw, boolean keepEdge) {

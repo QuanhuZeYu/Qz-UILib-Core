@@ -10,6 +10,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
@@ -36,12 +37,12 @@ final class MailSearch {
         SceneNode field=SceneTextField.create(p,query,theme,() -> false,submission -> {
             if(query.accept(submission,submission.text))model.setQuery(submission.text);
         },SceneTextField.SubmitPolicy.INPUT,() -> "搜索邮件",false);
-        SceneNode search=MailStyle.surface(theme,() -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field
-                ?palette.get().surface:palette.get().search,club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f).axis(SceneNode.Axis.ROW)
+        ReadableSignal<Boolean> focused=() -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field;
+        SceneNode search=MailStyle.surface(theme,new MailRaisedSurface(theme,
+                () -> focused.get()?palette.get().surface:palette.get().search,
+                club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f,
+                focused,MailMotion.SEARCH_BACKGROUND,MotionSpec.instant())).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(3).bounds(0,720),Size.natural()).gap(4).padding(4).own(scope);
-        search.control(new MailRaisedSurface(theme,() -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field
-                ?palette.get().surface:palette.get().search,club.heiqi.uilib.ui.scene.control.SceneAppearance.CONTROL_RADIUS/14f,
-                () -> field.runtime()!=null&&field.runtime().focusRouter().focused().get()==field,100000000L));
         search.bind(NodeBinding.value(theme,(n,t) -> n.padding(MailStyle.px(t,4)).gap(MailStyle.px(t,4))
                 .size(Size.fill(3).bounds(0,MailStyle.px(t,720)),Size.natural().bounds(MailStyle.px(t,48),Integer.MAX_VALUE))));
         search.add(SceneIconButton.graphic(p,() -> SceneIconButton.Symbol.SEARCH,

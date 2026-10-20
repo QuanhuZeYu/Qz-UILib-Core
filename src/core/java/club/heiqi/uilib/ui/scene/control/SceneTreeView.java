@@ -129,7 +129,7 @@ public final class SceneTreeView<T, K> {
             TreeIndex.Item<T, K> item = structure.get().items.get(key); return item != null && !item.children.isEmpty();
         }, () -> requestExpansion(key, !expanded.get().contains(key)));
         SceneNode marker = SceneIconButton.create(page, () -> entry.get().expanded ? SceneIconButton.Symbol.CHEVRON_DOWN : SceneIconButton.Symbol.CHEVRON_RIGHT,
-                () -> entry.get().expanded ? "折叠" : "展开", theme, toggle::tryExecute).focusable(false).clickFocus(false);
+                () -> entry.get().expanded ? "折叠" : "展开", theme, toggle).focusable(false).clickFocus(false);
         marker.bind(NodeBinding.value(() -> entry.get().branch, SceneNode::visible));
         marker.bind(NodeBinding.semantics(() -> SceneSemantics.builder().excluded(true).build()));
         SceneNode slot = new SceneNode().size(Size.fixed(24), Size.natural()).add(marker);
@@ -225,7 +225,7 @@ public final class SceneTreeView<T, K> {
         if (position < 0) return false;
         if (event.command == null) {
             if (textValue == null || event.atomic || event.compositionEvent || event.compositionSource != null || event.text == null) return false;
-            int found = typeahead.find(current, item -> Objects.requireNonNull(textValue.apply(item.value), "条目名称"), position, event.text);
+            int found = typeahead.find(current, item -> Objects.requireNonNull(textValue.apply(item.value), "条目名称"), position, event.text, page.runtime().inputNanos());
             if (found >= 0) focus(current.get(found).key);
             return !event.text.trim().isEmpty() && event.text.codePoints().noneMatch(Character::isISOControl);
         }
