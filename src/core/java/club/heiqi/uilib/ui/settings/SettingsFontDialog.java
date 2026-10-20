@@ -57,7 +57,7 @@ final class SettingsFontDialog {
                         ui.actions(ui.button("恢复默认",ui.model::resetFonts,SceneAppearance.Role.GHOST),addTrigger))).add(ui.line()),16);
         SceneNode list=SceneSortable.create(ui.context,()->Collections.singletonList(new SceneSortable.Group<>("fonts",ui.model.sources().get())),
                 SettingsModel.Source::identity,key->{
-                    SceneNode rows=ui.scroll(ui.stack(0));return new SceneSortable.Container(rows,rows,SceneSortable.Layout.VERTICAL);
+                    SceneNode rows=ui.inset(ui.scroll(ui.stack(8)),16,12);return new SceneSortable.Container(rows,rows,SceneSortable.Layout.VERTICAL);
                 },this::row,this::preview,move->ui.model.moveBefore(move.key,move.beforeKey),
                 ()->new SceneSortable.Options<SettingsModel.Source,String>().reorderMotion(ui.motion.spatial.get()).dropMotion(ui.motion.spatial.get()))
                 .size(Size.fill(1),Size.fill(1));
@@ -81,8 +81,9 @@ final class SettingsFontDialog {
         SceneNode info=ui.stack(5).add(name).add(ui.path(()->source.get().declaration(),12));
         SceneNode up=move(source,-1,"↑","上移"),down=move(source,1,"↓","下移");
         SceneNode remove=ui.action(()->"移除",null,()->ui.model.remove(source.get()),SceneAppearance.Role.GHOST);
-        SceneNode details=ui.inset(SettingsLayout.split(ui,info,ui.actions(up,down,remove)),10).size(Size.fill(1),Size.natural());
-        return new SceneSortable.Row(ui.stack(0).add(ui.stack(4).axis(SceneNode.Axis.ROW).add(handle).add(details)).add(ui.line()),handle);
+        SceneNode details=SettingsLayout.split(ui,info,ui.actions(up,down,remove)).size(Size.fill(1),Size.natural());
+        SceneNode content=ui.inset(ui.stack(12).axis(SceneNode.Axis.ROW).add(handle).add(details),12);
+        return new SceneSortable.Row(ui.card(content),handle);
     }
     private SceneNode move(ReadableSignal<SettingsModel.Source> source,int offset,String glyph,String name) {
         SceneCommand command=SceneCommand.of(()->{
