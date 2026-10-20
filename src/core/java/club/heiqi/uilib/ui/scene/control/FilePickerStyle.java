@@ -15,26 +15,22 @@ final class FilePickerStyle extends SceneAppearance {
             ReadableSignal<FilePickerDirectory.Entry> entry,
             ReadableSignal<Boolean> selected,
             Runnable activate) {
-        SceneNode button =
-                SceneButton.createWithIcon(
-                                page,
-                                () -> entry.get().name(),
-                                () -> colors.get().theme(1, colors.get().text, 10),
-                                activate,
-                                SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
-                                () ->
-                                        entry.get().directory
-                                                ? SceneIconButton.Symbol.FOLDER
-                                                : SceneIconButton.Symbol.FILE)
-                        .size(Size.fill(1), Size.natural());
-        Surface surface = new Surface(colors, Role.ENTRY, button, selected);
-        SceneNode row =
-                column(0)
-                        .control(surface)
-                        .add(button)
-                        .add(ellipsis(() -> metadata(entry.get()), .76f, true).padding(4));
-        surface.install(row);
-        return row;
+        SceneNode name = SceneTextControl.create(
+                () -> entry.get().name(),
+                () -> colors.get().theme(1, colors.get().text, 0),
+                SceneTextPolicy.ELLIPSIS_SINGLE_LINE, false,
+                () -> entry.get().directory ? SceneIconButton.Symbol.FOLDER : SceneIconButton.Symbol.FILE)
+                .size(Size.fill(1), Size.natural());
+        SceneNode content = club.heiqi.uilib.ui.scene.layout.SceneLayouts.split(
+                name, ellipsis(() -> metadata(entry.get()), .76f, true).padding(4),
+                () -> new club.heiqi.uilib.ui.scene.layout.SceneLayouts.SplitOptions(
+                        Math.round(colors.get().textStyle.logicalEm * 18), 8));
+        SceneNode row = action(() -> entry.get().name(), content, activate, Role.ENTRY, selected)
+                .size(Size.fill(1), Size.natural());
+        // 名称、图标和元数据共用一个动作根；窄窗第二行也遵循同一点击与键盘焦点。
+        return SceneTooltip.attach(page, row,
+                () -> SceneTooltip.Content.text(entry.get().name()),
+                () -> new SceneTooltip.Options(), () -> colors.get().source);
     }
 
     private static String metadata(FilePickerDirectory.Entry entry) {
@@ -49,8 +45,7 @@ final class FilePickerStyle extends SceneAppearance {
                         ? ""
                         : entry.size < 0
                                 ? " · 大小未知"
-                                : String.format(
-                                        java.util.Locale.ROOT, " · %,.0f B", (double) entry.size);
+                                : " · " + size(entry.size);
         String date =
                 entry.modified < 0
                         ? ""
@@ -59,5 +54,14 @@ final class FilePickerStyle extends SceneAppearance {
                                         .withZone(java.time.ZoneId.systemDefault())
                                         .format(java.time.Instant.ofEpochMilli(entry.modified));
         return type + size + date;
+    }
+
+    private static String size(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        String[] units = {"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"};
+        double value = bytes;
+        int unit = -1;
+        do { value /= 1024; unit++; } while (value >= 1024 && unit + 1 < units.length);
+        return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[unit]);
     }
 }

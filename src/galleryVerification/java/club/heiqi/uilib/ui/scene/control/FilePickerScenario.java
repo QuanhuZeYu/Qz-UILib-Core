@@ -135,6 +135,61 @@ public final class FilePickerScenario extends TestApplication {
                                         && result.entries.stream()
                                                 .anyMatch(e -> e.path.equals(chosen)),
                                 "直接定位文件没有显露当前目标");
+                        require(
+                                result.page == 2
+                                        && result.entries.stream()
+                                                .map(FilePickerDirectory.Entry::name)
+                                                .collect(Collectors.toList())
+                                                .equals(expected.subList(128, 160)),
+                                "定位文件没有落在同一全局有序页");
+                        reader.browse(
+                                ++request, root, FilePickerQuery.before(1, result.entries.get(0)));
+                        result = await(reader);
+                        require(
+                                result.page == 1
+                                        && result.entries.stream()
+                                                .map(FilePickerDirectory.Entry::name)
+                                                .collect(Collectors.toList())
+                                                .equals(expected.subList(64, 128)),
+                                "定位后上一页与正常分页边界不同");
+                        reader.browse(
+                                ++request, root, FilePickerQuery.before(0, result.entries.get(0)));
+                        result = await(reader);
+                        require(
+                                result.page == 0
+                                        && !result.previous
+                                        && result.entries.stream()
+                                                .map(FilePickerDirectory.Entry::name)
+                                                .collect(Collectors.toList())
+                                                .equals(expected.subList(0, 64)),
+                                "定位后出现不同内容的重复第一页");
+                        reader.browse(
+                                ++request,
+                                root,
+                                FilePickerQuery.after(
+                                        1, result.entries.get(result.entries.size() - 1)));
+                        result = await(reader);
+                        require(
+                                result.page == 1
+                                        && result.entries.stream()
+                                                .map(FilePickerDirectory.Entry::name)
+                                                .collect(Collectors.toList())
+                                                .equals(expected.subList(64, 128)),
+                                "定位后的前后翻页没有回到同一内容");
+                        reader.browse(
+                                ++request,
+                                root,
+                                FilePickerQuery.after(
+                                        2, result.entries.get(result.entries.size() - 1)));
+                        result = await(reader);
+                        require(
+                                result.page == 2
+                                        && !result.next
+                                        && result.entries.stream()
+                                                .map(FilePickerDirectory.Entry::name)
+                                                .collect(Collectors.toList())
+                                                .equals(expected.subList(128, 160)),
+                                "前后往返没有回到原定位文件所属页");
                         Files.createDirectory(root.resolve("目录 -1"));
                         reader.browse(++request, root, FilePickerQuery.first());
                         result = await(reader);
@@ -272,6 +327,7 @@ public final class FilePickerScenario extends TestApplication {
                                 () -> {
                                     require(
                                             chosen.equals(state[0].currentSelection())
+                                                    && chosen.equals(state[0].revealTarget.get())
                                                     && state[0].page.get() > 0,
                                             "反例没有定位到后页文件");
                                     state[0].navigate(child);
@@ -285,13 +341,358 @@ public final class FilePickerScenario extends TestApplication {
                                                 chosen.equals(state[0].currentSelection())
                                                         && state[0].entries.get().stream()
                                                                 .anyMatch(
-                                                                        e -> chosen.equals(e.path)),
-                                                "返回后页定位丢失原边界/文件选择"));
+                                                                        e -> chosen.equals(e.path))
+                                                        && state[0].revealTarget.get() == null,
+                                                "返回后页定位丢失原边界/文件选择或重新追随目标"));
+                        domain.execute(() -> state[0].refresh());
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(
+                                        chosen.equals(state[0].currentSelection())
+                                                && state[0].revealTarget.get() == null,
+                                        "刷新未保留合法选择或重新发布定位显露"));
                     } finally {
                         domain.execute(
                                 () -> {
                                     if (state[0] != null) state[0].detach();
                                 });
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "根范围清除文件目标并在前后历史中保持",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 根范围");
+                    Path file = Files.createFile(root.resolve("selected.any"));
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    List<Path> chosen = new ArrayList<>();
+                    try {
+                        domain.execute(
+                                () -> {
+                                    state[0] = new FilePickerSelection(domain, root, chosen::add, () -> {});
+                                    state[0].attach();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].activate(new FilePickerDirectory.Entry(file, false));
+                                    state[0].showRoots(0);
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(
+                                            state[0].roots.get()
+                                                    && state[0].currentSelection() == null
+                                                    && state[0].path.text().get().isEmpty(),
+                                            "根范围继续把旧文件路径作为待确认目标");
+                                    state[0].confirm();
+                                    require(chosen.isEmpty() && state[0].showing.get(), "根范围确认提交了旧文件");
+                                    state[0].history(-1);
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(file.equals(state[0].currentSelection()), "返回目录未恢复合法文件选择");
+                                    state[0].history(1);
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(
+                                        state[0].roots.get()
+                                                && state[0].path.text().get().isEmpty()
+                                                && state[0].currentSelection() == null,
+                                        "前进到根范围复活了旧文件目标"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "根范围名称查询、类型筛选与历史使用同一顺序",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 根查询");
+                    List<Path> roots = new ArrayList<>();
+                    root.getFileSystem().getRootDirectories().forEach(
+                            path -> roots.add(path.toAbsolutePath().normalize()));
+                    roots.sort((left, right) -> right.toString().compareToIgnoreCase(left.toString()));
+                    require(!roots.isEmpty(), "实际文件系统没有根目录");
+                    String absent = "__uilib_no_such_root__";
+                    require(roots.stream().noneMatch(path -> path.toString().contains(absent)), "根查询反例不独立");
+                    String rootName = roots.get(0).toString();
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    try {
+                        domain.execute(
+                                () -> {
+                                    state[0] = new FilePickerSelection(domain, root, p -> {}, () -> {});
+                                    state[0].attach();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].extension.set("ttf");
+                                    state[0].order.set(FilePickerOrder.NAME_DESC);
+                                    state[0].search.reset(absent);
+                                    state[0].query(state[0].search.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(() -> state[0].showRoots(0));
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(
+                                            state[0].roots.get()
+                                                    && state[0].entries.get().isEmpty()
+                                                    && state[0].searchTerm.get().equals(absent)
+                                                    && state[0].order.get() == FilePickerOrder.NAME_DESC,
+                                            "进入根范围丢失查询或名称过滤被旁路");
+                                    state[0].clearQuery();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(
+                                            state[0].entries.get().stream().map(entry -> entry.path)
+                                                    .collect(Collectors.toList()).equals(
+                                                            roots.subList(0, Math.min(FilePickerDirectory.PAGE_SIZE, roots.size())))
+                                                    && state[0].entries.get().stream().allMatch(entry -> entry.directory)
+                                                    && state[0].extension.get().equals("ttf"),
+                                            "清除根查询没有恢复降序根目录或类型过滤隐藏了导航入口");
+                                    state[0].search.reset(rootName);
+                                    state[0].query(state[0].search.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(() -> state[0].refresh());
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(
+                                            state[0].entries.get().stream().map(entry -> entry.path)
+                                                    .collect(Collectors.toList()).equals(Collections.singletonList(roots.get(0))),
+                                            "根查询刷新没有保留当前名称条件");
+                                    state[0].navigate(root);
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(() -> state[0].history(-1));
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(
+                                        state[0].roots.get()
+                                                && state[0].search.text().get().equals(rootName.toLowerCase(java.util.Locale.ROOT))
+                                                && state[0].extension.get().equals("ttf")
+                                                && state[0].order.get() == FilePickerOrder.NAME_DESC
+                                                && state[0].entries.get().stream().map(entry -> entry.path)
+                                                        .collect(Collectors.toList()).equals(Collections.singletonList(roots.get(0)))
+                                                && state[0].path.text().get().isEmpty(),
+                                        "历史根查询与显示字段、排序或结果不一致"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "未领取目录结果时刷新、搜索与上级沿当前请求范围",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 请求范围");
+                    Path a = Files.createDirectory(root.resolve("A"));
+                    Path b = Files.createDirectory(root.resolve("B"));
+                    Path aChild = Files.createDirectory(a.resolve("child"));
+                    Path bChild = Files.createDirectory(b.resolve("child"));
+                    Path aFile = Files.createFile(a.resolve("a-only.any"));
+                    Path bFile = Files.createFile(b.resolve("b-only.any"));
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    try {
+                        domain.execute(
+                                () -> {
+                                    state[0] = new FilePickerSelection(domain, a, p -> {}, () -> {});
+                                    state[0].attach();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].navigate(b);
+                                    require(state[0].directory.get().equals(a), "反例提前领取了B结果");
+                                    state[0].refresh();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(b)
+                                                    && state[0].entries.get().stream().anyMatch(entry -> entry.path.equals(bFile)),
+                                            "在途目录刷新退回上次完成的A");
+                                    state[0].navigate(a);
+                                    state[0].search.reset("a-only");
+                                    state[0].query(state[0].search.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(a)
+                                                    && state[0].entries.get().size() == 1
+                                                    && state[0].entries.get().get(0).path.equals(aFile),
+                                            "在途目录搜索退回上次完成范围");
+                                    state[0].clearQuery();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].navigate(b);
+                                    state[0].cycleOrder();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(b)
+                                                    && state[0].order.get() == FilePickerOrder.NAME_DESC,
+                                            "在途目录排序没有留在B");
+                                    state[0].navigate(bChild);
+                                    state[0].up();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(b), "在途目录上级使用了旧目录");
+                                    state[0].navigate(a);
+                                    state[0].path.reset("child");
+                                    state[0].go(state[0].path.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(state[0].directory.get().equals(aChild),
+                                        "在途目录的相对路径使用了旧目录B"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "未领取前往与根结果时查询仍保留目标范围",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 未决前往");
+                    Path a = Files.createDirectory(root.resolve("A"));
+                    Path b = Files.createDirectory(root.resolve("B"));
+                    Path bFile = Files.createFile(b.resolve("b-only.any"));
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    try {
+                        domain.execute(
+                                () -> {
+                                    state[0] = new FilePickerSelection(domain, a, p -> {}, () -> {});
+                                    state[0].attach();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].path.reset(b.toString());
+                                    state[0].go(state[0].path.request(true));
+                                    state[0].refresh();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(b)
+                                                    && state[0].entries.get().stream().anyMatch(entry -> entry.path.equals(bFile)),
+                                            "未决前往刷新取消B并退回A");
+                                    state[0].path.reset(bFile.toString());
+                                    state[0].go(state[0].path.request(true));
+                                    state[0].search.reset("b-only");
+                                    state[0].query(state[0].search.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].directory.get().equals(b)
+                                                    && state[0].entries.get().size() == 1
+                                                    && state[0].entries.get().get(0).path.equals(bFile)
+                                                    && state[0].currentSelection() == null
+                                                    && state[0].revealTarget.get() == null,
+                                            "未决文件定位后的搜索没有查询父范围或重新选择了旧文件");
+                                    state[0].showRoots(0);
+                                    state[0].search.reset("__uilib_no_such_root__");
+                                    state[0].query(state[0].search.request(true));
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    require(state[0].roots.get() && state[0].entries.get().isEmpty(),
+                                            "未决根范围查询退回上次完成目录");
+                                    state[0].navigate(a);
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].history(-1);
+                                    state[0].clearQuery();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(state[0].roots.get() && !state[0].entries.get().isEmpty(),
+                                        "未决根历史的查询退回目录或历史转移丢失"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "未决父级与相对草稿突发输入保持有界",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 有界请求");
+                    Path child = Files.createDirectory(root.resolve("child"));
+                    Files.createFile(child.resolve("marker.any"));
+                    try (FilePickerDirectory reader = new FilePickerDirectory()) {
+                        FilePickerDirectory.Scope scope = FilePickerDirectory.Scope.path(
+                                null, child);
+                        for (int i = 0; i < 20000; i++) scope = FilePickerDirectory.Scope.parent(scope);
+                        reader.readScope(1, scope, FilePickerQuery.first(), false);
+                        require(await(reader).roots, "连续上一级没有在根范围结束");
+                        scope = FilePickerDirectory.Scope.path(
+                                FilePickerDirectory.Scope.directory(root), root.getFileSystem().getPath("child"));
+                        for (int i = 0; i < 20000; i++) {
+                            scope = FilePickerDirectory.Scope.parent(scope);
+                            scope = FilePickerDirectory.Scope.path(scope, root.getFileSystem().getPath("child"));
+                        }
+                        reader.readScope(2, scope, FilePickerQuery.first(), false);
+                        FilePickerDirectory.Result result = await(reader);
+                        require(child.equals(result.directory) && result.entries.size() == 1,
+                                "取消的相对草稿被累积为导航历史或请求无法完成");
+                    } finally {
+                        deleteTree(root);
+                    }
+                });
+        scenario(
+                "新路径核验进度与失败原因不被旧选择提示覆盖",
+                () -> {
+                    Path root = Files.createTempDirectory("uilib 核验反馈");
+                    Path file = Files.createFile(root.resolve("selected.any"));
+                    Path missing = root.resolve("missing.any");
+                    ReactiveDomain domain = ReactiveDomain.direct();
+                    FilePickerSelection[] state = {null};
+                    try {
+                        domain.execute(
+                                () -> {
+                                    state[0] = new FilePickerSelection(domain, root, p -> {}, () -> {});
+                                    state[0].attach();
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> {
+                                    state[0].activate(new FilePickerDirectory.Entry(file, false));
+                                    state[0].path.replaceAll(missing.toString());
+                                    state[0].confirm();
+                                    require(state[0].feedback().contains("核验"), "核验进度被旧选择提示覆盖");
+                                });
+                        settle(domain, state[0]);
+                        domain.execute(
+                                () -> require(
+                                        state[0].feedback().contains("无法访问路径")
+                                                && state[0].feedback().contains("missing.any")
+                                                && state[0].path.text().get().equals(missing.toString()),
+                                        "失败原因不可见或错误清除了当前路径"));
+                    } finally {
+                        domain.execute(() -> { if (state[0] != null) state[0].detach(); });
                         deleteTree(root);
                     }
                 });

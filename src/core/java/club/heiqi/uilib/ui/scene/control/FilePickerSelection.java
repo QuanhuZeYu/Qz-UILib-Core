@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.control.FilePickerHistory.Location;
+import club.heiqi.uilib.ui.scene.control.FilePickerDirectory.Scope;
 import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -18,13 +19,15 @@ final class FilePickerSelection {
     final Signal<FilePickerOrder> order;
     final Signal<List<FilePickerDirectory.Entry>> entries;
     final Signal<String> message;
-    final Signal<Path> directory, selected;
+    final Signal<Path> directory, selected, revealTarget;
     final Signal<Boolean> busy, showing, roots, previous, next;
     final Signal<Long> page, revision;
     final Signal<Integer> scroll,backCount,forwardCount;
     java.util.function.IntSupplier scrollPosition=()->0;
     private final FilePickerHistory history=new FilePickerHistory();
     private FilePickerQuery readingQuery=FilePickerQuery.first();
+    private Scope readingScope;
+    private boolean listingPending;
     private final Consumer<Path> onSelected;
     private final Runnable onCancelled;
     private FilePickerDirectory reader;
@@ -34,8 +37,8 @@ final class FilePickerSelection {
 
     FilePickerSelection(ReactiveDomain domain, Path initialDirectory, Consumer<Path> onSelected, Runnable onCancelled) {
         this.onSelected = onSelected; this.onCancelled = onCancelled;
-        Path initial = initialDirectory.toAbsolutePath().normalize();
-        directory = domain.signal(initial); selected = domain.signal(null);
+        Path initial = initialDirectory.toAbsolutePath().normalize();readingScope=Scope.directory(initial);
+        directory = domain.signal(initial); selected = domain.signal(null);revealTarget=domain.signal(null);
         path = new SceneEditState(domain, initial.toString());search=new SceneEditState(domain,"");
         extension=domain.signal("");searchTerm=domain.signal("");order=domain.signal(FilePickerOrder.NAME);
         scroll=domain.signal(0);backCount=domain.signal(0);forwardCount=domain.signal(0);
@@ -51,7 +54,7 @@ final class FilePickerSelection {
         browse(directory.get(), FilePickerQuery.first());
     }
     void detach() {
-        attached = false; request++;
+        attached = false; request++;listingPending=false;
         if (reader != null) { reader.close(); reader = null; }
     }
     private boolean active() { return attached && !finished; }
@@ -69,17 +72,22 @@ final class FilePickerSelection {
         long id = ++request;
         busy.set(true);
         if(listingChanges){
-            history.capture(currentSelection(),scrollPosition.getAsInt());
-            revision.set(id);previous.set(false);next.set(false);selected.set(null);entries.set(Collections.emptyList());
+            if(!listingPending)history.capture(currentSelection(),scrollPosition.getAsInt());
+            revealTarget.set(null);revision.set(id);previous.set(false);next.set(false);selected.set(null);entries.set(Collections.emptyList());
         }
-        message.set(status);
+        listingPending=listingChanges;message.set(status);
         return id;
     }
     private void browse(Path target, FilePickerQuery query) {
-        if (!active()) return;
-        history.beginNavigation();Path absolute = target.toAbsolutePath().normalize();
+        read(Scope.directory(target),query,"正在读取目录…",true,false,null);
+    }
+    private void read(Scope scope,FilePickerQuery query,String status,boolean navigation,boolean selectLocated,SceneEditState.Submission submission){
+        if(!active())return;
+        if(navigation)history.beginNavigation();
+        long id=begin(status);readingScope=scope;
         readingQuery=query.filter(searchTerm.get(),extension.get()).order(order.get());
-        long id=begin("正在读取目录…");path.reset(absolute.toString());reader.browse(id,absolute,readingQuery);
+        pendingPath=submission;if(submission==null)path.reset(scope.pathText());
+        reader.readScope(id,scope,readingQuery,selectLocated);
     }
     void activate(FilePickerDirectory.Entry entry) {
         if (entry.directory) browse(entry.path, FilePickerQuery.first());
@@ -91,10 +99,9 @@ final class FilePickerSelection {
     void go(SceneEditState.Submission submission) {
         if (!active()) return;
         try {
-            history.cancelRestore();Path target = resolve(submission.text);
-            long id = begin("正在读取目录…");
-            pendingPath = submission;readingQuery=FilePickerQuery.first();search.reset("");searchTerm.set("");extension.set("");order.set(FilePickerOrder.NAME);
-            reader.locate(id, target);
+            Scope target=Scope.path(readingScope,parse(submission.text));
+            search.reset("");searchTerm.set("");extension.set("");order.set(FilePickerOrder.NAME);
+            read(target,FilePickerQuery.first(),"正在读取目录…",true,true,submission);
         } catch (IllegalArgumentException | SecurityException failure) {
             invalidPath(submission, failure);
         }
@@ -104,34 +111,38 @@ final class FilePickerSelection {
         reader.cancelRead(); busy.set(false);
         path.reject(submission, message.get());
     }
+    private Path parse(String raw){
+        if(raw.isEmpty())throw new IllegalArgumentException("请输入目录或文件路径");
+        return raw.regionMatches(true,0,"file:",0,5)?Paths.get(URI.create(raw)):readingScope.fileSystem().getPath(raw);
+    }
     private Path resolve(String raw) {
-        if (raw.isEmpty()) throw new IllegalArgumentException("请输入目录或文件路径");
-        Path result = raw.regionMatches(true, 0, "file:", 0, 5)
-                ? Paths.get(URI.create(raw)) : directory.get().getFileSystem().getPath(raw);
+        Path result=parse(raw);
         return (result.isAbsolute() ? result : directory.get().resolve(result)).toAbsolutePath().normalize();
     }
-    void showRoots(long targetPage) {
-        if(active()){history.cancelRestore();readingQuery=FilePickerQuery.first();reader.roots(begin("正在读取根目录…"),directory.get().getFileSystem(),readingQuery);}
+    void showRoots(long targetPage) {browseRoots(FilePickerQuery.first());}
+    private void browseRoots(FilePickerQuery query) {
+        read(Scope.rootsAt(directory.get()),query,"正在读取根目录…",true,false,null);
     }
     void navigate(Path directory){browse(directory,FilePickerQuery.first());}
     void history(int direction){
         if(!active()||busy.get())return;Location restoring=history.request(direction);if(restoring==null)return;
-        search.reset(restoring.query.text);searchTerm.set(restoring.query.text);extension.set(restoring.query.extensions);order.set(restoring.query.order);readingQuery=restoring.query;
-        long id=begin("正在返回浏览位置…");path.reset(restoring.directory.toString());
-        if(restoring.roots)reader.roots(id,restoring.directory.getFileSystem(),readingQuery);else reader.browse(id,restoring.directory,readingQuery);
+        search.reset(restoring.query.text);searchTerm.set(restoring.query.text);extension.set(restoring.query.extensions);order.set(restoring.query.order);
+        Scope scope=restoring.roots?Scope.rootsAt(restoring.directory):Scope.directory(restoring.directory);
+        read(scope,restoring.query,"正在返回浏览位置…",false,false,null);
     }
     void up() {
         if (!active()) return;
-        Path parent = directory.get().getParent();
-        if (parent == null || roots.get()) showRoots(0); else browse(parent, FilePickerQuery.first());
+        read(Scope.parent(readingScope),FilePickerQuery.first(),"正在读取上级目录…",true,false,null);
     }
     void query(SceneEditState.Submission submission){if(search.snapshot().get().composing)return;if(search.accept(submission,submission.text)){searchTerm.set(submission.text.trim());refresh();}}
     void clearQuery(){search.reset("");searchTerm.set("");refresh();}
     void cycleOrder(){FilePickerOrder[] values=FilePickerOrder.VALUES;int i=java.util.Arrays.asList(values).indexOf(order.get());order.set(values[(i+1)%values.length]);refresh();}
     void refresh() {
-        boolean same=history.sameQuery(searchTerm.get(),extension.get(),order.get());
-        Location keep=same?history.snapshot(currentSelection(),scrollPosition.getAsInt()):null;
-        if(roots.get())showRoots(0);else browse(directory.get(),same?history.query():FilePickerQuery.first());history.refresh(keep);
+        FilePickerQuery changed=FilePickerQuery.first().filter(searchTerm.get(),extension.get()).order(order.get());
+        boolean same=readingQuery.text.equals(changed.text)&&readingQuery.extensions.equals(changed.extensions)&&readingQuery.order==changed.order;
+        if(!listingPending||!same)history.refresh(!listingPending&&same?history.snapshot(currentSelection(),scrollPosition.getAsInt()):null);
+        // 读取期间的新查询沿当前请求范围；不借最后完成的列表重建导航意图。
+        read(readingScope,same?readingQuery:changed,"正在刷新当前范围…",false,false,null);
     }
     void turn(int direction) {
         if (!active() || busy.get()) return;
@@ -139,8 +150,7 @@ final class FilePickerSelection {
         List<FilePickerDirectory.Entry> shown=entries.get();
         FilePickerQuery query=direction>0?FilePickerQuery.after(page.get()+1,shown.get(shown.size()-1))
                 :FilePickerQuery.before(page.get()-1,shown.get(0));
-        if(roots.get())reader.roots(begin("正在读取根目录…"),directory.get().getFileSystem(),query);
-        else browse(directory.get(),query);
+        read(readingScope,query,"正在读取目录…",true,false,null);
     }
     void confirm() {
         if (!active() || busy.get()) return;
@@ -153,7 +163,7 @@ final class FilePickerSelection {
     }
     private void receive(FilePickerDirectory.Result result) {
         if (!active() || result.request != request) return;
-        busy.set(false);
+        busy.set(false);listingPending=false;
         SceneEditState.Submission submission = pendingPath; pendingPath = null;
         if (result.error != null) {
             String reason="无法访问路径："+result.error;
@@ -178,13 +188,16 @@ final class FilePickerSelection {
         restoreSelection(result,restore);
         int position=restore==null?0:restore.scroll;
         // locate实际可能执行AROUND；历史保存worker已执行边界，不保存前往时的FIRST意图。
-        readingQuery=result.query;scroll.set(position);
+        readingQuery=result.query;readingScope=result.roots?Scope.rootsAt(directory.get()):Scope.directory(result.directory);scroll.set(position);
         history.current(directory.get(),result.roots,result.query,selected.get(),position);
         message.set(listingMessage(result));
+        // 仅显式路径定位发布显露意图；历史与刷新沿原滚动位置，不追随选择。
+        if(result.selected!=null)revealTarget.set(result.selected);
     }
     private void publishListing(FilePickerDirectory.Result result,SceneEditState.Submission submission,String normalized){
         roots.set(result.roots);page.set(result.page);previous.set(result.previous);next.set(result.next);
         entries.set(result.entries);selected.set(result.selected);
+        if(result.roots){path.synchronizeExternal("");return;}
         if(result.directory==null)return;
         directory.set(result.directory);
         if(submission==null)path.synchronizeExternal(normalized);
@@ -218,6 +231,8 @@ final class FilePickerSelection {
         }catch(IllegalArgumentException|SecurityException invalid){return "请检查待打开的文件路径";}
     }
     String feedback(){
+        // 当前请求及字段拒绝已有明确反馈，不能被旧选择的通用提示遮住。
+        if(busy.get()||path.snapshot().get().error!=null)return message.get();
         if(selected.get()!=null&&currentSelection()==null)return "路径已更改，确认时将核验当前输入。";
         return message.get();
     }

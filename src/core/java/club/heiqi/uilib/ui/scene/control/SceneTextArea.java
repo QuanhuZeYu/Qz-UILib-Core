@@ -116,6 +116,7 @@ public final class SceneTextArea {
         private final ReadableSignal<TabMode> tabMode;
         private final boolean framed;
         private final SceneControlMotion fillMotion = new SceneControlMotion(), edgeMotion = new SceneControlMotion();
+        private final SceneEditRangePaint ranges = new SceneEditRangePaint(true);
         private final SceneEditCommands commands;
         // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
         private final Signal<Boolean> viewChanged;
@@ -470,6 +471,13 @@ public final class SceneTextArea {
         }
 
         @Override
+        public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
+            SceneGeometryView.Entry entry = geometry.get(node);
+            if (entry != null)
+                ranges.prepare(entry, node.padding(), entry.text == presented ? presentation : null, theme.get());
+        }
+
+        @Override
         public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {
             SceneGeometryView.Entry entry = geometry.get(node);
             if (entry == null || entry.text == null) return;
@@ -487,31 +495,14 @@ public final class SceneTextArea {
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);
             Snapshot value = presentation;
             if (value != null && entry.text == presented && focused && !value.composing)
-                range(
-                        target,
-                        inner,
-                        clip,
-                        Math.min(value.anchor, value.caret),
-                        Math.max(value.anchor, value.caret),
-                        colors.hover,
-                        false);
+                ranges.paint(target);
             TextLayout paint =
                     enabled
                             ? entry.text
                             : entry.text.withStyle(entry.text.style.withColor(colors.disabledText));
             target.add(PaintCommand.text(inner, clip, paint));
             if (value != null && entry.text == presented && focused && editing != null) {
-                if (value.composing) {
-                    int start = Math.min(value.anchor, value.caret);
-                    range(
-                            target,
-                            inner,
-                            clip,
-                            start,
-                            start + value.composition.length(),
-                            colors.focus,
-                            true);
-                }
+                if (value.composing) ranges.paint(target);
                 LayoutBox caret = caretBox(entry);
                 if (caret != null) target.add(PaintCommand.rect(caret, clip, colors.focus));
             }
@@ -550,56 +541,6 @@ public final class SceneTextArea {
                     1,
                     Math.max(0, (int) Math.ceil(line.lineHeight)));
         }
-
-        private void range(
-                PaintPlanBuilder target,
-                LayoutBox inner,
-                LayoutBox clip,
-                int start,
-                int end,
-                int color,
-                boolean underline) {
-            if (start == end) return;
-            for (int i = 0; i < presented.lines().size(); i++) {
-                TextLayout.Line line = presented.lines().get(i);
-                int top = underline ? (int) Math.floor(line.baseline + line.descent) : line.y;
-                int height = underline ? 1 : (int) Math.ceil(line.lineHeight);
-                for (TextLayout.Cluster cluster : line.clusters()) {
-                    if (cluster.sourceEnd <= start || cluster.sourceStart >= end) continue;
-                    int left = (int) Math.floor(cluster.x),
-                            right = (int) Math.ceil(cluster.x + cluster.advance);
-                    target.add(
-                            PaintCommand.rect(
-                                    new LayoutBox(
-                                            inner.x + left,
-                                            inner.y + top,
-                                            Math.max(0, right - left),
-                                            Math.max(0, height)),
-                                    clip,
-                                    color));
-                }
-                // LF 没有 glyph/cluster；被选择时绘制前行到视口视觉边的换行区域。
-                if (line.sourceEnd >= start
-                        && line.sourceEnd < end
-                        && line.sourceEnd < source.originalText.length()
-                        && (source.originalText.charAt(line.sourceEnd) == '\n'
-                                || source.originalText.charAt(line.sourceEnd) == 0x2028
-                                || source.originalText.charAt(line.sourceEnd) == 0x2029)) {
-                    int x = (int) Math.floor(editing.caretX(i, line.sourceEnd) - offsetX);
-                    int left = editing.paragraphRtl(i) ? 0 : x;
-                    int right = editing.paragraphRtl(i) ? x : Math.max(x + 1, inner.width);
-                    target.add(
-                            PaintCommand.rect(
-                                    new LayoutBox(
-                                            inner.x + left,
-                                            inner.y + top,
-                                            Math.max(1, right - left),
-                                            Math.max(0, height)),
-                                    clip,
-                                    color));
-                }
-            }
-        }
     }
 
     private static int contentHeight(TextLayout text) {
@@ -620,8 +561,4 @@ public final class SceneTextArea {
     private static int clamp(int value, int maximum) {
         return Math.max(0, Math.min(value, maximum));
     }
-
-
-
-
 }

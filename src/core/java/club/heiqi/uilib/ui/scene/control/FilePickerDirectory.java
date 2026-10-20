@@ -27,6 +27,60 @@ final class FilePickerDirectory implements AutoCloseable {
     static final int PAGE_SIZE = 64;
     private static final AtomicInteger WORKER_IDS = new AtomicInteger();
 
+    /** 当前请求范围；未决路径及相对基准只在同一worker解析，不把旧列表当新目标。 */
+    static final class Scope {
+        private enum Kind { DIRECTORY, PATH, ROOTS, PARENT }
+        private final Kind kind;
+        private final Path path;
+        private final Scope base;
+        private final long parentCount;
+        private Scope(Kind kind,Path path,Scope base){this(kind,path,base,0);}
+        private Scope(Kind kind,Path path,Scope base,long parentCount){this.kind=kind;this.path=path;this.base=base;this.parentCount=parentCount;}
+        static Scope directory(Path path){return new Scope(Kind.DIRECTORY,path.toAbsolutePath().normalize(),null);}
+        static Scope path(Scope base,Path path){
+            if(path.isAbsolute()||base==null)return new Scope(Kind.PATH,path,null);
+            long parents=0;
+            // 未领取的相对go替换同一基准上的待解析草稿，不把已取消草稿接成导航历史。
+            while(base.base!=null){
+                parents=base.kind==Kind.PARENT?addParents(parents,base.parentCount):0;
+                base=base.base;
+            }
+            if(parents>0)base=parents(base,parents);
+            return new Scope(Kind.PATH,path,base);
+        }
+        static Scope rootsAt(Path path){return new Scope(Kind.ROOTS,path,null);}
+        static Scope parent(Scope base){return parents(base,1);}
+        private static long addParents(long left,long right){return left>Long.MAX_VALUE-right?Long.MAX_VALUE:left+right;}
+        private static Scope parents(Scope base,long count){
+            if(base.kind==Kind.PARENT){count=addParents(count,base.parentCount);base=base.base;}
+            if(base.kind==Kind.ROOTS)return base;
+            if(base.kind==Kind.DIRECTORY){
+                Path current=base.path;
+                for(long i=0;i<count;i++){Path parent=current.getParent();if(parent==null)return rootsAt(current);current=parent;}
+                return directory(current);
+            }
+            return new Scope(Kind.PARENT,null,base,count);
+        }
+        FileSystem fileSystem(){return path==null?base.fileSystem():path.getFileSystem();}
+        String pathText(){return path!=null&&path.isAbsolute()&&kind!=Kind.ROOTS?path.toString():"";}
+        private Path directoryPath(){return kind==Kind.PATH?path.getParent():path;}
+        private Scope resolve() throws IOException {
+            if(kind==Kind.DIRECTORY||kind==Kind.ROOTS)return this;
+            Scope context=base==null?null:base.resolve();
+            if(kind==Kind.PARENT){
+                if(context.kind==Kind.ROOTS)return context;
+                Path current=context.directoryPath();
+                for(long i=0;i<parentCount;i++){Path parent=current.getParent();if(parent==null)return rootsAt(current);current=parent;}
+                return directory(current);
+            }
+            Path target=(context==null?path:context.directoryPath().resolve(path)).toAbsolutePath().normalize();
+            BasicFileAttributes attributes=Files.readAttributes(target,BasicFileAttributes.class);
+            if(attributes.isDirectory())return directory(target);
+            if(!attributes.isRegularFile())throw new IOException("请选择目录或普通文件");
+            return new Scope(Kind.PATH,target,null);
+        }
+    }
+
     static final class Entry {
         final Path path;
         final boolean directory;
@@ -66,13 +120,20 @@ final class FilePickerDirectory implements AutoCloseable {
         submit(request, () -> list(request, directory, query, null));
     }
     void locate(long request, Path path) {
-        submit(request, () -> {
-            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
-            if (attributes.isDirectory()) return list(request, path, FilePickerQuery.first(), null);
-            if (!attributes.isRegularFile()) throw new IOException("请选择目录或普通文件");
-            Path parent = path.getParent();
-            if (parent == null) throw new IOException("文件没有可浏览的上级目录");
-            return list(request, parent, FilePickerQuery.around(new Entry(path,false,attributes.size(),attributes.lastModifiedTime().toMillis())), path);
+        readScope(request,Scope.path(null,path),FilePickerQuery.first(),true);
+    }
+    void readScope(long request,Scope scope,FilePickerQuery query,boolean selectLocated){
+        submit(request,()->{
+            checkCancelled();Scope resolved=scope.resolve();checkCancelled();
+            if(resolved.kind==Scope.Kind.ROOTS)
+                return collect(request,null,true,query,resolved.fileSystem().getRootDirectories().iterator(),null);
+            if(resolved.kind==Scope.Kind.DIRECTORY)return list(request,resolved.path,query,null);
+            Path parent=resolved.path.getParent();
+            if(parent==null)throw new IOException("文件没有可浏览的上级目录");
+            // 后续查询只采用定位得到的父范围，不重新选择先前请求的文件。
+            FilePickerQuery actual=selectLocated
+                    ?FilePickerQuery.around(entry(resolved.path,false)).filter(query.text,query.extensions).order(query.order):query;
+            return list(request,parent,actual,selectLocated?resolved.path:null);
         });
     }
     void verify(long request, Path path) {
@@ -96,7 +157,7 @@ final class FilePickerDirectory implements AutoCloseable {
         while(paths.hasNext()){
             checkCancelled();
             Entry entry=entry(paths.next().toAbsolutePath().normalize(),roots);
-            if(roots||query.accepts(entry))candidates.accept(entry);
+            if(query.accepts(entry))candidates.accept(entry);
         }
         checkCancelled();
         return candidates.result(request,directory,roots,selected);
@@ -113,22 +174,29 @@ final class FilePickerDirectory implements AutoCloseable {
         }
     }
 
-    /** 有界候选和分页边界一起计算；读取器仍完整扫描，最多保留PAGE_SIZE+1项。 */
+    /** 普通页保留PAGE_SIZE+1项；定位页另保留最多PAGE_SIZE-1个前驱，总候选最多两页。 */
     private static final class Candidates {
         private final FilePickerQuery query;
         private final Comparator<Entry> order;
         private final boolean backwards;
-        private final PriorityQueue<Entry> entries;
+        private final PriorityQueue<Entry> entries, preceding;
         private long before;
         private boolean opposite;
 
         Candidates(FilePickerQuery query){
             this.query=query;order=query.order;backwards=query.direction==FilePickerQuery.Direction.PREVIOUS;
             entries=new PriorityQueue<>(PAGE_SIZE+1,backwards?order:order.reversed());
+            preceding=query.direction==FilePickerQuery.Direction.AROUND?new PriorityQueue<>(PAGE_SIZE,order):null;
         }
         void accept(Entry entry){
             int compared=query.boundary==null?1:order.compare(entry,query.boundary);
-            if(compared<0)before++;
+            if(compared<0){
+                before++;
+                if(preceding!=null){
+                    if(preceding.size()<PAGE_SIZE-1)preceding.add(entry);
+                    else if(order.compare(entry,preceding.peek())>0){preceding.poll();preceding.add(entry);}
+                }
+            }
             if(!eligible(compared)){opposite=true;return;}
             if(entries.size()<PAGE_SIZE+1){entries.add(entry);return;}
             boolean nearer=backwards?order.compare(entry,entries.peek())>0:order.compare(entry,entries.peek())<0;
@@ -141,10 +209,19 @@ final class FilePickerDirectory implements AutoCloseable {
         }
         Result result(long request,Path directory,boolean roots,Path selected){
             List<Entry> shown=new ArrayList<>(entries);shown.sort(order);
+            if(preceding!=null)return locatedResult(request,directory,roots,selected,shown);
             boolean more=shown.size()>PAGE_SIZE;
             if(more)shown.remove(backwards?0:shown.size()-1);
-            long page=query.direction==FilePickerQuery.Direction.AROUND?before/PAGE_SIZE:query.page;
-            return new Result(request,page,directory,roots,backwards?more:opposite,backwards?opposite:more,shown,selected,null,null,query);
+            return new Result(request,query.page,directory,roots,backwards?more:opposite,backwards?opposite:more,shown,selected,null,null,query);
+        }
+        private Result locatedResult(long request,Path directory,boolean roots,Path selected,List<Entry> following){
+            // 目标在页内保留其全局位置，不能以目标开头再冒用自然页号。
+            List<Entry> prefix=new ArrayList<>(preceding);prefix.sort(order);
+            int count=(int)(before%PAGE_SIZE),remaining=PAGE_SIZE-count;
+            List<Entry> shown=new ArrayList<>(PAGE_SIZE);
+            shown.addAll(prefix.subList(prefix.size()-count,prefix.size()));
+            shown.addAll(following.subList(0,Math.min(remaining,following.size())));
+            return new Result(request,before/PAGE_SIZE,directory,roots,before>count,following.size()>remaining,shown,selected,null,null,query);
         }
     }
     void cancelRead() {

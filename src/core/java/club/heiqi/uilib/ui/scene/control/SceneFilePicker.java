@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
+import club.heiqi.uilib.ui.scene.layout.SceneLayouts;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
@@ -114,7 +115,8 @@ public final class SceneFilePicker {
                 FilePickerStyle.column(10)
                         .size(Size.fill(1), Size.fill(1))
                         .padding(12)
-                        .add(style.label(() -> "名称", .86f, true))
+                        .add(style.label(() -> "名称", .86f, true)
+                                .bind(NodeBinding.value(this::fullChrome, SceneNode::visible)))
                         .add(listing(style))
                         .add(style.label(selection::feedback, .86f, true));
         content.control(new Panel());
@@ -160,6 +162,11 @@ public final class SceneFilePicker {
                 .add(modal);
     }
 
+    // 矮窗先保留路径、搜索、列表与确认；临界空间随当前字号同步变化。
+    private boolean fullChrome() {
+        return context.viewportHeight().get() >= Math.round(theme.get().textStyle.logicalEm * 32);
+    }
+
     private SceneNode header(FilePickerStyle style, SceneNode field) {
         SceneNode heading =
                 FilePickerStyle.row(14)
@@ -176,6 +183,7 @@ public final class SceneFilePicker {
                                                                                                 .get()
                                                                                         >= 800,
                                                                         SceneNode::visible))));
+        heading.bind(NodeBinding.value(this::fullChrome, SceneNode::visible));
         SceneNode header =
                 FilePickerStyle.column(8)
                         .padding(12)
@@ -204,10 +212,15 @@ public final class SceneFilePicker {
                         theme,
                         selection::query,
                         SceneTextField.SubmitPolicy.CONFIRM,
-                        () -> "搜索当前目录…",
+                        () -> "输入名称，按 Enter 搜索",
                         selection::clearQuery);
-        return FilePickerStyle.row(8)
+        SceneNode query = FilePickerStyle.row(8)
                 .add(search.node)
+                .add(style.action(
+                        "搜索", SceneIconButton.Symbol.SEARCH,
+                        () -> selection.query(selection.search.request(true)),
+                        FilePickerStyle.Role.OUTLINE));
+        SceneNode tools = FilePickerStyle.row(8)
                 .add(
                         style.action(
                                 () -> selection.order.get().label,
@@ -227,6 +240,9 @@ public final class SceneFilePicker {
                                         NodeBinding.value(
                                                 () -> !options.extensions.isEmpty(),
                                                 SceneNode::visible)));
+        return SceneLayouts.split(query, tools,
+                () -> new SceneLayouts.SplitOptions(
+                        Math.round(theme.get().textStyle.logicalEm * 16), 8));
     }
 
     private void toggleFilter() {
@@ -254,11 +270,12 @@ public final class SceneFilePicker {
                                         () -> new SceneTooltip.Options(),
                                         theme)));
         return crumbs.bind(
-                NodeBinding.value(() -> context.viewportHeight().get() >= 700, SceneNode::visible));
+                NodeBinding.value(() -> context.viewportHeight().get() >= 700 && !selection.roots.get(), SceneNode::visible));
     }
 
     private java.util.List<Path> breadcrumbPaths() {
         java.util.ArrayList<Path> chain = new java.util.ArrayList<>();
+        if (selection.roots.get()) return chain;
         for (Path cursor = selection.directory.get(); cursor != null; cursor = cursor.getParent())
             chain.add(cursor);
         java.util.Collections.reverse(chain);
@@ -291,7 +308,7 @@ public final class SceneFilePicker {
                                                 selection.forwardCount.get() > 0
                                                         && !selection.busy.get(),
                                         SceneNode::enabled));
-        return FilePickerStyle.row(8)
+        SceneNode actions = SceneLayouts.wrap(8)
                 .add(back)
                 .add(forward)
                 .add(
@@ -305,35 +322,23 @@ public final class SceneFilePicker {
                                 "根目录",
                                 SceneIconButton.Symbol.MONITOR,
                                 () -> selection.showRoots(0),
-                                FilePickerStyle.Role.GHOST))
-                .add(new SceneNode().size(Size.fill(1), Size.natural()))
-                .add(style.action("刷新", null, selection::refresh, FilePickerStyle.Role.GHOST));
+                                FilePickerStyle.Role.GHOST));
+        SceneNode refresh = style.action("刷新", null, selection::refresh, FilePickerStyle.Role.GHOST);
+        return SceneLayouts.split(actions, refresh,
+                () -> new SceneLayouts.SplitOptions(
+                        Math.round(theme.get().textStyle.logicalEm * 12), 8));
     }
 
     private SceneNode listing(FilePickerStyle style) {
-        SceneNode items = FilePickerStyle.column(4);
-        items.bind(
-                NodeBinding.repeat(
-                        selection.entries,
-                        entry -> entry.path,
-                        item ->
-                                style.entry(
-                                        item,
-                                        () -> item.get().path.equals(selection.currentSelection()),
-                                        () -> selection.activate(item.get()))));
-        SceneScrollArea.Area listing =
-                SceneScrollArea.create(
-                        context,
-                        items,
-                        () ->
-                                new SceneScrollArea.Options()
-                                        .dimensions(7, 24, 1)
-                                        .colors(
-                                                0,
-                                                style.colors.get().border,
-                                                style.colors.get().muted),
-                        theme);
-        SceneNode viewport = listing.viewport(SceneNode.Axis.COLUMN);
+        SceneVirtualList<FilePickerDirectory.Entry, Path> listing = SceneVirtualList.create(
+                context, selection.entries, entry -> entry.path,
+                item -> style.entry(item,
+                        () -> item.get().path.equals(selection.currentSelection()),
+                        () -> selection.activate(item.get())));
+        SceneNode viewport = listing.node().gap(4);
+        viewport.bind(NodeBinding.value(selection.revealTarget, (node, target) -> {
+            if (target != null) listing.reveal(target);
+        }));
         viewport.bind(
                 NodeBinding.value(
                         () -> {
@@ -352,8 +357,15 @@ public final class SceneFilePicker {
                         }
                     };
                 });
-        items.control(new FilePickerListNavigation(selection));
-        return listing.node();
+        SceneNode scrollbar = SceneScrollbar.create(context, listing.viewport(),
+                () -> new SceneScrollbar.Options().dimensions(7, 24, 1)
+                        .colors(0, style.colors.get().border, style.colors.get().muted), theme);
+        scrollbar.size(Size.natural(), Size.fill(1));
+        // 页预算约束文件事实；共享有限集合再按视口准备行，并承接定位与键盘显露。
+        return FilePickerStyle.row(0)
+                .size(Size.fill(1), Size.fill(1))
+                .control(new FilePickerListNavigation(selection, listing))
+                .add(viewport).add(scrollbar);
     }
 
     private SceneNode footer(FilePickerStyle style) {
@@ -382,7 +394,8 @@ public final class SceneFilePicker {
                 FilePickerStyle.row(10)
                         .add(
                                 style.ellipsis(selection::targetLabel, .86f, true)
-                                        .size(Size.fill(1), Size.natural()))
+                                        .size(Size.fill(1), Size.natural())
+                                        .bind(NodeBinding.value(this::fullChrome, SceneNode::visible)))
                         .add(
                                 style.action(
                                         "取消",
@@ -390,7 +403,12 @@ public final class SceneFilePicker {
                                         selection::cancel,
                                         FilePickerStyle.Role.OUTLINE))
                         .add(choose);
-        return FilePickerStyle.column(8).padding(12).add(pages).add(actions);
+        // 紧凑高度把分页与确认并排，完整模式保持两行及待打开目标提示。
+        return SceneLayouts.split(pages, actions,
+                () -> new SceneLayouts.SplitOptions(
+                        fullChrome() ? context.viewportWidth().get()
+                                : Math.round(theme.get().textStyle.logicalEm * 16), 8))
+                .padding(12);
     }
 
     /** 正式输入帧领取目录结果；表面装饰和普通流继续走同一扩展合同。 */

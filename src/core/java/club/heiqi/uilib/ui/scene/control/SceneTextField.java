@@ -106,6 +106,7 @@ public final class SceneTextField {
         private final ReadableSignal<String> placeholder;
         private final boolean framed;
         private final SceneControlMotion fillMotion = new SceneControlMotion(), edgeMotion = new SceneControlMotion();
+        private final SceneEditRangePaint ranges = new SceneEditRangePaint(false);
         private TextLayout hint;
         private String hintValue;
         private club.heiqi.uilib.ui.scene.text.TextStyle hintStyle;
@@ -373,6 +374,7 @@ public final class SceneTextField {
 
         @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
             SceneGeometryView.Entry e=geometry.get(node);if(e==null)return;
+            ranges.prepare(e, node.padding(), e.text == presented ? presentation : null, theme.get());
             Snapshot value=state.snapshot().get();
             if(!value.text.isEmpty()||value.composing) {hint=null;return;}
             String label=Objects.requireNonNull(placeholder.get(),"placeholder");
@@ -404,15 +406,7 @@ public final class SceneTextField {
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);
             Snapshot value = presentation;
             if (value != null && entry.text == presented && focused && !value.composing)
-                range(
-                        target,
-                        entry.text,
-                        inner,
-                        clip,
-                        Math.min(value.anchor, value.caret),
-                        Math.max(value.anchor, value.caret),
-                        colors.hover,
-                        false);
+                ranges.paint(target);
             TextLayout paint =
                     enabled
                             ? entry.text
@@ -421,18 +415,7 @@ public final class SceneTextField {
             if(hint!=null&&value!=null&&value.text.isEmpty()&&!value.composing)
                 target.add(PaintCommand.text(inner,clip,hint));
             if (value != null && entry.text == presented && focused) {
-                if (value.composing) {
-                    int start = Math.min(value.anchor, value.caret);
-                    range(
-                            target,
-                            entry.text,
-                            inner,
-                            clip,
-                            start,
-                            start + value.composition.length(),
-                            colors.focus,
-                            true);
-                }
+                if (value.composing) ranges.paint(target);
                 target.add(PaintCommand.rect(caretBox(entry), clip, colors.focus));
             }
         }
@@ -467,45 +450,11 @@ public final class SceneTextField {
                     Math.max(0, line == null ? inner.height : (int) Math.ceil(line.lineHeight)));
         }
 
-        private void range(
-                PaintPlanBuilder target,
-                TextLayout text,
-                LayoutBox inner,
-                LayoutBox clip,
-                int start,
-                int end,
-                int color,
-                boolean underline) {
-            if (start == end) return;
-            for (TextLayout.Line line : text.lines())
-                for (TextLayout.Cluster cluster : line.clusters()) {
-                    if (cluster.sourceEnd <= start || cluster.sourceStart >= end) continue;
-                    int left = (int) Math.floor(cluster.x),
-                            right = (int) Math.ceil(cluster.x + cluster.advance);
-                    int top = underline ? (int) Math.floor(line.baseline + line.descent) : line.y;
-                    int height = underline ? 1 : (int) Math.ceil(line.lineHeight);
-                    target.add(
-                            PaintCommand.rect(
-                                    new LayoutBox(
-                                            inner.x + left,
-                                            inner.y + top,
-                                            Math.max(0, right - left),
-                                            Math.max(0, height)),
-                                    clip,
-                                    color));
-                }
-        }
-
         private float caretX(TextLayout text, int position) {
             return text.lines().isEmpty() ? 0
                     : SceneCaretBoundary.caretX(text.lines().get(0), position, boundary);
         }
-
     }
-
-
-
-
 
     /** 纯位置投影，HB glyph 与 source 映射原样沿用，绘制和命中读取同一几何 text。 */
     private static TextLayout translate(TextLayout full, int offset) {

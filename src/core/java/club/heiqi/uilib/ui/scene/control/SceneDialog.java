@@ -91,8 +91,10 @@ public final class SceneDialog {
         SceneNode backdrop =
                 SceneAppearance.column(0)
                         .size(Size.fill(1), Size.fill(1))
-                        .background(SceneAppearance.MODAL_SCRIM);
-        SceneNode body = SceneLayouts.overlay().add(backdrop).add(position);
+                        .background(SceneAppearance.MODAL_SCRIM)
+                        .bind(SceneMotion.presence(
+                                open, () -> new PresenceOptions(theme.get().feedbackMotion).budget(4)));
+        SceneNode body = SceneLayouts.overlay().add(position);
         // 页面级模态使用普通全屏区域；所属弹层由其内部控件沿原范围声明。
         SceneNode window =
                 SceneLayouts.overlay()
@@ -124,11 +126,11 @@ public final class SceneDialog {
         window.bind(
                 SceneMotion.presence(
                         open, () -> new PresenceOptions(theme.get().feedbackMotion).budget(4)));
-        return SceneLayouts.overlay()
-                .bind(
-                        SceneMotion.translateY(
-                                () -> open.get() ? 0f : 16f, () -> theme.get().spatialMotion))
-                .add(window)
-                .own(style.scope);
+        // 遮罩始终覆盖视口；只有面板所在的持续父层位移，退场快照也沿同一父层运动。
+        SceneNode moving = SceneLayouts.overlay()
+                .bind(SceneMotion.translateY(
+                        () -> open.get() ? 0f : 16f, () -> theme.get().spatialMotion))
+                .add(window);
+        return SceneLayouts.overlay().add(backdrop).add(moving).own(style.scope);
     }
 }
