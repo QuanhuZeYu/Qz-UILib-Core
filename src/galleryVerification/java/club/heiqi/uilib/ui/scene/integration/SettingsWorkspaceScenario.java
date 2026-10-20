@@ -25,6 +25,9 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         scenario("分类与弹窗快速反向保留编辑身份且退出立即结束输入",this::motionLifecycle);
         scenario("弹窗退场绘制跟随弹簧且快速重开位置连续",this::motionPaint);
         scenario("宿主请求重载结束添加窗口所属的文件选择模态",this::pickerOwnership);
+        scenario("宿主接管选项跨分类保留草稿且恢复真实默认",this::minecraftOption);
+        scenario("同窗字体子视图的初始焦点与逐级返回焦点",this::editorFocus);
+        scenario("外观分类的全局保存与宿主重载失败持续可见",this::operationFailure);
     }
     final class Fixture implements AutoCloseable{
         final ReactiveDomain domain=ReactiveDomain.direct();final VectorPresentationScenario.Host host=new VectorPresentationScenario.Host();
@@ -32,13 +35,15 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         final ConfigKey<List<String>> fonts=FontCandidateConfiguration.key(builtins);
         final Path file;ConfigSession config;SettingsConfiguration configuration;SettingsPage page;ScenePageSession session;
         int refreshes,leaves;Signal<MotionPolicy> motion;
-        Fixture()throws Exception{
+        Fixture()throws Exception{this(false);}
+        final ConfigKey<Boolean> replace=new ConfigKey<>("mc.replaceVanillaFont",ConfigCodecs.BOOLEAN,true);
+        Fixture(boolean minecraft)throws Exception{
             file=Files.createTempFile("uilib-workspace-",".yaml");onClose(()->Files.deleteIfExists(file));host.width=1280;host.height=1100;
             domain.execute(()->{
                 motion=domain.signal(MotionPolicy.NORMAL);
-                config=new ConfigSession(domain,ConfigSchema.of(fonts,ThemeConfiguration.KEY));
+                config=new ConfigSession(domain,minecraft?ConfigSchema.of(fonts,ThemeConfiguration.KEY,replace):ConfigSchema.of(fonts,ThemeConfiguration.KEY));
                 try{config.load(new StringReader("# 用户字体说明\nfont:\n  candidates: [builtin:"+builtins.get(0).id+"] # 字体候选注释\n"));config.save(file);}catch(IOException failure){throw new UncheckedIOException(failure);}
-                configuration=new SettingsConfiguration(domain,config,fonts,null,file,FontCandidateConfiguration.defaults(builtins),values->{
+                configuration=new SettingsConfiguration(domain,config,fonts,minecraft?replace:null,file,FontCandidateConfiguration.defaults(builtins),values->{
                     try{FontCandidateConfiguration.resolve(values,builtins,(path,index)->FontSource.file("workspace-"+index,1,Paths.get(path),0,false,Collections.emptySet()));}
                     catch(IOException failure){throw new UncheckedIOException(failure);}
                 },()->refreshes++);
@@ -54,6 +59,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         void action(SceneSemantics.Role role,String name,SceneSemantics.Action action){require(request(SceneSemanticRequest.of(entry(role,name).id,action))==SceneSemanticRequest.Result.APPLIED,"正式动作拒绝 "+name);}
         String disk()throws IOException{return new String(Files.readAllBytes(file),StandardCharsets.UTF_8);}
         List<String> current(){final List<String>[] result=new List[1];domain.execute(()->result[0]=configuration.current().candidates());return result[0];}
+        boolean replaced(){final boolean[] result={false};domain.execute(()->result[0]=configuration.current().replace());return result[0];}
         void openAdd(){action(SceneSemantics.Role.BUTTON,"管理字体来源",SceneSemantics.Action.ACTIVATE);action(SceneSemantics.Role.BUTTON,"+ 添加来源",SceneSemantics.Action.ACTIVATE);}
         public void close()throws Exception{try{session.close();}finally{Files.deleteIfExists(file);}}
     }
@@ -94,6 +100,11 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         f.action(SceneSemantics.Role.BUTTON,"浏览字体文件",SceneSemantics.Action.ACTIVATE);
         SceneSemanticSnapshot.Entry browse=f.entry(SceneSemantics.Role.BUTTON,"前往");
         require(browse.rangeInteractive,"文件浏览没有进入实际所属模态");
+        f.page.requestClose();f.session.frame();
+        require(f.entry(SceneSemantics.Role.TEXT_FIELD,"字体文件路径").rangeInteractive,"宿主关闭文件选择器跳过添加子视图");
+        require(f.request(SceneSemanticRequest.of(browse.id,SceneSemantics.Action.ACTIVATE))!=SceneSemanticRequest.Result.APPLIED,"顶层文件选择器关闭后仍接受输入");
+        f.action(SceneSemantics.Role.BUTTON,"浏览字体文件",SceneSemantics.Action.ACTIVATE);
+        browse=f.entry(SceneSemantics.Role.BUTTON,"前往");
         f.page.requestReload();f.session.frame();
         require(f.entry(SceneSemantics.Role.BUTTON,"继续编辑").rangeInteractive,"文件选择器脱离父模态并遮挡宿主重载确认");
         require(f.request(SceneSemanticRequest.of(browse.id,SceneSemantics.Action.ACTIVATE))!=SceneSemanticRequest.Result.APPLIED,"父窗口退出后文件选择器仍接受输入");
@@ -148,6 +159,52 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         }
         require(f.current().equals(current)&&f.disk().equals(saved)&&f.refreshes==0&&f.leaves==0,"动效切换隐式应用、保存、重载或离开");
     }}
+    private void editorFocus()throws Exception{try(Fixture f=new Fixture()){
+        f.action(SceneSemantics.Role.BUTTON,"管理字体来源",SceneSemantics.Action.FOCUS);
+        f.openAdd();
+        require(Boolean.TRUE.equals(f.entry(SceneSemantics.Role.SELECT,"内置字体").focused),"添加子视图没有进入来源选择焦点");
+        SceneKeyEvent escape=new SceneKeyEvent(SceneKey.ESCAPE,false,false,false,false,false,null);
+        f.session.key(escape);f.session.key(escape.withPhase(SceneKeyEvent.Phase.UP));f.session.frame();
+        require(Boolean.TRUE.equals(f.entry(SceneSemantics.Role.BUTTON,"+ 添加来源").focused),"返回字体列表没有恢复添加触发点");
+        f.action(SceneSemantics.Role.BUTTON,"移除",SceneSemantics.Action.ACTIVATE);
+        require(f.current().size()==1,"移除最后来源提前发布合法空草稿");
+        f.action(SceneSemantics.Role.BUTTON,"完成字体编辑",SceneSemantics.Action.ACTIVATE);
+        require(Boolean.TRUE.equals(f.entry(SceneSemantics.Role.BUTTON,"管理字体来源").focused),"字体编辑器关闭没有恢复外观触发点");
+    }}
+    private void operationFailure()throws Exception{try(Fixture f=new Fixture()){
+        f.action(SceneSemantics.Role.BUTTON,"深色外观",SceneSemantics.Action.ACTIVATE);
+        f.action(SceneSemantics.Role.BUTTON,"应用全部更改",SceneSemantics.Action.ACTIVATE);
+        List<String> live=new ArrayList<>(f.current());Files.delete(f.file);Files.createDirectory(f.file);
+        Path obstruction=f.file.resolve("阻止写入");Files.write(obstruction,new byte[]{1});
+        try {
+            f.action(SceneSemantics.Role.BUTTON,"保存到文件",SceneSemantics.Action.ACTIVATE);
+            require(visibleError(f,"保存失败："),"外观分类的全局保存失败没有可见原因");
+            f.page.requestReload();f.session.frame();
+            f.action(SceneSemantics.Role.BUTTON,"放弃更改并加载",SceneSemantics.Action.ACTIVATE);
+            require(visibleError(f,"重新加载失败：")&&f.current().equals(live),"宿主重载失败没有保留原生效值或公共错误");
+        } finally {Files.deleteIfExists(obstruction);Files.deleteIfExists(f.file);}
+    }}
+    private boolean visibleError(Fixture f,String prefix) {
+        for(SceneSemanticSnapshot.Entry e:f.host.semantics.entries)
+            if(e.values.name!=null&&e.values.name.startsWith(prefix)&&e.rangeInteractive&&!e.offscreen)return true;
+        return false;
+    }
+    private void minecraftOption()throws Exception{try(Fixture f=new Fixture(true)){
+        String original=f.disk();
+        f.action(SceneSemantics.Role.BUTTON,"Minecraft 接入",SceneSemantics.Action.ACTIVATE);
+        f.action(SceneSemantics.Role.SWITCH,"接管原版文字绘制",SceneSemantics.Action.ACTIVATE);
+        require(f.replaced(),"宿主选项编辑提前发布");
+        f.action(SceneSemantics.Role.BUTTON,"配置文件",SceneSemantics.Action.ACTIVATE);
+        f.action(SceneSemantics.Role.BUTTON,"Minecraft 接入",SceneSemantics.Action.ACTIVATE);
+        require(Boolean.FALSE.equals(f.entry(SceneSemantics.Role.SWITCH,"接管原版文字绘制").values.checked),"切分类丢失接管草稿");
+        f.action(SceneSemantics.Role.BUTTON,"恢复默认",SceneSemantics.Action.ACTIVATE);
+        require(Boolean.TRUE.equals(f.entry(SceneSemantics.Role.SWITCH,"接管原版文字绘制").values.checked),"恢复默认写死为关闭");
+        f.action(SceneSemantics.Role.SWITCH,"接管原版文字绘制",SceneSemantics.Action.ACTIVATE);
+        f.action(SceneSemantics.Role.BUTTON,"应用全部更改",SceneSemantics.Action.ACTIVATE);
+        require(!f.replaced()&&f.disk().equals(original),"接管选项应用隐式保存或没有发布");
+        f.action(SceneSemantics.Role.BUTTON,"保存到文件",SceneSemantics.Action.ACTIVATE);
+        require(f.disk().contains("replaceVanillaFont: false"),"接管选项未保存生效值");
+    }}
     private void pathAndClose()throws Exception{try(Fixture f=new Fixture()){
         String original=f.disk();f.openAdd();
         f.action(SceneSemantics.Role.RADIO,"本地字体文件",SceneSemantics.Action.SELECT);
@@ -155,7 +212,8 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         boolean described=false;for(SceneSemanticId id:path.describedBy){SceneSemanticSnapshot.Entry help=f.host.semantics.get(id);if(help!=null&&help.values.name.contains("应用前会检查字体来源"))described=true;}
         require(!path.labelledBy.isEmpty()&&described,"字体路径标签/说明关系不完整：labels="+path.labelledBy+", descriptions="+path.describedBy);
         require(f.request(SceneSemanticRequest.text(path.id,"   "))==SceneSemanticRequest.Result.APPLIED,"路径字段拒绝草稿输入");
-        f.action(SceneSemantics.Role.BUTTON,"添加到末尾",SceneSemantics.Action.ACTIVATE);
+        require(f.entry(SceneSemantics.Role.BUTTON,"添加到末尾").actions.isEmpty(),"空路径的添加动作仍可执行");
+        require(f.request(SceneSemanticRequest.of(path.id,SceneSemantics.Action.SUBMIT))==SceneSemanticRequest.Result.APPLIED,"字段提交没有进入真实路径校验");
         require(f.host.semantics.get(path.id)!=null&&"   ".equals(f.host.semantics.get(path.id).values.value),"路径校验拒绝丢失原草稿或字段");
         boolean error=false;for(SceneSemanticSnapshot.Entry e:f.host.semantics.entries)if("请输入字体文件路径。".equals(e.values.name))error=true;
         require(error&&f.disk().equals(original)&&f.current().size()==1,"拒绝没有定位错误或修改实际配置");

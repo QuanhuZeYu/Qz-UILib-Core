@@ -69,13 +69,13 @@ public final class GalleryJourney {
         click(driver,"外观");
         require(text(driver,"界面主题"),"外观分类缺失");
         click(driver,"深色外观");
-        require(text(driver,"有待应用修改"),"主题选择未保留草稿阶段");
+        require(text(driver,"有未应用的更改"),"主题选择未保留草稿阶段");
         click(driver,"配置文件");
-        require(text(driver,"有待应用修改")&&text(driver,"文件路径"),"切换分类丢失主题草稿");
+        require(text(driver,"有未应用的更改")&&text(driver,"文件路径"),"切换分类丢失主题草稿");
         click(driver,"返回");
         require(text(driver,"离开配置工作区？"),"返回绕过正式草稿确认");
         click(driver,"继续编辑");
-        require(text(driver,"有待应用修改"),"取消离开丢失草稿");
+        require(text(driver,"有未应用的更改"),"取消离开丢失草稿");
         click(driver,"放弃编辑");
         require(text(driver,"已保存"),"放弃编辑未回到当前生效配置");
         click(driver,"返回");

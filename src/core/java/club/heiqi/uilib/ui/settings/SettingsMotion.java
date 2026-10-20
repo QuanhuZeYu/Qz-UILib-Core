@@ -14,7 +14,7 @@ final class SettingsMotion {
     final ReadableSignal<MotionSpec> feedback;
     private final ReadableSignal<PresenceOptions> presence;
 
-    SettingsMotion(ReadableSignal<SettingsStyle.Palette> palette) {
+    SettingsMotion(ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette> palette) {
         spatial = () -> palette.get().source.spatialMotion;
         feedback = () -> palette.get().source.feedbackMotion;
         presence = () -> new PresenceOptions(feedback.get()).budget(4);
