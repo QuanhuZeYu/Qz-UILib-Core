@@ -545,8 +545,9 @@ public final class SceneFramePipeline implements AutoCloseable {
             if (geometry == null) return null;
             long nextMetrics = inputMetrics;
             runtime.prepareTooltips(geometry, text, nextMetrics);
-            if (capturedRevision != runtime.revision() || capturedGeometry != geometry || System.nanoTime() >= paint.nextPaintNanos()) {
-                runtime.domain().readOnly(() -> { paint.capturePresence(geometry, nextMetrics); return null; });
+            long paintTime = System.nanoTime();
+            if (capturedRevision != runtime.revision() || capturedGeometry != geometry || paintTime >= paint.nextPaintNanos()) {
+                runtime.domain().readOnly(() -> { paint.capturePresence(geometry, nextMetrics, paintTime); return null; });
                 runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
                 capturedRevision = runtime.revision(); capturedGeometry = geometry;
             }
@@ -654,19 +655,20 @@ public final class SceneFramePipeline implements AutoCloseable {
         return beforeInput != runtime.revision();
     }
 
-    private boolean paintDirty(SceneGeometry geometry, int w, int h, long nextMetrics) {
+    private boolean paintDirty(SceneGeometry geometry, int w, int h, long nextMetrics, long paintTime) {
         return presentation == null || revision != runtime.revision() || geometry != presentation.geometry
                 || width != w || height != h || metrics != nextMetrics
-                || System.nanoTime() >= paint.nextPaintNanos();
+                || paint.pendingMainPlan() || paintTime >= paint.nextPaintNanos();
     }
 
     private void publishPresentation(SceneGeometry geometry, int w, int h, long nextMetrics) {
         club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semantic = runtime.semanticSnapshot(geometry);
         boolean semanticChanged = presentation == null || presentation.semantics != semantic;
-        boolean changedPaint = paintDirty(geometry, w, h, nextMetrics);
+        long paintTime = System.nanoTime();
+        boolean changedPaint = paintDirty(geometry, w, h, nextMetrics, paintTime);
         if (!changedPaint && !semanticChanged) return;
         if (changedPaint) runtime.inspectionPaintCollected();
-        PaintPlan plan = changedPaint ? runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics)) : presentation.paint;
+        PaintPlan plan = changedPaint ? runtime.domain().readOnly(() -> paint.collect(geometry, nextMetrics, paintTime)) : presentation.paint;
         if (changedPaint) {
             runtime.capturePresencePaint(paint.presenceSnapshots(), geometry);
             capturedRevision = runtime.revision(); capturedGeometry = geometry;

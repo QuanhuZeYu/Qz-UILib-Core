@@ -26,6 +26,7 @@ final class SettingsFontDialog {
     private final SceneEditState path;
     private final ReadableSignal<Map<Object, Integer>> ordinals;
     private SceneNode addTrigger, selector, pathField;
+    private Owner adding;
 
     SettingsFontDialog(SettingsUi ui) {
         this.ui = ui;
@@ -51,12 +52,12 @@ final class SettingsFontDialog {
     }
 
     void open() {
-        view.set(View.LIST);
+        show(View.LIST);
     }
 
     void end() {
         picking.set(false);
-        view.set(View.NONE);
+        show(View.NONE);
     }
 
     boolean closeRequested() {
@@ -65,7 +66,7 @@ final class SettingsFontDialog {
             picking.set(false);
             return true;
         }
-        view.set(view.get() == View.ADD ? View.LIST : View.NONE);
+        show(view.get() == View.ADD ? View.LIST : View.NONE);
         return true;
     }
 
@@ -77,10 +78,16 @@ final class SettingsFontDialog {
                 .add(addView());
     }
 
+    private void show(View target) {
+        if (adding != null) adding.dispose();
+        adding = target == View.ADD ? ui.context.scope().child() : null;
+        view.set(target);
+    }
+
     private void startAdd() {
         path.reset("");
         fileSource.set(ui.configuration.builtinCandidates().isEmpty());
-        view.set(View.ADD);
+        show(View.ADD);
     }
 
     private SceneNode listView() {
@@ -241,7 +248,7 @@ final class SettingsFontDialog {
     }
 
     private SceneNode addView() {
-        SceneNode back = ui.button("返回字体来源", () -> view.set(View.LIST), SceneAppearance.Role.GHOST);
+        SceneNode back = ui.button("返回字体来源", () -> show(View.LIST), SceneAppearance.Role.GHOST);
         SceneNode header =
                 ui.inset(
                         ui.stack(8, 4)
@@ -358,8 +365,13 @@ final class SettingsFontDialog {
                         () -> {
                             if (fileSource.get()) addFile(path.request(true));
                             else {
-                                ui.model.add(selected.get());
-                                if (ui.model.fontError().get().isEmpty()) view.set(View.LIST);
+                                Owner requestScope = adding;
+                                String choice = selected.get();
+                                ui.model.add(choice, () -> !requestScope.isDisposed()
+                                        && !fileSource.get() && selected.get().equals(choice))
+                                        .thenAccept(result -> {
+                                            if (!requestScope.isDisposed() && result.added()) show(View.LIST);
+                                        });
                             }
                         });
         SceneNode footer =
@@ -377,7 +389,7 @@ final class SettingsFontDialog {
                                                 ui.actions(
                                                         ui.button(
                                                                 "取消",
-                                                                () -> view.set(View.LIST),
+                                                                () -> show(View.LIST),
                                                                 SceneAppearance.Role.GHOST),
                                                         ui.button(
                                                                 "添加到末尾",
@@ -446,12 +458,13 @@ final class SettingsFontDialog {
             path.reject(submission, "请输入字体文件路径。");
             return;
         }
-        ui.model.add("file:" + value);
-        if (!ui.model.fontError().get().isEmpty()) {
-            path.reject(submission, ui.model.fontError().get());
-            return;
-        }
-        path.accept(submission, value);
-        view.set(View.LIST);
+        Owner requestScope = adding;
+        ui.model.add("file:" + value, () -> !requestScope.isDisposed()
+                && fileSource.get() && path.accept(submission, value))
+                .thenAccept(result -> {
+                    if (requestScope.isDisposed()) return;
+                    if (result.added()) show(View.LIST);
+                    else if (!result.error().isEmpty()) path.reject(submission, result.error());
+                });
     }
 }

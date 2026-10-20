@@ -1,6 +1,7 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
@@ -14,7 +15,7 @@ final class MailWorkspace {
     private MailWorkspace() {}
 
     static SceneNode create(
-            ScenePageContext p, MailViewState view, MailboxModel model, boolean paged) {
+            ScenePageContext p, MailViewState view, MailboxModel model, boolean paged, GalleryCompositeLabels labels) {
         ReadableSignal<SceneTheme> theme = view.theme;
         ReadableSignal<MailPalette> palette = view.palette;
         ReadableSignal<Boolean> wide = view.wide, split = view.split, compact = view.compact;
@@ -25,7 +26,7 @@ final class MailWorkspace {
                         .size(Size.fill(1), Size.fill(1))
                         .clip(true);
         SceneNode listPane = new SceneNode().size(Size.fill(2), Size.fill(1));
-        listPane.add(MailToolbar.create(p, theme, model, wide, receive));
+        listPane.add(MailToolbar.create(p, theme, model, wide, receive, labels));
         listPane.add(MailCategories.create(p, theme, palette, model, wide));
         SceneNode list = new SceneNode().size(Size.fill(1), Size.fill(1));
         list.bind(

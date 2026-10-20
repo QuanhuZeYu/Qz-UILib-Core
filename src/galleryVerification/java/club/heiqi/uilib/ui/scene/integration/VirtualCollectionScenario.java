@@ -164,6 +164,10 @@ public final class VirtualCollectionScenario extends TestApplication {
         scenario("方向跨屏按相邻逻辑行和原横向位置到达", this::directionalRows);
         scenario("空方向复合入口继续页脚而不截断", this::emptyDirectional);
         scenario("方向跨行后同批文字进入实际新草稿", this::directionalEditing);
+        scenario("方向等待保留原焦点并在同一准备完成后显露", this::directionalPreparation);
+        scenario("方向候选真实换键后取消而不转投同位置新行", this::directionalCancellation);
+        scenario("嵌套方向准备边界卸载终止旧联系且新导航有效", this::nestedDirectionalCancellation);
+        scenario("外部进入嵌套方向等待期间有限保留所属行", this::externalDirectionalPreparation);
         scenario("行内小动作显露后结束请求且不追随用户滚动", this::smallActionFocus);
         scenario("无合法焦点的显式行请求结束有限准备", this::noFocusableRequest);
         scenario("同步失焦回调替换行请求后按新键完成", this::reentrantRequest);
@@ -246,6 +250,126 @@ public final class VirtualCollectionScenario extends TestApplication {
         require(page.focus() == page.after, "逻辑末行边界没有衔接同范围页脚");
         page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
         require(page.focus() == page.after, "方向页脚边缘不应循环");
+    }
+
+    private void directionalPreparation() {
+        Page page = new Page(1000, 0, true);
+        page.domain.execute(() -> require(page.list.focus(80), "屏外起点请求被拒绝")); page.session.frame();
+        page.scroll(0);
+        SceneNode source = page.focus();
+        require(source == page.nodes.get(80)[1] && (page.nodes.get(81) == null || page.nodes.get(81)[0].runtime() == null),
+                "前置条件未保持离屏焦点及未实例化后续行");
+        // 直接调用唯一router，停在发布行准备意图与下一次正式结算之间，观察真实WAITING。
+        page.domain.execute(() -> page.context.runtime().focusRouter().navigate(SceneNavigationEvent.DOWN));
+        require(page.focus() == source, "准备后续行前释放了有效旧焦点");
+        require(page.nodes.get(81) == null || page.nodes.get(81)[0].runtime() == null, "方向入口同步构造行绕过声明结算");
+        page.session.frame();
+        require(page.focus() == page.nodes.get(81)[1], "WAITING未在正式结算后继续同一相邻行");
+        SceneGeometryView.Entry target = page.entry(page.focus());
+        require(target.box.y >= target.clip.y && (long)target.box.y + target.box.height <= (long)target.clip.y + target.clip.height,
+                "等待完成目标没有最小必要显露");
+    }
+
+    private void directionalCancellation() {
+        Page page = new Page(1000, 0, true);
+        page.domain.execute(() -> require(page.list.focus(80), "屏外起点请求被拒绝")); page.session.frame();
+        page.scroll(0);
+        SceneNode source = page.focus();
+        page.domain.execute(() -> {
+            page.context.runtime().focusRouter().navigate(SceneNavigationEvent.DOWN);
+            List<Item> changed = new ArrayList<>(page.items.get());
+            changed.set(81, new Item(1001, 20)); page.items.set(changed);
+        });
+        page.session.frame();
+        require(page.focus() == source && page.entry(page.list.node()).scrollOffset == 0,
+                "原候选键退出后旧方向转投新键或页脚并显露");
+        page.session.frame();
+        require(page.focus() == source, "已取消方向在后续帧复活");
+        page.session.navigation(SceneNavigationEvent.DOWN); page.session.frame();
+        require(page.focus() == page.nodes.get(1001)[1], "新方向不能正常到达后来占位的新键");
+    }
+
+    private void nestedDirectionalCancellation() {
+        ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
+        ScenePageContext[] context = new ScenePageContext[1];
+        Map<String, SceneNode> actions = new HashMap<>();
+        Signal<List<SceneNode>>[] content = new Signal[1];
+        java.util.function.Function<Integer, SceneNode>[] inner = new java.util.function.Function[1];
+        SceneNode[] waitingBoundary = new SceneNode[1];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page;
+            inner[0] = group -> {
+                List<Integer> keys = new ArrayList<>();
+                for (int i = 0; i < (group == 0 ? 3 : 20); i++) keys.add(i);
+                return SceneVirtualList.create(page, () -> keys, key -> key, value -> {
+                    SceneNode action = new SceneNode().size(Size.fill(1), Size.fixed(20))
+                            .focusable(group != 1 || value.get() >= 8).text(group + ":" + value.get());
+                    actions.put(group + ":" + value.get(), action); return action;
+                }, () -> new SceneVirtualList.Options().estimatedRowHeight(20).overscan(0))
+                        .node().size(Size.fill(1), Size.fixed(80));
+            };
+            SceneNode groups = SceneVirtualList.create(page, () -> java.util.Arrays.asList(0, 1), key -> key, value -> {
+                if (value.get() == 0) return inner[0].apply(0);
+                waitingBoundary[0] = inner[0].apply(1);
+                content[0] = domain.signal(java.util.Collections.singletonList(waitingBoundary[0]));
+                return new SceneNode().size(Size.fill(1), Size.fixed(80)).bind(NodeBinding.ownedChildren(content[0]));
+            }, () -> new SceneVirtualList.Options().estimatedRowHeight(80).overscan(0)).node();
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(groups.size(Size.fill(1), Size.fixed(160)))
+                    .add(new SceneNode().focusable(true).size(Size.fill(1), Size.fixed(20)).text("footer")));
+        }); onClose(session::close); session.frame();
+        for (int i = 0; i < 2; i++) { session.navigation(SceneNavigationEvent.DOWN); session.frame(); }
+        SceneNode source = actions.get("0:2");
+        domain.execute(() -> {
+            require(context[0].runtime().focusRouter().focused().get() == source, "前置起点未在首内集合末行");
+            context[0].runtime().focusRouter().navigate(SceneNavigationEvent.DOWN);
+            require(context[0].runtime().focusRouter().focused().get() == source && !actions.containsKey("1:8"),
+                    "内集合有限准备前未保持旧焦点");
+            content[0].set(java.util.Collections.singletonList(inner[0].apply(2)));
+        }); session.frame();
+        domain.execute(() -> require(waitingBoundary[0].destroyed() && context[0].runtime().focusRouter().focused().get() == source,
+                "原nested挂载结束后方向转投替换边界或页脚"));
+        session.navigation(SceneNavigationEvent.DOWN); session.frame();
+        domain.execute(() -> require(context[0].runtime().focusRouter().focused().get() == actions.get("2:0"),
+                "取消后新方向不能进入当前替换边界"));
+    }
+
+    private void externalDirectionalPreparation() {
+        ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
+        ScenePageContext[] context = new ScenePageContext[1];
+        SceneVirtualList<Integer, Integer>[] outer = new SceneVirtualList[1];
+        Map<Integer, SceneNode> actions = new HashMap<>(); SceneNode[] source = new SceneNode[1], entryRoot = new SceneNode[1];
+        ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
+            context[0] = page;
+            outer[0] = SceneVirtualList.create(page, () -> java.util.Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7), key -> key, group -> {
+                if (group.get() != 0) return new SceneNode().size(Size.fill(1), Size.fixed(80));
+                List<Integer> keys = new ArrayList<>(); for (int i = 0; i < 20; i++) keys.add(i);
+                entryRoot[0] = SceneVirtualList.create(page, () -> keys, key -> key, value -> {
+                    SceneNode action = new SceneNode().focusable(value.get() == 0).size(Size.fill(1), Size.fixed(20));
+                    actions.put(value.get(), action); return action;
+                }, () -> new SceneVirtualList.Options().estimatedRowHeight(20).overscan(0))
+                        .node().size(Size.fill(1), Size.fixed(80));
+                return entryRoot[0];
+            }, () -> new SceneVirtualList.Options().estimatedRowHeight(80).overscan(0));
+            source[0] = new SceneNode().focusable(true).size(Size.fill(1), Size.fixed(10));
+            page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).initialFocus(source[0]).add(outer[0].node()).add(source[0]));
+        }); onClose(session::close); session.frame();
+        domain.execute(() -> context[0].runtime().scrollToPixels(entryRoot[0], SceneNode.Axis.COLUMN, Integer.MAX_VALUE)); session.frame();
+        domain.execute(() -> {
+            context[0].runtime().focusRouter().navigate(SceneNavigationEvent.UP);
+            require(context[0].runtime().focusRouter().focused().get() == source[0] && actions.get(0).runtime() == null,
+                    "前置方向没有等待真实内集合目标准备");
+            context[0].runtime().scrollToPixels(outer[0].node(), SceneNode.Axis.COLUMN, 400);
+        }); session.frame();
+        domain.execute(() -> {
+            require(context[0].runtime().focusRouter().focused().get() == actions.get(0),
+                    "外部入口等待时所属行被普通视口更新淘汰，原导航意外取消");
+            SceneGeometryView.Entry target = session.pipeline().current().geometry.get(actions.get(0));
+            require(target.box.y >= target.clip.y && (long)target.box.y + target.box.height <= (long)target.clip.y + target.clip.height,
+                    "外部等待完成后没有显露真实内行目标");
+            context[0].runtime().focusRouter().request(context[0].runtime().captureMount(source[0]));
+            context[0].runtime().scrollToPixels(outer[0].node(), SceneNode.Axis.COLUMN, 400);
+        }); session.frame();
+        require(entryRoot[0].destroyed(), "方向游标关闭后仍保留已无输入联系的入口行");
     }
 
     private void smallActionFocus() {

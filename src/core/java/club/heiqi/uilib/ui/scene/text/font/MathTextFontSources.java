@@ -25,12 +25,16 @@ public final class MathTextFontSources {
      * source 的不可变字节/轴事实。
      */
     public static Map<String, List<FontSource>> namedSources(long revision) {
+        return namedSources(MathTextFontSources.class.getClassLoader(), revision);
+    }
+
+    public static Map<String, List<FontSource>> namedSources(ClassLoader loader, long revision) {
         Map<String, List<FontSource>> result = new LinkedHashMap<String, List<FontSource>>();
         result.put(
-                ROMAN, Collections.singletonList(staticFamily(ROMAN, "roman/NotoSerif", revision)));
-        result.put(SANS, Collections.singletonList(staticFamily(SANS, "sans/NotoSans", revision)));
+                ROMAN, Collections.singletonList(staticFamily(loader, ROMAN, "roman/NotoSerif", revision)));
+        result.put(SANS, Collections.singletonList(staticFamily(loader, SANS, "sans/NotoSans", revision)));
         result.put(
-                MONO, Collections.singletonList(staticFamily(MONO, "mono/IBMPlexMono", revision)));
+                MONO, Collections.singletonList(staticFamily(loader, MONO, "mono/IBMPlexMono", revision)));
         return Collections.unmodifiableMap(result);
     }
 
@@ -51,21 +55,23 @@ public final class MathTextFontSources {
         return Collections.unmodifiableMap(result);
     }
 
-    private static FontSource staticFamily(String alias, String path, long revision) {
+    private static FontSource staticFamily(ClassLoader loader, String alias, String path, long revision) {
         return FontSource.family(
                 alias,
                 Arrays.asList(
-                        resource(alias + "-regular", revision, path + "-Regular.ttf"),
-                        resource(alias + "-bold", revision, path + "-Bold.ttf"),
-                        resource(alias + "-italic", revision, path + "-Italic.ttf"),
-                        resource(alias + "-bold-italic", revision, path + "-BoldItalic.ttf")));
+                        resource(loader, alias + "-regular", revision, path + "-Regular.ttf"),
+                        resource(loader, alias + "-bold", revision, path + "-Bold.ttf"),
+                        resource(loader, alias + "-italic", revision, path + "-Italic.ttf"),
+                        resource(loader, alias + "-bold-italic", revision, path + "-BoldItalic.ttf")));
     }
 
-    private static FontSource resource(String id, long revision, String path) {
+    private static FontSource resource(ClassLoader loader, String id, long revision, String path) {
         // Latin 以及 Noto 的 Greek/Cyrillic 已由 MathTextFontScenario 真实 FT/HB 核验。
         // 复杂脚本能力不从 cmap 覆盖推断；其候选仅来自显式配置 tail。
-        return path.startsWith("mono/")
-                ? FontSource.fromResource(id, revision, BASE + path, false, "Latn")
-                : FontSource.fromResource(id, revision, BASE + path, false, "Latn", "Grek", "Cyrl");
+        try {
+            return FontSource.resource(id, revision, loader, BASE + path, false,
+                    new java.util.LinkedHashSet<>(path.startsWith("mono/")
+                            ? Arrays.asList("Latn") : Arrays.asList("Latn", "Grek", "Cyrl")));
+        } catch (java.io.IOException failure) { throw new java.io.UncheckedIOException(failure); }
     }
 }

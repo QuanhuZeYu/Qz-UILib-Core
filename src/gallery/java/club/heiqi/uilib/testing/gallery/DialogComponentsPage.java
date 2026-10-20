@@ -13,7 +13,7 @@ import java.util.Arrays;
 final class DialogComponentsPage {
     private DialogComponentsPage() {}
 
-    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back) {
+    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back, GalleryCompositeLabels labels) {
         ComponentExamples e =
                 new ComponentExamples(p, theme, "弹窗与选择", "确认、输入与内容选择共用同一模态外框，ESC 逐层返回。", back);
         Signal<Boolean> confirm = p.domain().signal(false),
@@ -135,6 +135,7 @@ final class DialogComponentsPage {
                             result.set("已选择：" + name.text().get());
                             choice.set(false);
                         },
+                        labels.cancelChoice,
                         () -> choice.set(false));
         return SceneLayouts.overlay().add(e.root).add(confirmation).add(naming).add(picking);
     }

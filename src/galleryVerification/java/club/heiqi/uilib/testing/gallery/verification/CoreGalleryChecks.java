@@ -53,7 +53,7 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 ConfigScenario::new, YamlObjectScenario::new, ThemeConfigurationScenario::new,
                 FontConfigurationScenario::new, SettingsConfigurationScenario::new),
         new Module("content", "文本与资源", "语言重载、字体资源生命周期、共同内容与最终文档排列",
-                LocalizationScenario::new, LocalizationResourceScenario::new, ImageServiceScenario::new, CoreFontEngineScenario::new,
+                LocalizationScenario::new, LocalizationResourceScenario::new, ImageServiceScenario::new, CoreFontEngineScenario::new, FontResourcePreparationScenario::new,
                 TypedParagraphScenario::new, DocumentArrangementScenario::new),
         new Module("math", "数学内容", "真实宏展开、结构语料、模式资格、来源范围及资源界限",
                 MathMacroScenario::new, MathStructureScenario::new),

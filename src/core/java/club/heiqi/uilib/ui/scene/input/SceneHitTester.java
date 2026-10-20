@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.input;
 
 import java.util.List;
+import club.heiqi.uilib.ui.scene.control.SceneLayer;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
@@ -85,7 +86,9 @@ public final class SceneHitTester {
                             || node.control() != null && node.control().scrollableContent()) return node;
                     if (node == boundary) break;
                 }
-                return null; // 已命中所属层，其内部无目标也不能滚来源或后台。
+                // 局部参与只让实际滚动目标形成边界；默认交互层保留整区隔离。
+                if (geometry.layerPolicy(boundary).participation == SceneLayer.Participation.INTERACTIVE) return null;
+                continue;
             }
             if (entry.box.contains(x, y)
                     && runtime.interactive(entry.node)

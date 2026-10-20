@@ -23,7 +23,16 @@ public final class SceneChoiceDialog {
             ReadableSignal<K> selected,
             Consumer<K> choose,
             Runnable cancel) {
+        return create(page, theme, open, options, items, selected, choose, () -> "取消选择", cancel);
+    }
+
+    /** 取消按钮沿调用者语言来源更新，选中与关闭意图仍归业务。 */
+    public static <K> SceneNode create(
+            ScenePageContext page, ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> open,
+            ReadableSignal<SceneDialog.Options> options, ReadableSignal<List<SceneSelect.Option<K>>> items,
+            ReadableSignal<K> selected, Consumer<K> choose, ReadableSignal<String> cancelText, Runnable cancel) {
         Objects.requireNonNull(page).domain().checkWrite();
+        Objects.requireNonNull(cancelText);
         Objects.requireNonNull(choose);
         Objects.requireNonNull(selected);
         SceneAppearance style = new SceneAppearance(page, theme);
@@ -54,7 +63,7 @@ public final class SceneChoiceDialog {
                                                             SceneNode::enabled));
                                 })
                         .node();
-        SceneNode cancelButton = style.action("取消选择", null, cancel, SceneAppearance.Role.OUTLINE);
+        SceneNode cancelButton = style.action(cancelText, null, cancel, SceneAppearance.Role.OUTLINE);
         SceneNode header =
                 SceneAppearance.column(0)
                         .padding(16)

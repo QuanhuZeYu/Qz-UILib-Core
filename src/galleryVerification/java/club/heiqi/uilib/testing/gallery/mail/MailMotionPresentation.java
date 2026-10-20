@@ -1,5 +1,6 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
@@ -225,7 +226,7 @@ final class MailMotionPresentation {
                 MailNavigation navigation = new MailNavigation(p, state)
                         .primary("接收邮件", SceneIconButton.Symbol.MAIL, () -> businessActions++)
                         .item("收件箱", SceneIconButton.Symbol.INBOX, () -> true, () -> 1, () -> businessActions++);
-                SceneNode search = MailSearch.create(p, state.theme, state.palette, model).node;
+                SceneNode search = MailSearch.create(p, state.theme, state.palette, model, GalleryCompositeLabels.defaults()).node;
                 SceneNode body = new SceneNode().axis(SceneNode.Axis.COLUMN).size(Size.fill(1), Size.fill(1))
                         .add(search).add(new SceneNode().size(Size.fill(1), Size.fill(1)));
                 SceneNode root = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.fill(1))

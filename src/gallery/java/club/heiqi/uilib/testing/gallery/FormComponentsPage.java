@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 final class FormComponentsPage {
     private FormComponentsPage() {}
 
-    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back) {
+    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back, GalleryCompositeLabels labels) {
         ComponentExamples e =
                 new ComponentExamples(p, theme, "表单与搜索", "标签、说明、校验结果与附属动作使用同一公共字段组合。", back);
         SceneEditState name = new SceneEditState(p.domain(), "");
@@ -72,6 +72,7 @@ final class FormComponentsPage {
                         },
                         SceneTextField.SubmitPolicy.INPUT,
                         () -> "搜索示例内容",
+                        labels.clearSearch,
                         () -> {
                             query.reset("");
                             filter.set("");

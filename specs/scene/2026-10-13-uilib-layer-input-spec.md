@@ -6,7 +6,7 @@
 
 ## 1. 声明、拥有与普通流
 
-所属层是来源节点的直属逻辑孩子，来源由这一父子关系决定。声明使用 SceneLayer.Policy/create；自定义控件的 SceneControl.layerPolicy 返回非 null 时采用同一所属层语义，null 表示普通流。Policy 包含非负 logical px gap 及 INTERACTIVE/PASSIVE 参与声明；已声明所属层的策略信号不得给出 null。工厂接收页面上下文与只读策略来源，默认 COLUMN、宽高 NATURAL，普通 Size、padding、visible 与孩子声明继续可用，默认不隐含 modal。
+所属层是来源节点的直属逻辑孩子，来源由这一父子关系决定。声明使用 SceneLayer.Policy/create；自定义控件的 SceneControl.layerPolicy 返回非 null 时采用同一所属层语义，null 表示普通流。Policy 包含非负 logical px gap 及 INTERACTIVE/TARGETS_ONLY/PASSIVE 参与声明；已声明所属层的策略信号不得给出 null。工厂接收页面上下文与只读策略来源，默认 COLUMN、宽高 NATURAL，普通 Size、padding、visible 与孩子声明继续可用，默认不隐含 modal。
 
 打开及结束沿 visible/ownedChildren 与既有动态拥有声明。逻辑 parent、UUID、Owner 和挂载联系保持原树语义，不建立第二树。工厂不拥有外部策略或业务状态；来源销毁释放其所属孩子，页面结束沿既有作用域释放。
 
@@ -53,6 +53,8 @@ SceneChildMeasurer.flowChildren 提供当批不可修改的可见普通流直属
 
 INTERACTIVE 子树沿标准控件既有 click/focus/scroll/edit 规则参与；出现或重排不形成新的 Tab 循环、不重新执行范围初始焦点、不抢文字目标。显式 modal 才形成范围转换，进入与返回沿核心第 6.3.1 节。
 
+TARGETS_ONLY 子树保留同样的标准目标资格；没有对应输入目标的正文及留白对后台透明，不由层布局盒扩大命中边界。
+
 PASSIVE 整个逻辑子树仅绘制，对下层指针透明，不成为 hover、手势、滚轮、焦点、键盘/文本或 ESC 目标。Tooltip 的指针移入保持是唯一路由器对当前已发布几何的只读观察，不将提示内容变为 hover 输入目标、不新增手势 owner；其 ESC 关闭由来源所属有效范围的页面协调者按核心第6.1节处理，PASSIVE 本身不接收按键。祖先 PASSIVE 继续约束嵌套 INTERACTIVE；子树内 modal 声明不合法，隐藏或来源无有效呈现也须诊断实际 layer/modal 声明位置。
 
 范围归属按逻辑祖先，不能按 modal 外盒拒绝所属层中的合法点击。当前 modal 的控件与所属交互层是唯一前台输入范围，外部点击不同时激活后台。选择先消费本批来源空间可用性，再确定有效 modal 及最终呈现；不能先进入无来源的内层范围、触发失焦后再补偿。当前内层 modal 的来源祖先 Layer 保留必要呈现链，外层内容仍不接收输入。
@@ -63,7 +65,7 @@ PASSIVE 整个逻辑子树仅绘制，对下层指针透明，不成为 hover、
 
 Tab/Shift+Tab 保持有效范围中的逻辑声明顺序，跳过 PASSIVE 与呈现失活 Layer；视觉分组及 sourceOrdered 内容捕获序不能作为导航序。主动导航只沿目标的呈现祖先显露，到所属 Layer 边界停止；可滚 Layer 自身及内部滚动容器，不以脱离普通流的屏幕坐标滚动来源面板。初始焦点、返回、普通位置和内容更新继续沿核心既有不追焦规则。
 
-滚轮命中所属交互 Layer 后，在其内部呈现祖先中寻找可滚动目标，到该层边界停止；内部无目标也不能穿透来源或后台。未命中 Layer 的滚轮保持原范围规则，PASSIVE 对其下方内容透明。
+滚轮命中所属 Layer 后，在其内部呈现祖先中寻找可滚动目标，到该层边界停止；默认 INTERACTIVE 内部无目标也不能穿透来源或后台，TARGETS_ONLY 内部无目标时透传后台。未命中 Layer 的滚轮保持原范围规则，PASSIVE 对其下方内容透明。
 
 菜单起手控件可显式把其原指针捕获延续到自己打开的逻辑后代模态层：只有该层仍是当前模态、起手挂载和本次打开目标仍有效时接收原MOVE/UP；层呈现过滤来源Entry不单独取消这条明确联系。该用法沿[弹出控件参考](<2026-10-18-uilib-popup-controls-spec.md>)，不产生新owner、不转交后台，普通控件默认不参与。除此之外，被覆盖、层隐藏、来源失效、范围结束或卸载时，既有 FocusRouter/PointerRouter/Mount 终止失效联系；指针尾部吞到 physical end，来源恢复不复活 owner，UP 不能激活后台。组字联系终止及独立草稿去留沿编辑规格第 2 节，来源失活不暗触 BLUR 提交。明确移动来源保 UUID 与挂载身份，按新归属、来源空间与有效范围复核持续交互。永久拥有及页面结束沿动态结构/页面合同释放所属资源，工厂不关闭外部 policy。
 

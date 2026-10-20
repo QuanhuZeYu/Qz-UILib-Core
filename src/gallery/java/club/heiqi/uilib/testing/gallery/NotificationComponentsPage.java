@@ -17,8 +17,8 @@ final class NotificationComponentsPage {
         Signal<Integer> serial = page.domain().signal(0);
         Signal<Integer> actions = page.domain().signal(0);
         Signal<SceneNotifications.Position> position = page.domain().signal(SceneNotifications.Position.BOTTOM_END);
-        SceneNotifications toasts = SceneNotifications.create(page, theme, SceneNotifications.Mode.TOAST, 3,
-                () -> new SceneNotifications.Options(SceneNotifications.Position.TOP_CENTER), () -> "关闭通知");
+        SceneNotifications toasts = SceneNotifications.createToast(page, theme, 3,
+                () -> new SceneNotifications.Options(SceneNotifications.Position.TOP_CENTER));
         SceneNotifications notifications = SceneNotifications.create(page, theme, SceneNotifications.Mode.NOTIFICATION, 3,
                 () -> new SceneNotifications.Options(position.get()), () -> "关闭通知");
         Runnable toast = () -> {

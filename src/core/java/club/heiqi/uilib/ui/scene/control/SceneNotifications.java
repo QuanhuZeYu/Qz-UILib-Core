@@ -89,7 +89,7 @@ public final class SceneNotifications {
                 new PresenceOptions(theme.get().feedbackMotion).budget(capacity);
         node = SceneLayer.create(page,
                         () -> new SceneLayer.Policy(0, mode == Mode.TOAST
-                                ? SceneLayer.Participation.PASSIVE : SceneLayer.Participation.INTERACTIVE),
+                                ? SceneLayer.Participation.PASSIVE : SceneLayer.Participation.TARGETS_ONLY),
                         (self, source, viewport, size) -> position(viewport, size.width, size.height),
                         Collections.singletonList(options))
                 .bind(NodeBinding.value(() -> Math.round(options.get().widthEm * theme.get().textStyle.logicalEm),
@@ -117,6 +117,12 @@ public final class SceneNotifications {
     public static SceneNotifications create(ScenePageContext page, ReadableSignal<SceneTheme> theme,
             Mode mode, int capacity, ReadableSignal<Options> options, ReadableSignal<String> closeText) {
         return new SceneNotifications(page, theme, mode, capacity, options, closeText);
+    }
+
+    /** 创建纯提示区，无关闭按钮；布局、容量与期限复用同一通知实现。 */
+    public static SceneNotifications createToast(ScenePageContext page, ReadableSignal<SceneTheme> theme,
+            int capacity, ReadableSignal<Options> options) {
+        return create(page, theme, Mode.TOAST, capacity, options, () -> "");
     }
 
     public SceneNode node() { return node; }
@@ -164,10 +170,7 @@ public final class SceneNotifications {
         SceneAppearance style = new SceneAppearance(page, theme);
         SceneNode actions = SceneLayouts.wrap(() -> Math.round(theme.get().gap * .5f));
         if (entry.action != null) {
-            SceneCommand command = SceneCommand.of(entry.action.executable(), () -> {
-                entry.dismiss();
-                entry.action.tryExecute();
-            });
+            SceneCommand command = entry.action.beforeExecute(entry::dismiss);
             actions.add(style.action(entry.actionText, null, command, SceneAppearance.Role.OUTLINE));
         }
         if (mode == Mode.NOTIFICATION)

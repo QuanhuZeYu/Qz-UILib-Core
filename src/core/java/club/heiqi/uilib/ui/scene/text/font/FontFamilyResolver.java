@@ -1,111 +1,88 @@
 package club.heiqi.uilib.ui.scene.text.font;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-/** 一次资源换代共用目录索引。只保留元数据，非匹配文件的完整字节不进入代际缓存。 */
+/** worker 内的一次资源准备。目录只索引一次；被选字族保留索引时的同一字节快照。 */
 public final class FontFamilyResolver {
-    private static final class Entry {
-        final Path path;
-        final int face;
+    private final Map<String, List<FontSource>> families = new LinkedHashMap<>();
+    private final Map<Path, String> seeds = new LinkedHashMap<>();
 
-        Entry(Path path, int face) {
-            this.path = path;
-            this.face = face;
+    public FontFamilyResolver(List<Path> configured, List<Path> availableDirectories,
+            long revision, Consumer<String> diagnostics) throws IOException {
+        LinkedHashSet<Path> required = new LinkedHashSet<>();
+        LinkedHashSet<Path> directories = new LinkedHashSet<>();
+        for (Path path : configured) {
+            Path absolute = path.toAbsolutePath().normalize();
+            required.add(absolute);
+            if (absolute.getParent() != null) directories.add(absolute.getParent());
+        }
+        Map<Path, List<FontSource>> selectedFiles = new LinkedHashMap<>();
+        // 先确定被声明字族；随后扫描只保留这些族的完整字节，不让 family() 再开文件。
+        for (Path path : required) {
+            try {
+                List<FontSource> faces = read(path, revision);
+                String family = faces.get(0).metadata().family;
+                seeds.put(path, family);
+                families.computeIfAbsent(family, key -> new ArrayList<>());
+                selectedFiles.put(path, faces);
+            } catch (IOException | RuntimeException failure) {
+                throw new IOException("配置字体元数据读取失败: " + path, failure);
+            }
+        }
+        for (List<FontSource> faces : selectedFiles.values()) add(faces, families.keySet());
+        if (required.isEmpty()) return;
+        for (Path path : availableDirectories) directories.add(path.toAbsolutePath().normalize());
+        LinkedHashSet<Path> files = new LinkedHashSet<>();
+        for (Path directory : directories) if (Files.isDirectory(directory)) {
+            try (java.util.stream.Stream<Path> entries = Files.list(directory)) {
+                entries.filter(Files::isRegularFile).filter(FontFamilyResolver::fontFile).sorted()
+                        .forEach(path -> files.add(path.toAbsolutePath().normalize()));
+            }
+        }
+        for (Path path : files) if (!required.contains(path)) {
+            try { add(read(path, revision), families.keySet()); }
+            catch (IOException | RuntimeException failure) {
+                diagnostics.accept("忽略不可解析字体: " + path + " / " + failure);
+            }
         }
     }
 
-    private final Map<String, List<Entry>> families = new LinkedHashMap<String, List<Entry>>();
-    private final Map<Path, FontMetadata> seeds = new HashMap<Path, FontMetadata>();
-    private final Map<Path, List<FontSource>> loaded = new HashMap<Path, List<FontSource>>();
-    private final long revision;
+    private static List<FontSource> read(Path path, long revision) throws IOException {
+        FontSource source = FontSource.file(path.toString(), revision, path, 0, false, Collections.emptySet());
+        List<FontSource> faces = source.collectionFaces();
+        for (FontSource face : faces) face.prepare();
+        return faces;
+    }
 
-    public FontFamilyResolver(
-            List<Path> configured,
-            List<Path> availableDirectories,
-            long revision,
-            Consumer<String> diagnostics)
-            throws IOException {
-        this.revision = revision;
-        LinkedHashSet<Path> files = new LinkedHashSet<Path>();
-        LinkedHashSet<Path> directories = new LinkedHashSet<Path>();
-        for (Path p : configured) {
-            Path absolute = p.toAbsolutePath().normalize();
-            files.add(absolute);
-            if (absolute.getParent() != null) directories.add(absolute.getParent());
-        }
-        for (Path p : availableDirectories) directories.add(p.toAbsolutePath().normalize());
-        for (Path directory : directories)
-            if (Files.isDirectory(directory)) {
-                try (java.util.stream.Stream<Path> entries = Files.list(directory)) {
-                    entries.filter(Files::isRegularFile)
-                            .filter(FontFamilyResolver::fontFile)
-                            .sorted()
-                            .forEach(p -> files.add(p.toAbsolutePath().normalize()));
-                }
-            }
-        Set<Path> required = new HashSet<Path>();
-        for (Path p : configured) required.add(p.toAbsolutePath().normalize());
-        for (Path path : files) {
-            try {
-                ByteBuffer bytes = ByteBuffer.wrap(Files.readAllBytes(path));
-                for (int face = 0, n = FontMetadata.faceCount(bytes); face < n; face++) {
-                    FontMetadata metadata = FontMetadata.inspect(bytes, face);
-                    families.computeIfAbsent(metadata.family, key -> new ArrayList<Entry>())
-                            .add(new Entry(path, face));
-                    if (face == 0) seeds.put(path, metadata);
-                }
-            } catch (IOException | RuntimeException error) {
-                if (required.contains(path)) throw new IOException("配置字体元数据读取失败: " + path, error);
-                diagnostics.accept("忽略不可解析字体: " + path + " / " + error);
-            }
+    private void add(List<FontSource> faces, Set<String> selected) {
+        for (FontSource face : faces) {
+            String family = face.metadata().family;
+            if (selected.contains(family)) families.get(family).add(face);
         }
     }
 
     private static boolean fontFile(Path path) {
         String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        return name.endsWith(".ttf")
-                || name.endsWith(".ttc")
-                || name.endsWith(".otf")
-                || name.endsWith(".otc");
+        return name.endsWith(".ttf") || name.endsWith(".ttc")
+                || name.endsWith(".otf") || name.endsWith(".otc");
     }
 
-    /** 配置文件声明face0所属字族；显式FontSource.file仍只表示指定face。 */
+    /** 无 I/O；配置文件声明 face0 所属字族，显式 FontSource.file 仍只表示指定 face。 */
     public FontSource family(Path configured, String id) throws IOException {
         Path seed = configured.toAbsolutePath().normalize();
-        FontMetadata metadata = seeds.get(seed);
-        if (metadata == null) throw new IOException("字体没有可用face0: " + seed);
-        List<FontSource> members = new ArrayList<FontSource>();
-        for (Entry entry : families.get(metadata.family)) {
-            List<FontSource> faces = loaded.get(entry.path);
-            if (faces == null) {
-                // 文件来源没有脚本/彩色声明；未知提示不排除实际 face，匹配时查询后端事实。
-                FontSource source =
-                        FontSource.file(
-                                entry.path.toString(),
-                                revision,
-                                entry.path,
-                                0,
-                                false,
-                                Collections.<String>emptySet());
-                faces = source.collectionFaces();
-                loaded.put(entry.path, faces);
-            }
-            members.add(faces.get(entry.face));
-        }
-        return FontSource.family(id, members);
+        String family = seeds.get(seed);
+        if (family == null) throw new IOException("字体没有可用face0: " + seed);
+        return FontSource.family(id, families.get(family)).prepare();
     }
 }

@@ -5,7 +5,6 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.input.SceneFocusTraversal;
-import club.heiqi.uilib.ui.scene.input.SceneFocusGeometry;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
@@ -64,6 +63,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     private int width, height, offset, estimate, gap;
     private long metrics = Long.MIN_VALUE, revision;
     private K navigationKey;
+    private Set<K> directionalEntryKeys = Collections.emptySet();
     private VirtualCollectionPosition<K> positioning;
     private boolean dataChanged;
     private List<T> published;
@@ -111,7 +111,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             return new BindingActivation() {
                 public void refresh() { observation.refresh(); }
                 public void close() {
-                    active = false; navigationKey = null; positioning.reset();
+                    active = false; navigationKey = null; directionalEntryKeys = Collections.emptySet(); positioning.reset();
                     observation.close();
                     width = height = offset = 0; measured.clear(); measuredWidth = -1; stableGeometry = null;
                 }
@@ -165,6 +165,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         // 旧视口锚点在度量换代后仍须取得真实新行高，不能先被估算窗口淘汰。
         positioning.retain(needed);
         if (navigationKey != null && values.containsKey(navigationKey)) needed.add(navigationKey);
+        for (K identity : directionalEntryKeys) if (values.containsKey(identity)) needed.add(identity);
         for (Row<T, K> row : rows.values()) {
             boolean retained = contains(row.node, pressed);
             for (SceneNode focused : retainedFocus) retained |= contains(row.node, focused);
@@ -382,9 +383,8 @@ final class VirtualCollectionController<T, K> implements SceneControl {
             int position = fromKey == null ? Math.min(heights.size() - 1, heights.at(offset)) : heights.position(fromKey);
             K candidate;
             boolean first = true, closed;
-            SceneFocusTraversal.DirectionalCursor nested;
-            club.heiqi.uilib.ui.scene.runtime.MountHandle nestedBoundary;
-            final Set<SceneNode> exhausted = new java.util.HashSet<>(), ordinary = new java.util.HashSet<>();
+            final Set<K> visibleKeys = new LinkedHashSet<>();
+            SceneFocusTraversal.DirectionalCursor search;
             public SceneFocusTraversal.Result prepare(SceneGeometryView worldGeometry) {
                 SceneGeometryView geometry = worldGeometry.world();
                 if (closed || !active || !runtime.interactive(root)) return SceneFocusTraversal.Result.cancelled();
@@ -397,77 +397,60 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                 int step = projection < 0 ? -1 : 1;
                 LayoutBox start = geometry.get(from) == null ? origin : geometry.get(from).box;
                 if (first && fromKey == null) {
-                    // 外部入口先比较当前呈现区域内的真实目标，不把不可见预取行当作默认入口。
-                    List<SceneNode> visible = new ArrayList<>();
-                    for (Row<T, K> row : rows.values()) {
-                        SceneGeometryView.Entry entry = geometry.get(row.node);
-                        if (entry != null && !geometry.visibleRegion(row.node).empty()) collectFocusable(row.node, visible);
+                    // 外部入口只提供当前可见行；实际所属边界与普通候选仍由共同内核准备。
+                    if (search == null) {
+                        List<SceneNode> visible = new ArrayList<>();
+                        for (Row<T, K> row : rows.values()) {
+                            SceneGeometryView.Entry entry = geometry.get(row.node);
+                            if (entry != null && !geometry.visibleRegion(row.node).empty()) {
+                                visible.add(row.node); visibleKeys.add(row.key);
+                            }
+                        }
+                        // 共享游标可等待内集合；其稳定根集合仍由本控件有限保留，不能被普通滚动淘汰。
+                        directionalEntryKeys = visibleKeys;
+                        if (!visibleKeys.isEmpty()) viewRevision.set(++revision);
+                        search = runtime.beginDirectionalTraversal(visible, from, direction, start);
                     }
-                    List<SceneNode> ordered = SceneFocusGeometry.ordered(geometry, start, direction, visible);
-                    if (!ordered.isEmpty()) return SceneFocusTraversal.Result.ready(ordered.get(0));
+                    SceneFocusTraversal.Result result = search.prepare(geometry);
+                    if (closed) return SceneFocusTraversal.Result.cancelled();
+                    if (result.status != SceneFocusTraversal.Result.Status.END) return result;
+                    search.close(); search = null;
+                    directionalEntryKeys = Collections.emptySet();
+                    if (!visibleKeys.isEmpty()) viewRevision.set(++revision);
                     if (step < 0) position = Math.min(heights.size() - 1, heights.at((long)offset + height));
                 }
                 first = false;
                 while (position >= 0 && position < heights.size()) {
                     if (candidate == null) candidate = heights.key(position);
                     if (!values.containsKey(candidate)) return SceneFocusTraversal.Result.cancelled();
+                    // 可见入口的END已搜索这些行，完整行序只推进尚未搜索的逻辑行。
+                    if (visibleKeys.contains(candidate)) { position = heights.position(candidate) + step; candidate = null; continue; }
                     Row<T, K> row = rows.get(candidate);
                     if (!Objects.equals(navigationKey, candidate)) { navigationKey = candidate; viewRevision.set(++revision); }
                     if (row == null || row.node.runtime() != runtime) return SceneFocusTraversal.Result.waiting();
                     if (geometry.get(row.node) == null && !Integer.valueOf(-1).equals(measured.get(row.node)))
                         return SceneFocusTraversal.Result.waiting();
-                    if (nested != null) {
-                        if (!nestedBoundary.active() || !runtime.interactive(nestedBoundary.node())) return SceneFocusTraversal.Result.cancelled();
-                        SceneFocusTraversal.Result result = nested.prepare(geometry);
-                        if (closed) return SceneFocusTraversal.Result.cancelled();
-                        if (result.status != SceneFocusTraversal.Result.Status.END) return result;
-                        exhausted.add(nestedBoundary.node()); nested.close(); nested = null; nestedBoundary = null;
-                    }
-                    Map<SceneNode, SceneFocusTraversal> targets = new LinkedHashMap<>();
-                    collectDirectional(row.node, from, exhausted, ordinary, targets);
-                    List<SceneNode> ordered = SceneFocusGeometry.ordered(geometry, start, direction, targets.keySet());
-                    if (!ordered.isEmpty()) {
-                        SceneNode target = ordered.get(0);
-                        SceneFocusTraversal traversal = targets.get(target);
-                        if (traversal == null) return SceneFocusTraversal.Result.ready(target);
-                        nested = traversal.beginDirection(from, direction, start);
-                        if (nested == null) ordinary.add(target);
-                        else nestedBoundary = runtime.captureMount(target);
-                        continue;
-                    }
+                    if (search == null) search = runtime.beginDirectionalTraversal(Collections.singletonList(row.node), from, direction, start);
+                    SceneFocusTraversal.Result result = search.prepare(geometry);
+                    if (closed) return SceneFocusTraversal.Result.cancelled();
+                    if (result.status != SceneFocusTraversal.Result.Status.END) return result;
+                    search.close(); search = null;
                     if (fromKey != null && !vertical) return SceneFocusTraversal.Result.end();
-                    position = heights.position(candidate) + step; candidate = null; exhausted.clear(); ordinary.clear();
+                    position = heights.position(candidate) + step; candidate = null;
                 }
                 return SceneFocusTraversal.Result.end();
             }
             public void close() {
                 if (closed) return;
                 closed = true;
-                try { if (nested != null) nested.close(); }
+                try { if (search != null) search.close(); }
                 finally {
-                    nested = null; nestedBoundary = null; exhausted.clear(); ordinary.clear();
+                    search = null;
+                    if (!directionalEntryKeys.isEmpty()) { directionalEntryKeys = Collections.emptySet(); viewRevision.set(++revision); }
                     if (navigationKey != null) { navigationKey = null; viewRevision.set(++revision); }
                 }
             }
         };
-    }
-
-    private void collectDirectional(SceneNode node, SceneNode from, Set<SceneNode> exhausted, Set<SceneNode> ordinary,
-            Map<SceneNode, SceneFocusTraversal> targets) {
-        if (!runtime.interactive(node) || exhausted.contains(node)) return;
-        SceneFocusTraversal traversal = node.control() == null ? null : node.control().focusTraversal(node);
-        // 更内层已由唯一搜索先行耗尽，外层不可重新进入原边界或只看其有限可见行。
-        if (traversal != null && contains(node, from)) return;
-        if (node != from && node.focusable()) targets.put(node, null);
-        if (traversal != null && !ordinary.contains(node)) {
-            if (!node.focusable()) targets.put(node, traversal);
-        } else for (SceneNode child : node.children()) collectDirectional(child, from, exhausted, ordinary, targets);
-    }
-
-    private void collectFocusable(SceneNode node, List<SceneNode> targets) {
-        if (!runtime.interactive(node)) return;
-        if (node.focusable()) targets.add(node);
-        for (SceneNode child : node.children()) collectFocusable(child, targets);
     }
 
     @Override public void scrollPositionRequested(SceneNode node, SceneNode.Axis axis, int requested,
@@ -492,6 +475,6 @@ final class VirtualCollectionController<T, K> implements SceneControl {
 
     private void dispose() {
         rows.clear(); values.clear(); measured.clear(); heights.clear(); order = Collections.emptyList();
-        published = null; positioning.reset();
+        published = null; directionalEntryKeys = Collections.emptySet(); positioning.reset();
     }
 }

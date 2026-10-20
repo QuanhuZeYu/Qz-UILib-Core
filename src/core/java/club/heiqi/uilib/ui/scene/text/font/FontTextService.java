@@ -79,6 +79,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             new LinkedHashMap<FaceKey, List<ObfuscatedGlyph>>(16, .75f, true);
     private long generation = 1;
     private boolean closed;
+    private final boolean preparedOnly;
 
     public FontTextService(FontEngine engine) throws IOException {
         this(defaultSources(FontTextService.class.getClassLoader(), 1), engine);
@@ -110,6 +111,20 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             int layoutLimit,
             int cachedTextLimit,
             UnicodeGraphemes.Source rules) {
+        this(defaults, engine, faceLimit, layoutLimit, cachedTextLimit, rules, null);
+    }
+
+    /** UI owner 在原线程创建 native 会话，只消费 worker 已准备的同代事实。 */
+    public FontTextService(FontResources resources, FontEngine engine,
+            int faceLimit, int layoutLimit, int cachedTextLimit) {
+        this(resources.defaults, engine, faceLimit, layoutLimit, cachedTextLimit,
+                UnicodeGraphemes.fixed(resources.unicodeProfile), resources);
+    }
+
+    private FontTextService(List<FontSource> defaults, FontEngine engine,
+            int faceLimit, int layoutLimit, int cachedTextLimit,
+            UnicodeGraphemes.Source rules, FontResources resources) {
+        preparedOnly = resources != null;
         if (faceLimit < 1 || layoutLimit < 0 || cachedTextLimit < 0)
             throw new IllegalArgumentException("无效字体缓存预算");
         this.faceLimit = faceLimit;
@@ -119,19 +134,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         unicodeRules = Objects.requireNonNull(rules, "rules");
         unicodeProfile = Objects.requireNonNull(rules.snapshot(), "profile");
         emojiData = unicodeProfile.emoji;
-        // 初始化具名正文源不走 register，保留初始 generation；配置的默认候选列表不变。
-        named.putAll(MathTextFontSources.namedSources(1, this.defaults));
+        // 低级构造用于同步批处理；UI 走显式 FontResources 构造，不能隐式准备资源。
+        named.putAll(resources == null ? synchronousNamed(1, this.defaults) : resources.named);
         defaultMathTextNames.addAll(named.keySet());
         nativeService = Objects.requireNonNull(engine, "engine").openSession();
-        // 数学资源是独立具名链；懒加载沿 FontSource，不引入 MC/GL 或普通文字隐式回退。
-        named.put(
-                "math",
-                Collections.singletonList(
-                        FontSource.fromResource(
-                                "stix-two-math",
-                                1,
-                                "assets/qz_uilib/fonts/math/STIXTwoMath-Regular.otf",
-                                false)));
     }
 
     /** 当前默认资源集合；完整脚本/RGI版本覆盖仍由资源清单和覆盖探针验收。 */
@@ -247,6 +253,18 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 set("Sinh"))));
     }
 
+    private static Map<String, List<FontSource>> synchronousNamed(long revision, List<FontSource> defaults) {
+        Map<String, List<FontSource>> result = new LinkedHashMap<>(MathTextFontSources.namedSources(revision, defaults));
+        result.put("math", Collections.singletonList(FontSource.fromResource("stix-two-math", revision, FontResources.MATH_PATH, false)));
+        List<FontSource> ui = UiFontSources.sans();
+        result.put("uilib-ui", ui);
+        result.put("settings-ui", ui);
+        List<FontSource> path = new ArrayList<>(result.get(MathTextFontSources.MONO).subList(0, 1));
+        path.addAll(ui);
+        result.put("settings-path", Collections.unmodifiableList(path));
+        return result;
+    }
+
     private static Set<String> set(String value) {
         return Collections.singleton(value);
     }
@@ -321,7 +339,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
     public void register(String name, List<FontSource> candidates) {
         check();
-        named.put(Objects.requireNonNull(name, "name"), copy(candidates));
+        named.put(Objects.requireNonNull(name, "name"), preparedOnly ? FontResources.prepared(candidates) : copy(candidates));
         defaultMathTextNames.remove(name);
         invalidate();
     }
@@ -329,11 +347,21 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     /** 默认资源及服务发布的数学正文尾链一起换代；显式注册列表仍由提供者另行换代。 */
     public void reload(List<FontSource> candidates) {
         check();
+        if (preparedOnly) throw new IllegalStateException("UI 字体重载必须发布已准备的 FontResources");
         defaults = copy(candidates);
-        // MC 退休旧加载器后，未加载的旧尾链不能再读资源；先发布新链，再统一失效。
-        Map<String, List<FontSource>> refreshed =
-                MathTextFontSources.namedSources(generation + 1, defaults);
+        Map<String, List<FontSource>> refreshed = synchronousNamed(generation + 1, defaults);
         for (String name : defaultMathTextNames) named.put(name, refreshed.get(name));
+        invalidate();
+    }
+
+    /** 主线程发布整代，具名链和默认候选一起失效，不进行资源 I/O 或 metadata 解析。 */
+    public void reload(FontResources resources) {
+        check();
+        defaults = resources.defaults;
+        unicodeProfile = resources.unicodeProfile;
+        unicodeRules = UnicodeGraphemes.fixed(unicodeProfile);
+        emojiData = unicodeProfile.emoji;
+        for (String name : defaultMathTextNames) named.put(name, resources.named.get(name));
         invalidate();
     }
 
@@ -381,6 +409,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         List<FontSource> sources =
                 style.candidates() == null ? named.get("math") : style.candidates();
         if (sources == null) return null;
+        if (preparedOnly) for (FontSource source : sources)
+            if (!source.isPrepared()) throw new IllegalStateException("UI 数学字体尚未准备: " + source.origin);
         UnicodeText doc = new UnicodeText(TextInput.string(""), TextPolicy.NO_WRAP);
         for (FontSource candidate : sources) {
             List<FontSource> resolved;
@@ -1000,7 +1030,11 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
 
     private List<FontSource> candidates(TextStyle style) {
-        if (style.candidates() != null) return style.candidates();
+        if (style.candidates() != null) {
+            if (preparedOnly) for (FontSource source : style.candidates())
+                if (!source.isPrepared()) throw new IllegalStateException("UI 显式字体尚未准备: " + source.origin);
+            return style.candidates();
+        }
         List<FontSource> result = named.get(style.font);
         // 旧任意名称均映射配置的默认列表，没有基于名称偷偷添加字体。
         return result == null ? defaults : result;

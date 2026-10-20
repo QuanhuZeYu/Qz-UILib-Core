@@ -49,7 +49,7 @@ final class SettingsWorkspace {
         section = context.domain().signal(Section.APPEARANCE);
         confirmation = context.domain().signal(Confirmation.NONE);
         fonts = new SettingsFontDialog(ui);
-        save = SceneCommand.of(() -> !model.dirty().get() && model.unsaved().get(), model::save);
+        save = SceneCommand.of(() -> !configuration.persisting().get() && !model.dirty().get() && model.unsaved().get(), model::save);
         apply = SceneCommand.of(model.dirty(), model::apply);
         discard = SceneCommand.of(model.dirty(), model::discard);
     }
@@ -251,11 +251,13 @@ final class SettingsWorkspace {
     }
 
     private String stage() {
+        if (ui.configuration.persisting().get()) return "正在读写配置文件";
         if (ui.model.dirty().get()) return "有未应用的更改";
         return ui.model.unsaved().get() ? "已应用，未保存" : "已保存";
     }
 
     private String stageDescription() {
+        if (ui.configuration.persisting().get()) return "文件操作在后台进行，可以继续编辑。";
         if (ui.model.dirty().get()) return ui.changes() + " · 先应用更改，才能保存到文件";
         return ui.model.unsaved().get() ? "当前运行使用新值；保存后写入文件。" : "当前运行与最近读取或保存的值一致。";
     }

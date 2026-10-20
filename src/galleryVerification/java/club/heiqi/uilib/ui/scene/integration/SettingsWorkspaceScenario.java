@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 public final class SettingsWorkspaceScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
+        scenario("异步添加失败保留输入且取消重开隔离旧完成", this::asynchronousAdd);
         scenario("正式设置单选字体仅改草稿且应用保存保留用户注释", this::fontSelection);
         scenario("路径拒绝保留原草稿与关联说明且模态返回按原确认", this::pathAndClose);
         scenario("分类与弹窗快速反向保留编辑身份且退出立即结束输入", this::motionLifecycle);
@@ -52,7 +53,9 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         final ConfigKey<Boolean> replace =
                 new ConfigKey<>("mc.replaceVanillaFont", ConfigCodecs.BOOLEAN, true);
 
-        Fixture(boolean minecraft) throws Exception {
+        Fixture(boolean minecraft) throws Exception { this(minecraft, null); }
+
+        Fixture(boolean minecraft, java.util.function.Function<List<String>, CompletableFuture<Void>> asyncValidation) throws Exception {
             file = Files.createTempFile("uilib-workspace-", ".yaml");
             onClose(() -> Files.deleteIfExists(file));
             host.width = 1280;
@@ -77,15 +80,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                         } catch (IOException failure) {
                             throw new UncheckedIOException(failure);
                         }
-                        configuration =
-                                new SettingsConfiguration(
-                                        domain,
-                                        config,
-                                        fonts,
-                                        minecraft ? replace : null,
-                                        file,
-                                        FontCandidateConfiguration.defaults(builtins),
-                                        values -> {
+                        java.util.function.Consumer<List<String>> validate = values -> {
                                             try {
                                                 FontCandidateConfiguration.resolve(
                                                         values,
@@ -101,8 +96,12 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                                             } catch (IOException failure) {
                                                 throw new UncheckedIOException(failure);
                                             }
-                                        },
-                                        () -> refreshes++);
+                                        };
+                        configuration = asyncValidation == null
+                                ? new SettingsConfiguration(domain, config, fonts, minecraft ? replace : null,
+                                        file, FontCandidateConfiguration.defaults(builtins), validate, () -> refreshes++)
+                                : SettingsConfiguration.withAsyncValidation(domain, config, fonts, minecraft ? replace : null,
+                                        file, FontCandidateConfiguration.defaults(builtins), asyncValidation, () -> refreshes++);
                         page = new SettingsPage(configuration, () -> leaves++);
                     });
             session =
@@ -134,6 +133,24 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                     request(SceneSemanticRequest.of(entry(role, name).id, action))
                             == SceneSemanticRequest.Result.APPLIED,
                     "正式动作拒绝 " + name);
+            awaitFiles();
+        }
+
+        void awaitFiles() {
+            CompletableFuture<Void> settled = new CompletableFuture<>();
+            Owner[] waiting = new Owner[1];
+            domain.execute(() -> {
+                waiting[0] = domain.owner();
+                Observation observation = domain.observe(waiting[0], () -> configuration.persisting().get(), () -> {
+                    if (!configuration.persisting().get()) domain.deferCleanup(() -> settled.complete(null));
+                });
+                observation.refresh();
+                if (!configuration.persisting().get()) domain.deferCleanup(() -> settled.complete(null));
+            });
+            try { settled.get(10, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception failure) { throw new AssertionError("文件操作未完成", failure); }
+            finally { domain.execute(waiting[0]::dispose); }
+            session.frame();
         }
 
         String disk() throws IOException {
@@ -163,6 +180,64 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             } finally {
                 Files.deleteIfExists(file);
             }
+        }
+    }
+
+    private void asynchronousAdd() throws Exception {
+        // 仅延迟字体准备这一昂贵外部边界；使用真实页面、字段提交、状态域和模态生命周期。
+        java.util.concurrent.LinkedBlockingQueue<CompletableFuture<Void>> validation = new java.util.concurrent.LinkedBlockingQueue<>();
+        try (Fixture f = new Fixture(false, values -> {
+            CompletableFuture<Void> ready = new CompletableFuture<>();
+            validation.add(ready);
+            return ready;
+        })) {
+            f.openAdd();
+            f.action(SceneSemantics.Role.RADIO, "本地字体文件", SceneSemantics.Action.SELECT);
+            SceneSemanticSnapshot.Entry field = f.entry(SceneSemantics.Role.TEXT_FIELD, "字体文件路径");
+            String entered = f.file.resolveSibling("等待校验.ttf").toString();
+            require(f.request(SceneSemanticRequest.text(field.id, entered)) == SceneSemanticRequest.Result.APPLIED, "真实路径编辑拒绝");
+            f.action(SceneSemantics.Role.BUTTON, "添加到末尾", SceneSemantics.Action.ACTIVATE);
+            CompletableFuture<Void> refused = validation.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            require(refused != null && f.entry(SceneSemantics.Role.TEXT_FIELD, "字体文件路径").rangeInteractive,
+                    "后台校验前提前关闭了添加输入");
+            refused.completeExceptionally(new IllegalArgumentException("异步字体文件拒绝"));
+            f.session.frame();
+            require(entered.equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "字体文件路径").values.value)
+                    && visibleError(f, "添加来源失败："), "异步失败丢失原字段输入或实际错误");
+            f.action(SceneSemantics.Role.BUTTON, "添加到末尾", SceneSemantics.Action.ACTIVATE);
+            CompletableFuture<Void> changed = validation.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            require(changed != null, "再次提交未进入实际校验");
+            require(f.request(SceneSemanticRequest.text(field.id, entered + ".new")) == SceneSemanticRequest.Result.APPLIED, "等待期间不能继续编辑路径");
+            changed.complete(null);
+            f.session.frame();
+            require((entered + ".new").equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "字体文件路径").values.value), "旧路径完成覆盖新编辑");
+            f.action(SceneSemantics.Role.BUTTON, "取消", SceneSemantics.Action.ACTIVATE);
+            f.action(SceneSemantics.Role.BUTTON, "+ 添加来源", SceneSemantics.Action.ACTIVATE);
+            f.action(SceneSemantics.Role.BUTTON, "添加到末尾", SceneSemantics.Action.ACTIVATE);
+            CompletableFuture<Void> closed = validation.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            require(closed != null, "内置提交未校验");
+            f.action(SceneSemantics.Role.BUTTON, "取消", SceneSemantics.Action.ACTIVATE);
+            f.action(SceneSemantics.Role.BUTTON, "+ 添加来源", SceneSemantics.Action.ACTIVATE);
+            closed.complete(null);
+            f.session.frame();
+            require(f.entry(SceneSemantics.Role.BUTTON, "添加到末尾").rangeInteractive, "旧完成关闭了新添加视图");
+            f.action(SceneSemantics.Role.BUTTON, "取消", SceneSemantics.Action.ACTIVATE);
+            require(f.entry(SceneSemantics.Role.BUTTON, "恢复默认").rangeInteractive, "返回后缺少来源列表");
+            int removals = 0;
+            for (SceneSemanticSnapshot.Entry e : f.host.semantics.entries)
+                if (e.values.role == SceneSemantics.Role.BUTTON && "移除".equals(e.values.name) && e.rangeInteractive) removals++;
+            require(removals == 1, "取消或旧路径完成仍追加了草稿来源");
+            f.action(SceneSemantics.Role.BUTTON, "+ 添加来源", SceneSemantics.Action.ACTIVATE);
+            f.action(SceneSemantics.Role.BUTTON, "添加到末尾", SceneSemantics.Action.ACTIVATE);
+            CompletableFuture<Void> accepted = validation.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+            require(accepted != null, "有效添加没有准备任务");
+            accepted.complete(null);
+            f.session.frame();
+            require(f.entry(SceneSemantics.Role.BUTTON, "+ 添加来源").rangeInteractive, "有效完成没有回来源列表");
+            removals = 0;
+            for (SceneSemanticSnapshot.Entry e : f.host.semantics.entries)
+                if (e.values.role == SceneSemantics.Role.BUTTON && "移除".equals(e.values.name) && e.rangeInteractive) removals++;
+            require(removals == 2 && f.current().size() == 1, "有效完成没有只追加一次草稿或隐式发布");
         }
     }
 
@@ -216,6 +291,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             f.session.key(save);
             f.session.key(save.withPhase(SceneKeyEvent.Phase.UP));
             f.session.frame();
+            f.awaitFiles();
             require(
                     f.disk().contains(f.builtins.get(1).id)
                             && f.disk().contains("用户字体说明")

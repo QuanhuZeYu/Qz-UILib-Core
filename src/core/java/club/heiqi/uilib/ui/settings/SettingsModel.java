@@ -1,10 +1,11 @@
 package club.heiqi.uilib.ui.settings;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
@@ -31,6 +32,16 @@ public final class SettingsModel {
         public String declaration() {
             return declaration;
         }
+    }
+
+    /** 只属于本次添加请求的业务结果；失效请求既不添加，也不借用后来请求的全局错误。 */
+    public static final class Addition {
+        private final boolean added;
+        private final String error;
+
+        private Addition(boolean added, String error) { this.added = added; this.error = error; }
+        public boolean added() { return added; }
+        public String error() { return error; }
     }
 
     /** 同文案的两次成功仍是两个操作；呈现期限不改变业务结果。 */
@@ -60,6 +71,10 @@ public final class SettingsModel {
     private final ReadableSignal<String> saveDisabledReason;
     // 仅为观察 live 变化前的语义基线；权威值始终读取 configuration/session。
     private Snapshot observed;
+    private Object editIdentity = new Object();
+    private Object feedbackIdentity;
+    private Object pendingReload;
+    private Object reloadEdits;
 
     public SettingsModel(SettingsConfiguration configuration, Owner pageScope) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
@@ -89,7 +104,7 @@ public final class SettingsModel {
                                                 : configuration.resourceError().get());
         saveDisabledReason =
                 domain.computed(
-                        scope, () -> dirty.get() ? "先应用更改" : unsaved.get() ? "" : "没有需要保存的更改");
+                        scope, () -> configuration.persisting().get() ? "正在读写配置文件" : dirty.get() ? "先应用更改" : unsaved.get() ? "" : "没有需要保存的更改");
         domain.effect(scope, this::synchronize);
     }
 
@@ -183,7 +198,8 @@ public final class SettingsModel {
         Snapshot current = configuration.current();
         configuration.saved().get();
         if (!current.equals(observed)) {
-            boolean pristine = draft().equals(observed);
+            boolean pristine = draft().equals(observed)
+                    && !(pendingReload != null && editIdentity != reloadEdits);
             observed = current;
             if (pristine) restore(current);
             else externalChanged.set(!draft().equals(current));
@@ -202,24 +218,31 @@ public final class SettingsModel {
     }
 
     private void clearFeedback() {
+        editIdentity = new Object();
+        feedbackIdentity = null;
         fontError.set("");
         fileError.set("");
         message.set(null);
     }
 
-    public void add(String declaration) {
+    public CompletableFuture<Addition> add(String declaration) { return add(declaration, () -> true); }
+
+    /** 所属编辑器在资源校验后确认本次提交仍可接受；沿原编辑状态完成，不另建输入目标。 */
+    CompletableFuture<Addition> add(String declaration, BooleanSupplier accept) {
         write();
         clearFeedback();
-        try {
-            List<String> values = new ArrayList<>(draft().candidates());
-            values.add(Objects.requireNonNull(declaration, "字体来源不能为空"));
-            configuration.validateCandidates(values);
+        List<String> values = new ArrayList<>(draft().candidates());
+        values.add(Objects.requireNonNull(declaration, "字体来源不能为空"));
+        Object request = new Object();
+        Object submittedEdits = editIdentity;
+        feedbackIdentity = request;
+        return validated(request, submittedEdits, values, () -> {
+            if (!accept.getAsBoolean()) return false;
             List<Source> next = new ArrayList<>(sources.get());
             next.add(new Source(declaration));
             sources.set(Collections.unmodifiableList(next));
-        } catch (RuntimeException failure) {
-            fontError.set("添加来源失败：" + reason(failure));
-        }
+            return true;
+        }, "添加来源失败：", false);
     }
 
     public void remove(Source source) {
@@ -293,30 +316,54 @@ public final class SettingsModel {
         restore(observed);
     }
 
-    /** 独立域操作让资源 Effect 的延后异常进入同一个正式失败边界；不创建线程。
-     * 校验/I/O 拒绝留在对应表单，已发布后的异常按 live 事实反馈且不回滚。 */
-    public void apply() {
+    /** 等待资源准备后回原域核验请求和草稿身份，再发布全部值。 */
+    public CompletableFuture<Void> apply() {
         write();
-        domain.enqueue(
-                () -> {
-                    if (scope.isDisposed()) return;
-                    synchronize();
-                    if (!dirty.get()) return;
-                    clearFeedback();
-                    Snapshot submitted = draft();
-                    try {
-                        configuration.apply(
-                                submitted.candidates(), submitted.replace(), submitted.theme());
-                        observed = configuration.current();
-                        externalChanged.set(false);
-                        message.set(new Feedback("已应用全部更改", true));
-                    } catch (RuntimeException failure) {
-                        applicationFailure(failure);
-                    }
-                },
-                failure -> {
-                    if (!scope.isDisposed()) applicationFailure(failure);
-                });
+        if (!dirty.get()) return CompletableFuture.completedFuture(null);
+        clearFeedback();
+        Snapshot submitted = draft();
+        Object request = new Object();
+        Object submittedEdits = editIdentity;
+        feedbackIdentity = request;
+        return validated(request, submittedEdits, submitted.candidates(), () -> {
+            try {
+                configuration.applyValidated(submitted.candidates(), submitted.replace(), submitted.theme());
+                observed = configuration.current();
+                externalChanged.set(false);
+                message.set(new Feedback("已应用全部更改", true));
+                return true;
+            } catch (RuntimeException failure) { applicationFailure(failure); return false; }
+        }, "应用失败：", true).thenApply(ignored -> null);
+    }
+
+    private CompletableFuture<Addition> validated(Object request, Object submittedEdits,
+            List<String> candidates, BooleanSupplier accepted, String rejected, boolean application) {
+        CompletableFuture<Addition> settled = new CompletableFuture<>();
+        configuration.validateCandidates(candidates).whenComplete((ignored, failure) -> {
+            if (configuration.isClosed()) {
+                settled.completeExceptionally(new java.util.concurrent.CancellationException("设置配置已关闭"));
+                return;
+            }
+            Runnable commit = () -> {
+                Addition[] result = {new Addition(false, "")};
+                domain.deferCleanup(() -> settled.complete(result[0]));
+                if (configuration.isClosed() || scope.isDisposed() || feedbackIdentity != request || editIdentity != submittedEdits) return;
+                if (failure == null) result[0] = new Addition(accepted.getAsBoolean(), "");
+                else {
+                    String error = rejected + reason(failure);
+                    fontError.set(error);
+                    result[0] = new Addition(false, error);
+                }
+            };
+            java.util.function.Consumer<Throwable> failed = failureAfterPublish -> {
+                settled.completeExceptionally(failureAfterPublish);
+                if (!configuration.isClosed() && !scope.isDisposed() && feedbackIdentity == request) applicationFailure(failureAfterPublish);
+            };
+            // 应用独占一个顶层操作，使资源 Effect 的异常仍进入该请求的失败边界。
+            if (application) domain.enqueue(commit, failed);
+            else domain.execute(commit, failed);
+        });
+        return settled;
     }
 
     private void applicationFailure(Throwable failure) {
@@ -327,49 +374,46 @@ public final class SettingsModel {
         fontError.set((published ? "配置已发布，资源更新失败：" : "应用失败：") + reason(failure));
     }
 
-    public void save() {
+    public CompletableFuture<Void> save() {
         write();
-        domain.enqueue(
-                () -> {
-                    if (scope.isDisposed()) return;
-                    synchronize();
-                    if (dirty.get()) {
-                        message.set(new Feedback("先应用更改", false));
-                        return;
-                    }
-                    if (!unsaved.get()) return;
-                    clearFeedback();
-                    try {
-                        configuration.save();
-                        message.set(new Feedback("已保存到 " + configuration.path(), true));
-                    } catch (IOException | RuntimeException failure) {
-                        fileFailure("保存", failure);
-                    }
-                },
-                failure -> {
-                    if (!scope.isDisposed()) fileFailure("保存后的通知", failure);
-                });
+        if (dirty.get()) {
+            message.set(new Feedback("先应用更改", false));
+            return CompletableFuture.completedFuture(null);
+        }
+        if (!unsaved.get()) return CompletableFuture.completedFuture(null);
+        clearFeedback();
+        Object request = new Object();
+        feedbackIdentity = request;
+        return configuration.save().handle((ignored, failure) -> {
+            if (!configuration.isClosed() && !scope.isDisposed() && feedbackIdentity == request) {
+                if (failure == null) message.set(new Feedback("已保存到 " + configuration.path(), true));
+                else fileFailure("保存", failure);
+            }
+            return null;
+        });
     }
 
-    /** 放弃未落盘变化的确认归页面模态；本方法执行已确认的实际加载。 */
-    public void reload() {
+    /** 放弃未落盘变化的确认归页面模态；本方法执行已确认的实际加载。
+     * 后续编辑属于新的草稿意图，旧加载完成只能更新配置事实，不能覆盖新草稿。 */
+    public CompletableFuture<Void> reload() {
         write();
-        domain.enqueue(
-                () -> {
-                    if (scope.isDisposed()) return;
-                    clearFeedback();
-                    try {
-                        configuration.reload();
-                        observed = configuration.current();
-                        restore(observed);
-                        message.set(new Feedback("已从 " + configuration.path() + " 重新加载", true));
-                    } catch (IOException | RuntimeException failure) {
-                        fileFailure("重新加载", failure);
-                    }
-                },
-                failure -> {
-                    if (!scope.isDisposed()) fileFailure("重新加载后的资源更新", failure);
-                });
+        clearFeedback();
+        Object request = new Object();
+        Object submittedEdits = editIdentity;
+        feedbackIdentity = request;
+        pendingReload = request;
+        reloadEdits = submittedEdits;
+        return configuration.reload().handle((ignored, failure) -> {
+            if (configuration.isClosed() || scope.isDisposed()) return null;
+            if (pendingReload == request) pendingReload = null;
+            if (feedbackIdentity != request) return null;
+            if (failure == null) {
+                observed = configuration.current();
+                if (editIdentity == submittedEdits) restore(observed);
+                message.set(new Feedback("已从 " + configuration.path() + " 重新加载", true));
+            } else fileFailure("重新加载", failure);
+            return null;
+        });
     }
 
     private void fileFailure(String action, Throwable failure) {

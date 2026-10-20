@@ -12,9 +12,15 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.config.ConfigCodecs;
+import club.heiqi.uilib.ui.config.ConfigCodec;
+import club.heiqi.uilib.ui.config.ConfigDocument;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
@@ -127,19 +133,35 @@ public final class SettingsConfigurationScenario extends TestApplication {
         }
 
         void run(Runnable action) {
-            domain.execute(action);
+            CompletableFuture<Void> settled = new CompletableFuture<>();
+            domain.execute(() -> {
+                domain.deferCleanup(() -> settled.complete(null));
+                action.run();
+            }, settled::completeExceptionally);
+            try { settled.join(); }
+            catch (java.util.concurrent.CompletionException failure) {
+                if (failure.getCause() instanceof RuntimeException) throw (RuntimeException) failure.getCause();
+                if (failure.getCause() instanceof Error) throw (Error) failure.getCause();
+                throw failure;
+            }
         }
 
         void apply() {
-            run(model::apply);
+            CompletableFuture<Void>[] result = new CompletableFuture[1];
+            run(() -> result[0] = model.apply());
+            result[0].join();
         }
 
-        void save() {
-            run(model::save);
+        void save() throws Exception {
+            CompletableFuture<Void>[] result = new CompletableFuture[1];
+            run(() -> result[0] = model.save());
+            result[0].get(10, TimeUnit.SECONDS);
         }
 
-        void reload() {
-            run(model::reload);
+        void reload() throws Exception {
+            CompletableFuture<Void>[] result = new CompletableFuture[1];
+            run(() -> result[0] = model.reload());
+            result[0].get(10, TimeUnit.SECONDS);
         }
 
         String declaration(int index) {
@@ -153,6 +175,10 @@ public final class SettingsConfigurationScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("后台真实文件请求与原域全量递交及关闭后基线", this::asynchronousFiles);
+        scenario("异步字体校验拒绝迟到草稿和释放后的发布", this::asynchronousValidation);
+        scenario("公开应用等待已完成校验后的资源Effect失败", this::publicApplyFailure);
+        scenario("忙碌观察者失败后真实保存链仍可继续", this::persistingObserverFailure);
         scenario("主题草稿放弃应用与真实文件新会话往返", this::themeLifecycle);
         scenario("主题外部正式发布保留草稿与同步", this::themeExternal);
         scenario("完整草稿应用保存与注释及其他模块字段保留", this::applyAndSave);
@@ -165,6 +191,285 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("load同步观察失败仍记录真实文件基线", this::reloadObserverFailure);
         scenario("同步观察及延后资源Effect错误按已发布事实反馈", this::resourceErrors);
         scenario("显式宿主资源失败记录诊断且继续原异常通道", this::explicitResourceFailure);
+    }
+
+    /** 队列只能由测试所属线程推进；后台只负责递交，不能借 CURRENT 伪证线程亲和。 */
+    private static final class QueuedDomain {
+        final Thread owner = Thread.currentThread();
+        final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
+        final ReactiveDomain domain = new ReactiveDomain(queue::add);
+
+        void run(Runnable action) throws Exception {
+            CompletableFuture<Void> done = new CompletableFuture<>();
+            domain.execute(() -> { action.run(); done.complete(null); });
+            await(done);
+        }
+
+        void await(CompletableFuture<?> result) throws Exception {
+            while (!result.isDone()) {
+                Runnable action = queue.poll(10, TimeUnit.SECONDS);
+                require(action != null, "原域递交没有到达");
+                require(Thread.currentThread() == owner, "域队列在后台执行");
+                action.run();
+            }
+            result.get(10, TimeUnit.SECONDS);
+        }
+    }
+
+    /** 只控制真实 codec 执行阶段；文档解析、Files 和 Signal 都使用生产实现。 */
+    private static final class PreparationGate {
+        final CompletableFuture<Void> entered = new CompletableFuture<>();
+        final CompletableFuture<Void> release = new CompletableFuture<>();
+        void enter(Thread owner) {
+            require(Thread.currentThread() != owner, "文档 I/O 准备阻塞了 UI 所属线程");
+            entered.complete(null);
+            try { release.get(10, TimeUnit.SECONDS); }
+            catch (Exception failure) { throw new AssertionError("后台准备未获确定性释放", failure); }
+        }
+    }
+
+    private void asynchronousFiles() throws Exception {
+        QueuedDomain ui = new QueuedDomain();
+        LinkedBlockingQueue<PreparationGate> writes = new LinkedBlockingQueue<>();
+        AtomicReference<PreparationGate> reading = new AtomicReference<>();
+        ConfigKey<String> extra = new ConfigKey<>("other", new ConfigCodec<String>() {
+            public String read(Object value, String path) {
+                PreparationGate gate = reading.get();
+                if (gate != null) gate.enter(ui.owner);
+                return ConfigCodecs.STRING.read(value, path);
+            }
+            public Object write(String value) {
+                PreparationGate gate = writes.poll();
+                if (gate != null) gate.enter(ui.owner);
+                return value;
+            }
+            public String snapshot(String value) { return ConfigCodecs.STRING.snapshot(value); }
+        }, "初值");
+        ConfigKey<List<String>> fonts = FontCandidateConfiguration.key(builtins);
+        ConfigSchema schema = ConfigSchema.of(fonts, ThemeConfiguration.KEY, extra);
+        Path file = Files.createTempFile("uilib-settings-async-", ".yaml");
+        onClose(() -> Files.deleteIfExists(file));
+        String initial = "# 其他模块注释\nother: 初值 # 行尾说明\nfont:\n  candidates: [builtin:" + builtins.get(0).id + "]\nui: {theme: light}\n";
+        Files.write(file, initial.getBytes(StandardCharsets.UTF_8));
+        ConfigDocument loaded = ConfigDocument.read(schema, file);
+        ConfigSession[] config = new ConfigSession[1];
+        SettingsConfiguration[] settings = new SettingsConfiguration[1];
+        SettingsModel[] model = new SettingsModel[1];
+        Owner[] page = new Owner[2];
+        List<String> observed = new ArrayList<>();
+        int[] resourceReloads = {0};
+        ui.run(() -> {
+            config[0] = new ConfigSession(ui.domain, schema);
+            config[0].publish(loaded);
+            settings[0] = new SettingsConfiguration(ui.domain, config[0], fonts, null, file,
+                    FontCandidateConfiguration.defaults(builtins), values -> {}, () -> {
+                        require(Thread.currentThread() == ui.owner, "资源发布离开所属线程");
+                        resourceReloads[0]++;
+                    });
+            page[0] = ui.domain.owner();
+            model[0] = new SettingsModel(settings[0], page[0]);
+            page[1] = ui.domain.owner();
+            ui.domain.effect(page[1], () -> {
+                require(Thread.currentThread() == ui.owner, "配置通知离开所属线程");
+                observed.add(config[0].get(extra) + ":" + config[0].get(ThemeConfiguration.KEY) + ":" + config[0].get(fonts));
+            });
+        });
+        onClose(() -> ui.run(() -> { page[0].dispose(); page[1].dispose(); }));
+        PreparationGate firstWrite = new PreparationGate(), secondWrite = new PreparationGate();
+        writes.add(firstWrite); writes.add(secondWrite);
+        onClose(() -> { firstWrite.release.complete(null); secondWrite.release.complete(null); });
+        CompletableFuture<Void>[] requests = new CompletableFuture[3];
+        ui.run(() -> {
+            config[0].set(ThemeConfiguration.KEY, ThemeMode.DARK);
+            requests[0] = model[0].save();
+        });
+        firstWrite.entered.get(10, TimeUnit.SECONDS);
+        ui.run(() -> {
+            require(settings[0].persisting().get(), "在途保存没有真实 pending");
+            config[0].set(fonts, Collections.singletonList("builtin:" + builtins.get(1).id));
+            requests[1] = model[0].save();
+            model[0].setTheme(ThemeMode.LIGHT);
+        });
+        require(!secondWrite.entered.isDone(), "连续文件请求并发写入同一来源");
+        firstWrite.release.complete(null);
+        ui.await(requests[0]);
+        secondWrite.entered.get(10, TimeUnit.SECONDS);
+        ui.run(() -> {
+            require(settings[0].saved().get().theme() == ThemeMode.DARK
+                    && settings[0].saved().get().candidates().equals(Collections.singletonList("builtin:" + builtins.get(0).id)),
+                    "旧保存错误地把后来配置记为已落盘");
+            require(model[0].dirty().get() && model[0].message().get().isEmpty(), "旧完成覆盖后续编辑反馈");
+            page[0].dispose();
+            page[0] = ui.domain.owner();
+            model[0] = new SettingsModel(settings[0], page[0]);
+            model[0].setTheme(ThemeMode.LIGHT);
+        });
+        ConfigDocument firstDisk = ConfigDocument.read(schema, file);
+        require(firstDisk.get(fonts).equals(Collections.singletonList("builtin:" + builtins.get(0).id)), "首个真实文件值不是捕获快照");
+        secondWrite.release.complete(null);
+        ui.await(requests[1]);
+        ui.run(() -> require(!model[0].unsaved().get() && model[0].dirty().get(), "页面关闭后真实保存基线未完成或覆盖重开草稿"));
+        String disk = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        require(disk.contains("其他模块注释") && disk.contains("行尾说明"), "后台保存丢失其他模块注释");
+        Files.write(file, initial.replace("初值", "文件新值").getBytes(StandardCharsets.UTF_8));
+        PreparationGate reload = new PreparationGate();
+        reading.set(reload);
+        onClose(() -> reload.release.complete(null));
+        ui.run(() -> requests[2] = model[0].reload());
+        reload.entered.get(10, TimeUnit.SECONDS);
+        ui.run(() -> {
+            require(config[0].get(extra).equals("初值"), "后台读取未全量验证就发布");
+            model[0].add("builtin:" + builtins.get(2).id);
+        });
+        reload.release.complete(null);
+        ui.await(requests[2]);
+        ui.run(() -> {
+            require(config[0].get(extra).equals("文件新值") && config[0].get(ThemeConfiguration.KEY) == ThemeMode.LIGHT,
+                    "重载没有发布包含其他模块的完整配置");
+            require(model[0].sources().get().size() == 2 && model[0].dirty().get(), "迟到重载覆盖后来编辑");
+            require(!model[0].unsaved().get() && !settings[0].persisting().get(), "重载后的真实文件基线或 pending 不准确");
+        });
+        require(resourceReloads[0] == 1 && observed.get(observed.size() - 1).startsWith("文件新值:LIGHT:"), "全量通知或资源发布未完成");
+        reading.set(null);
+        PreparationGate closing = new PreparationGate();
+        writes.add(closing);
+        onClose(() -> closing.release.complete(null));
+        ui.run(() -> {
+            config[0].set(ThemeConfiguration.KEY, ThemeMode.DARK);
+            requests[0] = settings[0].save();
+        });
+        closing.entered.get(10, TimeUnit.SECONDS);
+        int notifications = observed.size();
+        ui.run(() -> {
+            settings[0].close();
+            require(requests[0].isCompletedExceptionally(), "宿主关闭后文件 future 永久等待已停止的域");
+            try { settings[0].save(); throw new AssertionError("关闭后允许新保存"); }
+            catch (IllegalStateException expected) {}
+            try { settings[0].apply(Collections.emptyList(), false); throw new AssertionError("关闭后允许新应用"); }
+            catch (IllegalStateException expected) {}
+        });
+        closing.release.complete(null);
+        require(java.util.concurrent.ForkJoinPool.commonPool().awaitQuiescence(10, TimeUnit.SECONDS), "已开始文件操作没有结束");
+        require(ui.queue.isEmpty() && observed.size() == notifications, "宿主关闭后后台仍递交或发布配置");
+        ConfigDocument afterClose = ConfigDocument.read(schema, file);
+        require(afterClose.get(ThemeConfiguration.KEY) == ThemeMode.DARK, "宿主关闭中断已开始的真实保存");
+    }
+
+    private void asynchronousValidation() throws Exception {
+        QueuedDomain ui = new QueuedDomain();
+        ConfigKey<List<String>> fonts = FontCandidateConfiguration.key(builtins);
+        LinkedBlockingQueue<CompletableFuture<Void>> validations = new LinkedBlockingQueue<>();
+        ConfigSession[] session = new ConfigSession[1];
+        SettingsModel[] model = new SettingsModel[1];
+        Owner[] owner = new Owner[1];
+        Path file = Files.createTempFile("uilib-validation-", ".yaml");
+        onClose(() -> Files.deleteIfExists(file));
+        ui.run(() -> {
+            session[0] = new ConfigSession(ui.domain, ConfigSchema.of(fonts, ThemeConfiguration.KEY));
+            SettingsConfiguration configuration = SettingsConfiguration.withAsyncValidation(ui.domain, session[0], fonts,
+                    null, file, FontCandidateConfiguration.defaults(builtins), values -> {
+                        CompletableFuture<Void> preparation = new CompletableFuture<>();
+                        validations.add(preparation);
+                        return preparation;
+                    }, () -> {});
+            owner[0] = ui.domain.owner();
+            model[0] = new SettingsModel(configuration, owner[0]);
+        });
+        onClose(() -> ui.run(owner[0]::dispose));
+        CompletableFuture<Void>[] result = new CompletableFuture[1];
+        ui.run(() -> { model[0].setTheme(ThemeMode.DARK); result[0] = model[0].apply(); });
+        CompletableFuture<Void> stale = validations.take();
+        ui.run(() -> model[0].setTheme(ThemeMode.LIGHT));
+        CompletableFuture.runAsync(() -> stale.complete(null)).get(10, TimeUnit.SECONDS);
+        ui.await(result[0]);
+        ui.run(() -> {
+            require(session[0].get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "迟到校验发布过期草稿");
+            model[0].setTheme(ThemeMode.DARK);
+            result[0] = model[0].apply();
+        });
+        CompletableFuture<Void> closed = validations.take();
+        ui.run(owner[0]::dispose);
+        closed.complete(null);
+        ui.await(result[0]);
+        ui.run(() -> {
+            require(session[0].get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "关闭页面仍发布等待中的应用");
+            owner[0] = ui.domain.owner();
+            model[0] = new SettingsModel(model[0].configuration(), owner[0]);
+            model[0].setTheme(ThemeMode.DARK);
+            result[0] = model[0].apply();
+        });
+        validations.take().completeExceptionally(new IllegalStateException("字体准备失败"));
+        ui.await(result[0]);
+        ui.run(() -> {
+            require(session[0].get(ThemeConfiguration.KEY) == ThemeMode.LIGHT && model[0].fontError().get().contains("字体准备失败"), "校验失败未保留草稿和原值");
+            result[0] = model[0].apply();
+        });
+        CompletableFuture<Void> current = validations.take();
+        CompletableFuture.runAsync(() -> current.complete(null)).get(10, TimeUnit.SECONDS);
+        ui.await(result[0]);
+        ui.run(() -> require(session[0].get(ThemeConfiguration.KEY) == ThemeMode.DARK && !model[0].dirty().get(), "有效请求没有在原域发布"));
+    }
+
+    private void persistingObserverFailure() throws Exception {
+        Fixture f = new Fixture(false, false);
+        IllegalStateException expected = new IllegalStateException("忙碌观察者失败");
+        Owner[] observer = new Owner[1];
+        f.run(() -> {
+            observer[0] = f.domain.owner();
+            Observation watch = f.domain.observe(observer[0], () -> f.configuration.persisting().get(), () -> {
+                if (f.configuration.persisting().get()) throw expected;
+            });
+            watch.refresh();
+        });
+        try {
+            f.run(() -> {
+                f.session.set(ThemeConfiguration.KEY, ThemeMode.DARK);
+                f.configuration.save();
+            });
+            throw new AssertionError("同步忙碌观察者异常没有继续原错误通道");
+        } catch (RuntimeException failure) {
+            require(failure == expected, "忙碌观察者原错被替换");
+        }
+        CompletableFuture<Void>[] next = new CompletableFuture[1];
+        f.run(() -> {
+            observer[0].dispose();
+            f.session.set(ThemeConfiguration.KEY, ThemeMode.LIGHT);
+            next[0] = f.configuration.save();
+        });
+        next[0].get(10, TimeUnit.SECONDS);
+        ConfigDocument written = ConfigDocument.read(ConfigSchema.of(f.fonts, f.profile, ThemeConfiguration.KEY), f.file);
+        require(written.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "坏观察者释放后第二次保存没有真实落盘");
+        f.run(() -> require(!f.configuration.persisting().get()
+                && f.configuration.saved().get().theme() == ThemeMode.LIGHT, "保存链没有结清真实请求和busy基线"));
+    }
+
+    private void publicApplyFailure() throws Exception {
+        Fixture f = new Fixture(true, false);
+        IllegalStateException expected = new IllegalStateException("公开应用资源Effect失败");
+        Owner[] resource = new Owner[1];
+        CompletableFuture<Void>[] applied = new CompletableFuture[1];
+        try {
+            f.run(() -> {
+                resource[0] = f.domain.owner();
+                f.domain.effect(resource[0], () -> {
+                    if (!f.session.get(f.mc)) throw expected;
+                });
+                applied[0] = f.configuration.apply(f.configuration.current().candidates(), false, ThemeMode.DARK);
+            });
+        } catch (RuntimeException failure) {
+            require(failure == expected, "域的既有错误通道丢失资源Effect原错");
+        }
+        try {
+            applied[0].get(10, TimeUnit.SECONDS);
+            throw new AssertionError("公开应用在顶层Effect失败前报告成功");
+        } catch (java.util.concurrent.ExecutionException failure) {
+            require(failure.getCause() == expected, "公开应用没有保留资源Effect原始失败");
+        }
+        f.run(() -> {
+            require(!f.configuration.current().replace() && f.configuration.current().theme() == ThemeMode.DARK,
+                    "资源失败撤销已经发布的配置");
+            resource[0].dispose();
+        });
     }
 
     private void explicitResourceFailure() throws Exception {
@@ -722,19 +1027,17 @@ public final class SettingsConfigurationScenario extends TestApplication {
                             .refresh();
                     f.model.add(f.declaration(1));
                     draft[0] = f.model.sources().get().get(1);
-                    try {
-                        f.configuration.reload();
-                        throw new AssertionError("load必须继续报告资源观察原错");
-                    } catch (IOException failure) {
-                        throw new AssertionError("资源观察错误不能转换成文件读取错误", failure);
-                    } catch (RuntimeException actual) {
-                        require(actual == expected, "load资源异常被转换或替换");
-                    }
-                    require(
-                            !f.configuration.current().replace()
-                                    && !f.configuration.saved().get().replace(),
-                            "文件已成功载入时资源观察错误不能留下旧文件基线");
                 });
+        CompletableFuture<Void>[] loading = new CompletableFuture[1];
+        f.run(() -> loading[0] = f.configuration.reload());
+        try {
+            loading[0].get(10, TimeUnit.SECONDS);
+            throw new AssertionError("load必须继续报告资源观察原错");
+        } catch (java.util.concurrent.ExecutionException failure) {
+            require(failure.getCause() == expected, "load资源异常被转换或替换");
+        }
+        f.run(() -> require(!f.configuration.current().replace() && !f.configuration.saved().get().replace(),
+                "文件已成功载入时资源观察错误不能留下旧文件基线"));
         onClose(() -> f.domain.execute(resource[0]::dispose));
         f.run(
                 () -> {

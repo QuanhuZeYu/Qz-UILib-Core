@@ -60,6 +60,7 @@ public final class MotionScenario extends TestApplication {
         scenario("滚动祖先优先、合法偏移与显式惯性", this::scrollMotion);
         scenario("滚动减少模式保留单调回弹而关闭立即落定", this::reducedScroll);
         scenario("退场滚动与窗口扩张消费当前裁剪", this::presenceClip);
+        scenario("主绘与嵌套退场候选只采集一次局部片段", PresencePaintCollectionScenario::verify);
         scenario("撤销回弹立即重排与旧滚动样本隔离", this::scrollCancellation);
         scenario("回槽途中键盘接管与取消", this::keyboardTakeover);
         scenario("自身裁剪外盒与退场错误清理", this::presenceOwnClip);

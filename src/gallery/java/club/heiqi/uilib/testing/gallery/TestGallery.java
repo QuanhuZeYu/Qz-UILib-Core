@@ -95,6 +95,7 @@ public final class TestGallery implements ScenePage {
 
     private final GalleryEnvironment environment;
     private final Page initial;
+    private final club.heiqi.uilib.ui.scene.localization.LocalizationSource language;
     private Signal<Page> selected;
     private SettingsPage settingsPage;
     private MotionPage motionPage;
@@ -108,12 +109,21 @@ public final class TestGallery implements ScenePage {
     }
 
     public TestGallery(GalleryEnvironment environment, Page initial) {
+        this(environment, initial, null);
+    }
+
+    /** 标准组合文案借用显式来源；资料准备、选择及重载归装配者。 */
+    public TestGallery(GalleryEnvironment environment, Page initial,
+            club.heiqi.uilib.ui.scene.localization.LocalizationSource language) {
         this.environment = environment;
         this.initial = initial;
+        this.language = language;
     }
 
     @Override
     public void build(ScenePageContext context) {
+        GalleryCompositeLabels labels = language == null ? GalleryCompositeLabels.defaults()
+                : GalleryCompositeLabels.from(context.localization(language));
         selected = context.domain().signal(initial);
         settingsPage = new SettingsPage(environment.settings(), () -> selected.set(Page.HOME));
         context.own(
@@ -146,7 +156,7 @@ public final class TestGallery implements ScenePage {
                         .computed(
                                 context.scope(),
                                 () -> GalleryStyle.theme(dark.get()).withDensity(density.get()));
-        MediaPage media = new MediaPage(context, environment, theme);
+        MediaPage media = new MediaPage(context, environment, theme, labels);
         motionPage =
                 new MotionPage(
                         context,
@@ -209,22 +219,22 @@ public final class TestGallery implements ScenePage {
                 case FORMS:
                     page =
                             FormComponentsPage.create(
-                                    context, theme, () -> navigate.accept(Page.HOME));
+                                    context, theme, () -> navigate.accept(Page.HOME), labels);
                     break;
                 case DIALOGS:
                     page =
                             DialogComponentsPage.create(
-                                    context, theme, () -> navigate.accept(Page.HOME));
+                                    context, theme, () -> navigate.accept(Page.HOME), labels);
                     break;
                 case FILE_PICKER:
                     page =
                             FilePickerComponentsPage.create(
-                                    context, theme, environment, () -> navigate.accept(Page.HOME));
+                                    context, theme, environment, () -> navigate.accept(Page.HOME), labels);
                     break;
                 case COLLECTIONS:
                     page =
                             CollectionComponentsPage.create(
-                                    context, theme, () -> navigate.accept(Page.HOME));
+                                    context, theme, () -> navigate.accept(Page.HOME), labels);
                     break;
                 case NOTICES:
                     page =
@@ -307,7 +317,7 @@ public final class TestGallery implements ScenePage {
                                     () -> navigate.accept(Page.HOME),
                                     () ->
                                             preview.set(
-                                                    dark.get() ? ThemeMode.LIGHT : ThemeMode.DARK));
+                                                    dark.get() ? ThemeMode.LIGHT : ThemeMode.DARK), labels);
                     break;
                 default:
                     throw new AssertionError(id);

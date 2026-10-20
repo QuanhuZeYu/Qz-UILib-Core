@@ -18,7 +18,7 @@ final class FilePickerComponentsPage {
             ScenePageContext p,
             ReadableSignal<SceneTheme> theme,
             GalleryEnvironment environment,
-            Runnable back) {
+            Runnable back, GalleryCompositeLabels labels) {
         ComponentExamples e =
                 new ComponentExamples(p, theme, "本地文件选择", "目录浏览、路径导航、搜索、过滤、历史与分页使用正式文件选择器。", back);
         Signal<Boolean> open = p.domain().signal(false);
@@ -43,6 +43,8 @@ final class FilePickerComponentsPage {
                                                         p,
                                                         directory.get(),
                                                         theme,
+                                                        new SceneFilePicker.Options().clearText(labels.clearSearch)
+                                                                .paginationText(labels.previousPage, labels.nextPage),
                                                         path -> {
                                                             directory.set(path.getParent());
                                                             selected.set("已选择文件：" + path);

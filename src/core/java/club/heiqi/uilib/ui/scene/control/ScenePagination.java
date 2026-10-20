@@ -18,14 +18,22 @@ public final class ScenePagination {
             ReadableSignal<String> summary,
             SceneCommand previous,
             SceneCommand next) {
+        return create(page, theme, summary, () -> "上一页", previous, () -> "下一页", next);
+    }
+
+    /** 标准分页按钮共用尺寸、图标和命令，只由调用方提供可追踪名称。 */
+    public static SceneNode create(
+            ScenePageContext page, ReadableSignal<SceneTheme> theme, ReadableSignal<String> summary,
+            ReadableSignal<String> previousText, SceneCommand previous,
+            ReadableSignal<String> nextText, SceneCommand next) {
         Objects.requireNonNull(page).domain().checkWrite();
         Objects.requireNonNull(summary);
         return create(
                 page,
                 theme,
                 summary,
-                button(page, theme, SceneIconButton.Symbol.CHEVRON_LEFT, "上一页", previous),
-                button(page, theme, SceneIconButton.Symbol.CHEVRON_RIGHT, "下一页", next));
+                button(page, theme, SceneIconButton.Symbol.CHEVRON_LEFT, previousText, previous),
+                button(page, theme, SceneIconButton.Symbol.CHEVRON_RIGHT, nextText, next));
     }
 
     public static SceneNode create(
@@ -48,10 +56,10 @@ public final class ScenePagination {
             ScenePageContext page,
             ReadableSignal<SceneTheme> theme,
             SceneIconButton.Symbol icon,
-            String name,
+            ReadableSignal<String> name,
             SceneCommand command) {
         return SceneIconButton.create(
-                        page, icon, () -> name, theme, Objects.requireNonNull(command))
+                        page, icon, Objects.requireNonNull(name), theme, Objects.requireNonNull(command))
                 .bind(
                         NodeBinding.value(
                                 theme,

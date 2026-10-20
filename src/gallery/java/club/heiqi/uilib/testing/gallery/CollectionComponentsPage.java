@@ -13,7 +13,7 @@ import java.util.List;
 final class CollectionComponentsPage {
     private CollectionComponentsPage() {}
 
-    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back) {
+    static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme, Runnable back, GalleryCompositeLabels labels) {
         ComponentExamples e =
                 new ComponentExamples(p, theme, "集合与主从", "分页、稳定键虚拟列表和主从区域组合，业务数据与选中值保持独立。", back);
         Signal<Integer> index = p.domain().signal(0);
@@ -50,9 +50,11 @@ final class CollectionComponentsPage {
                                         p,
                                         theme,
                                         () -> "第 " + (index.get() + 1) + " 页 / 共 4 页",
+                                        labels.previousPage,
                                         SceneCommand.of(
                                                 () -> index.get() > 0,
                                                 () -> index.set(index.get() - 1)),
+                                        labels.nextPage,
                                         SceneCommand.of(
                                                 () -> index.get() < 3,
                                                 () -> index.set(index.get() + 1))));
@@ -102,7 +104,9 @@ final class CollectionComponentsPage {
                         p,
                         theme,
                         () -> "游标页 " + (index.get() + 1),
+                        labels.previousPage,
                         SceneCommand.of(() -> index.get() > 0, () -> index.set(index.get() - 1)),
+                        labels.nextPage,
                         SceneCommand.of(() -> index.get() < 3, () -> index.set(index.get() + 1))));
         return e.root;
     }

@@ -4,6 +4,7 @@ import club.heiqi.uilib.ui.scene.input.SceneKey;
 import club.heiqi.uilib.ui.scene.input.SceneShortcut;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
@@ -24,7 +25,12 @@ public final class MailboxPage {
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme,
             ReadableSignal<ThemeMode> mode, Runnable onBack, Runnable onThemePreview) {
         MailboxModel model=new MailboxModel(p.domain(),MailSamples.showcase());
-        return create(p,theme,mode,model,true,onBack,onThemePreview).own(model);
+        return create(p,theme,mode,model,true,onBack,onThemePreview,GalleryCompositeLabels.defaults()).own(model);
+    }
+    public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> theme,
+            ReadableSignal<ThemeMode> mode, Runnable onBack, Runnable onThemePreview, GalleryCompositeLabels labels) {
+        MailboxModel model=new MailboxModel(p.domain(),MailSamples.showcase());
+        return create(p,theme,mode,model,true,onBack,onThemePreview,labels).own(model);
     }
     /** 外部模型由调用方拥有，页面不关闭共享业务状态。 */
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model) {
@@ -35,18 +41,18 @@ public final class MailboxPage {
     }
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base,
             ReadableSignal<ThemeMode> mode, MailboxModel model, boolean paged) {
-        return create(p,base,mode,model,paged,null,null);
+        return create(p,base,mode,model,paged,null,null,GalleryCompositeLabels.defaults());
     }
     private static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base,
-            ReadableSignal<ThemeMode> mode, MailboxModel model, boolean paged, Runnable onBack, Runnable onThemePreview) {
+            ReadableSignal<ThemeMode> mode, MailboxModel model, boolean paged, Runnable onBack, Runnable onThemePreview, GalleryCompositeLabels labels) {
         MailViewState view=new MailViewState(p,base,mode,model.reading,onBack!=null);
         SceneNode root=new SceneNode().size(Size.fill(1),Size.fill(1)).own(view);
         root.bind(NodeBinding.value(view.palette,(n,colors) -> n.background(colors.canvas)));
-        MailSearch.View search=MailSearch.create(p,view.theme,view.palette,model);
+        MailSearch.View search=MailSearch.create(p,view.theme,view.palette,model,labels);
         root.bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE,
                 SceneShortcut.primary(SceneKey.F,search.focus)));
         root.add(MailChrome.header(p,view,mode,search.node,onBack,onThemePreview));
-        root.add(MailBody.create(view,MailChrome.navigation(p,view,model),MailWorkspace.create(p,view,model,paged)));
+        root.add(MailBody.create(view,MailChrome.navigation(p,view,model),MailWorkspace.create(p,view,model,paged,labels)));
         // 稳定反馈槽由声明表达，不因收取/归档推动列表视口。
         SceneNode feedback=MailStyle.surface(view.theme,() -> 0,0,false).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(1),Size.natural()).padding(4);

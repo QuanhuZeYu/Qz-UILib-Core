@@ -13,7 +13,7 @@ public final class UiFontSources {
     /** 显式字族/候选保持；默认UI声明采用同一随包字族，不写入应用配置。 */
     public static club.heiqi.uilib.ui.scene.text.TextStyle style(club.heiqi.uilib.ui.scene.text.TextStyle base){
         if(base.candidates()!=null||!"default".equals(base.font))return base;
-        return new club.heiqi.uilib.ui.scene.text.TextStyle("uilib-ui",base.logicalEm,base.color,SANS,
+        return new club.heiqi.uilib.ui.scene.text.TextStyle("uilib-ui",base.logicalEm,base.color,null,
                 base.effects,base.decoration,base.fontStyle,base.baselineShift,base.letterSpacing,
                 base.highlightColor,base.defaultHighlightColor,base.script);
     }

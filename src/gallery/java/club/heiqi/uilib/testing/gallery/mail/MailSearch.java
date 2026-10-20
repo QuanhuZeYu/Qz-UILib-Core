@@ -2,6 +2,7 @@ package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
 import club.heiqi.uilib.ui.scene.control.SceneCommand;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
@@ -30,7 +31,7 @@ final class MailSearch {
             ScenePageContext p,
             ReadableSignal<SceneTheme> theme,
             ReadableSignal<MailPalette> palette,
-            MailboxModel model) {
+            MailboxModel model, GalleryCompositeLabels labels) {
         SceneEditState query = new SceneEditState(p.domain(), model.query.get());
         Owner scope = p.domain().owner();
         String[] lastQuery = {model.query.get()};
@@ -56,6 +57,7 @@ final class MailSearch {
                         },
                         SceneTextField.SubmitPolicy.INPUT,
                         () -> "搜索邮件",
+                        labels.clearSearch,
                         () -> {
                             query.reset("");
                             model.setQuery("");

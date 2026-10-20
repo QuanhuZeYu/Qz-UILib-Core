@@ -14,6 +14,19 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
+import club.heiqi.uilib.ui.scene.edit.SceneEditState;
+import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.scene.control.SceneSearchField;
+import club.heiqi.uilib.ui.scene.control.SceneTextField;
+import club.heiqi.uilib.ui.scene.control.ScenePagination;
+import club.heiqi.uilib.ui.scene.control.SceneCommand;
+import club.heiqi.uilib.ui.scene.control.SceneChoiceDialog;
+import club.heiqi.uilib.ui.scene.control.SceneDialog;
+import club.heiqi.uilib.ui.scene.text.font.FontTextService;
+import club.heiqi.uilib.ui.scene.text.font.FontSource;
+import java.util.Collections;
+import java.io.ByteArrayInputStream;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -37,9 +50,70 @@ public final class LocalizationResourceScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("真实classpath UTF8转义数值格式和目录顺序覆盖，仅加载当前语言", this::classpathAndOrder);
         scenario("真实目录修改同语言重载，同一页面自然布局及独立域自动更新", this::directoryPage);
+        scenario("标准搜索分页与选择按钮随语言切换及重载且草稿保留", this::compositeLabels);
         scenario("Flow重入及消费者失败保留新事实，关闭保留绑定快照并拒绝新操作", this::reentrantAndClosed);
         scenario("外部旧通知排队与本域新选择交错，排空后不倒退", this::queuedDelivery);
         scenario("缺文件非法转义空键及读取失败不发布半表，输入始终关闭", this::loadingFailures);
+    }
+
+    private void compositeLabels() throws Exception {
+        String[] suffix = {""};
+        LocalizationFlow flow = own(new LocalizationFlow("en_US", Locale.ROOT, language -> {
+            boolean chinese = "zh_CN".equals(language);
+            String values = "search.clear=" + (chinese ? "清空查询" : "Clear query") + suffix[0]
+                    + "\nchoice.cancel=" + (chinese ? "取消本次选择" : "Cancel choice") + suffix[0]
+                    + "\npagination.previous=" + (chinese ? "前一页" : "Previous page") + suffix[0]
+                    + "\npagination.next=" + (chinese ? "后一页" : "Next page") + suffix[0] + "\n";
+            return new ByteArrayInputStream(values.getBytes(StandardCharsets.UTF_8));
+        }));
+        ReactiveDomain domain = ReactiveDomain.direct();
+        LocalizationScenario.Host host = new LocalizationScenario.Host();
+        host.software.width = 900; host.software.height = 600;
+        FontTextService text = own(new FontTextService(
+                Collections.singletonList(FontSource.fromResource(
+                        "composite-labels", 1, "assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf", false)),
+                new CoreFontEngineScenario.ContractEngine()));
+        SceneEditState[] draft = new SceneEditState[1];
+        Signal<Boolean>[] open = new Signal[1];
+        SceneSearchField.View[] search = new SceneSearchField.View[1];
+        ScenePageSession page = ScenePageSession.open(domain, host, text, ctx -> {
+            GalleryCompositeLabels labels =
+                    GalleryCompositeLabels.from(ctx.localization(flow));
+            draft[0] = new SceneEditState(domain, "保留草稿");
+            open[0] = domain.signal(false);
+            search[0] = SceneSearchField.create(ctx, draft[0],
+                    () -> SceneTheme.light(), submission -> {}, SceneTextField.SubmitPolicy.CONFIRM,
+                    () -> "查找", labels.clearSearch, () -> draft[0].reset(""));
+            SceneNode pages = ScenePagination.create(ctx, () -> SceneTheme.light(),
+                    () -> "1 / 2", labels.previousPage, SceneCommand.of(() -> true, () -> {}),
+                    labels.nextPage, SceneCommand.of(() -> true, () -> {}));
+            SceneNode choice = SceneChoiceDialog.<String>create(ctx, () -> SceneTheme.light(), open[0],
+                    () -> new SceneDialog.Options("选择", 400, 300),
+                    Collections::emptyList, () -> null, value -> {}, labels.cancelChoice, () -> open[0].set(false));
+            ctx.mountOwned(new SceneNode().size(Size.fill(1), Size.fill(1)).add(search[0].node).add(pages).add(choice));
+        });
+        onClose(page::close); page.frame();
+        domain.execute(() -> require(hasName(page, "Clear query") && hasName(page, "Previous page")
+                && hasName(page, "Next page"), "标准搜索或分页未消费语言来源"));
+        flow.select("zh_CN"); page.frame();
+        domain.execute(() -> {
+            require(hasName(page, "清空查询") && hasName(page, "前一页") && hasName(page, "后一页")
+                    && "保留草稿".equals(draft[0].snapshot().get().text), "语言切换未更新标准名称或丢弃编辑草稿");
+            open[0].set(true);
+        }); page.frame();
+        domain.execute(() -> require(hasName(page, "取消本次选择"), "选择对话框未消费动态取消名称"));
+        suffix[0] = " · 新资料"; flow.reload(); page.frame();
+        domain.execute(() -> {
+            require(hasName(page, "取消本次选择 · 新资料"), "同语言重载未更新已打开的标准取消按钮");
+            open[0].set(false);
+        }); page.frame();
+        domain.execute(() -> require(hasName(page, "清空查询 · 新资料") && hasName(page, "前一页 · 新资料")
+                && hasName(page, "后一页 · 新资料") && "保留草稿".equals(draft[0].snapshot().get().text),
+                "同语言重载未更新搜索分页或重新创建了草稿"));
+    }
+
+    private static boolean hasName(ScenePageSession page, String name) {
+        return page.pipeline().current().semantics.entries.stream().anyMatch(entry -> name.equals(entry.values.name));
     }
 
     private Path directory() throws IOException {

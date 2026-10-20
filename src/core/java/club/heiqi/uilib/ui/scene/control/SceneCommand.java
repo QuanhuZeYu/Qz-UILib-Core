@@ -20,6 +20,16 @@ public final class SceneCommand {
 
     public ReadableSignal<Boolean> executable() { return executable; }
 
+    /** 组合获准后的内部收尾；当前条件只由组合命令检查一次，收尾后直接执行原动作。
+     * 条件拒绝时两者均不执行；收尾或业务失败原样传播。 */
+    public SceneCommand beforeExecute(Runnable preparation) {
+        Objects.requireNonNull(preparation, "preparation");
+        return new SceneCommand(executable, () -> {
+            preparation.run();
+            action.run();
+        });
+    }
+
     /** 尝试时读取当前条件，不能把上一帧enabled当成执行许可；业务失败原样传播。 */
     public boolean tryExecute() {
         if (!executable.get()) return false;

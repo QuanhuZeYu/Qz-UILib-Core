@@ -1,6 +1,7 @@
 package club.heiqi.uilib.testing.gallery.mail;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
+import club.heiqi.uilib.testing.gallery.GalleryCompositeLabels;
 import club.heiqi.uilib.ui.scene.control.SceneCheckBox;
 import club.heiqi.uilib.ui.scene.control.SceneIconButton;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
@@ -18,7 +19,7 @@ final class MailToolbar {
             ReadableSignal<SceneTheme> base,
             MailboxModel model,
             ReadableSignal<Boolean> wide,
-            Runnable receive) {
+            Runnable receive, GalleryCompositeLabels labels) {
         ReadableSignal<SceneTheme> theme =
                 () ->
                         base.get()
@@ -127,8 +128,10 @@ final class MailToolbar {
                                 p,
                                 theme,
                                 () -> range(model),
+                                labels.previousPage,
                                 club.heiqi.uilib.ui.scene.control.SceneCommand.of(
                                         () -> model.pageIndex.get() > 0, () -> model.movePage(-1)),
+                                labels.nextPage,
                                 club.heiqi.uilib.ui.scene.control.SceneCommand.of(
                                         () ->
                                                 (model.pageIndex.get() + 1) * model.pageSize.get()

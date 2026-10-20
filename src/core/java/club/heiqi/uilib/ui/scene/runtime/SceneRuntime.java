@@ -1069,6 +1069,20 @@ public final class SceneRuntime implements AutoCloseable {
         return new SceneLogicalNavigation(this, java.util.Collections.singletonList(boundary), from, backward, false);
     }
 
+    /** 准备稳定根集合所属子树的方向目标，不循环；游标由调用方的本次导航拥有。
+     * 使用当批world几何；已先行搜索的起点所属内层边界不会被外层重新进入。 */
+    public club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.DirectionalCursor beginDirectionalTraversal(
+            List<SceneNode> roots, SceneNode from, club.heiqi.uilib.ui.scene.input.SceneNavigationEvent direction, LayoutBox origin) {
+        domain.checkWrite(); checkAlive();
+        for (SceneNode root : Objects.requireNonNull(roots, "roots"))
+            if (Objects.requireNonNull(root, "root").runtime() != this)
+                throw new IllegalArgumentException("焦点子树必须已挂载到当前runtime");
+        if (!Objects.requireNonNull(direction, "direction").directional())
+            throw new IllegalArgumentException("需要四方向导航");
+        return new SceneSpatialNavigation(this, roots, captureMount(Objects.requireNonNull(from, "from")),
+                direction, Objects.requireNonNull(origin, "origin"));
+    }
+
     boolean dispatchScopeNavigation(SceneNode node, boolean backward) {
         domain.checkWrite(); command();
         if (node == null || !interactive(node) || node.control() == null) return false;

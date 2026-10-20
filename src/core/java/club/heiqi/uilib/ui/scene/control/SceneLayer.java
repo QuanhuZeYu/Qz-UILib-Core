@@ -20,7 +20,14 @@ import java.util.Objects;
 
 /** 直属逻辑父节点是来源；核心协调所属层位置、裁剪与呈现顺序。 */
 public final class SceneLayer {
-    public enum Participation { INTERACTIVE, PASSIVE }
+    public enum Participation {
+        /** 层内沿标准规则参与，几何命中构成滚轮边界。 */
+        INTERACTIVE,
+        /** 仅实际输入目标参与；没有对应目标的正文与留白透传后台。 */
+        TARGETS_ONLY,
+        /** 整个分支只绘制，不参与输入。 */
+        PASSIVE
+    }
     public static final class Policy {
         public final int gap;
         public final Participation participation;

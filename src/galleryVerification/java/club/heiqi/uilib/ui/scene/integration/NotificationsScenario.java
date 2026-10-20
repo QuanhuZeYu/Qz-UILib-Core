@@ -27,20 +27,20 @@ public final class NotificationsScenario extends TestApplication {
         Signal<String> content;
         SceneNode button, root;
         club.heiqi.uilib.ui.scene.runtime.MountHandle mount;
-        int clicks, calls;
+        int clicks, calls, scrolls;
         Fixture() {
             host.width = 900; host.height = 600;
             page = ScenePageSession.open(domain, host, text, ctx -> {
                 theme = domain.signal(SceneAppearance.theme(false));
                 options = domain.signal(new SceneNotifications.Options(SceneNotifications.Position.BOTTOM_END));
                 content = domain.signal("最初正文");
-                toast = SceneNotifications.create(ctx, theme, SceneNotifications.Mode.TOAST, 2,
-                        () -> new SceneNotifications.Options(SceneNotifications.Position.TOP_START, 15, 0, .5f, false), () -> "关闭");
+                toast = SceneNotifications.createToast(ctx, theme, 2,
+                        () -> new SceneNotifications.Options(SceneNotifications.Position.TOP_START, 15, 0, .5f, false));
                 notices = SceneNotifications.create(ctx, theme, SceneNotifications.Mode.NOTIFICATION, 2,
                         options, () -> "关闭");
                 button = SceneButton.create(ctx, () -> "后台按钮", theme, () -> clicks++)
                         .size(Size.fixed(200), Size.fixed(80));
-                root = new SceneNode().size(Size.fill(1), Size.fill(1))
+                root = new SceneNode().size(Size.fill(1), Size.fill(1)).onScroll(delta -> scrolls++)
                         .add(button).add(toast.node()).add(notices.node());
                 mount = ctx.mount(root);
             });
@@ -125,6 +125,24 @@ public final class NotificationsScenario extends TestApplication {
                 require(fallback[0] == 1, "纯提示消费ESC");
             }
         });
+        scenario("通知正文与留白滚轮透传且关闭按钮仍可用", () -> {
+            try (Fixture f = new Fixture()) {
+                SceneNotifications.Handle[] handle = {null};
+                f.domain.execute(() -> handle[0] = f.show(f.notices, "滚轮通知", 0)); f.page.frame();
+                f.host.frameTime += 200_000_000L; f.page.frame();
+                LayoutBox[] body = {null};
+                f.domain.execute(() -> f.page.pipeline().current().geometry.ordered().stream()
+                        .filter(e -> "最初正文".equals(e.node.text())).findFirst().ifPresent(e -> body[0] = e.box));
+                require(body[0] != null, "通知正文没有进入正式几何");
+                f.page.pointer(ScenePointerEvent.scroll(body[0].x + 1, body[0].y + 1, 32)); f.page.frame();
+                require(f.scrolls == 1, "通知正文吞掉后台滚轮");
+                LayoutBox layer = f.box(f.notices.node());
+                f.page.pointer(ScenePointerEvent.scroll(layer.x + 2, layer.y + 2, 32)); f.page.frame();
+                require(f.scrolls == 2, "通知留白吞掉后台滚轮");
+                f.clickText("关闭");
+                f.domain.execute(() -> require(!handle[0].isOpen(), "局部参与使关闭按钮失去输入资格"));
+            }
+        });
         scenario("期限独立、正文主题更新不重启且归零后停止", () -> {
             try (Fixture f = new Fixture()) {
                 SceneNotifications.Handle[] timed = new SceneNotifications.Handle[2];
@@ -146,7 +164,8 @@ public final class NotificationsScenario extends TestApplication {
                 SceneNotifications.Handle[] handle = {null}; Object[] focus = {null};
                 f.domain.execute(() -> { focus[0] = f.page.runtime().focusRouter().focused().get();
                     handle[0] = f.notices.show(() -> new SceneNotice.Message(SceneNotice.Kind.SUCCESS, "归档完成", "可以撤销"), 0,
-                            () -> "撤销", SceneCommand.of(() -> true, () -> {
+                            // 关闭会使 guard 失效；获准执行后仍须先撤下再执行一次。
+                            () -> "撤销", SceneCommand.of(() -> handle[0] != null && handle[0].isOpen(), () -> {
                                 require(!handle[0].isOpen(), "业务动作执行时通知仍活跃"); f.calls++;
                             })); }); f.page.frame();
                 f.domain.execute(() -> require(f.page.runtime().focusRouter().focused().get() == focus[0]

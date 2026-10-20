@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /**
- * 实际字体字节的只读资源代际。内置资源首次使用才加载；加载一次后保留完整字节快照。
+ * 实际字体字节的只读资源代际。资源 owner 在 worker 显式 prepare 后发布；批处理可同步准备。
  * 旧计划的 source 不随重载变化；创建新代际时必须创建新 source。系统文件在选择时取快照。
  * 脚本和彩色声明仅作来源提示，匹配资格由实际 FontFace 的布局/呈现事实及完整范围整形决定。
  * 字族成员共享不可变字节；不从 cmap 或“没有 .notdef”推导连接能力。
@@ -196,8 +196,24 @@ public final class FontSource {
         scripts = owner.scripts;
         this.faceIndex = faceIndex;
         byteOwner = owner;
+        if (faceIndex == owner.faceIndex) metadata = owner.metadata;
         this.axes = Collections.unmodifiableMap(new LinkedHashMap<String, Float>(axes));
         actualStyle = actual;
+    }
+
+    /** 只准备不可变字节、摘要和元数据，不取得 native 会话或 UI 所有权。 */
+    public FontSource prepare() {
+        snapshot();
+        metadata();
+        if (members != null) for (FontSource member : members) member.prepare();
+        return this;
+    }
+
+    /** UI 入口只消费准备事实；检查不会触发开流、摘要或解析。 */
+    public boolean isPrepared() {
+        if (!isLoaded() || metadata == null) return false;
+        if (members != null) for (FontSource member : members) if (!member.isPrepared()) return false;
+        return true;
     }
 
     public FontMetadata metadata() {

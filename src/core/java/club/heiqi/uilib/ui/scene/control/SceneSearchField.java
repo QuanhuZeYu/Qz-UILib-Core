@@ -33,7 +33,15 @@ public final class SceneSearchField {
             SceneTextField.SubmitPolicy policy,
             ReadableSignal<String> placeholder,
             Runnable clear) {
-        return create(page, state, theme, submit, policy, placeholder, clear, true);
+        return create(page, state, theme, submit, policy, placeholder, () -> "清空搜索", clear);
+    }
+
+    /** 清空按钮文案沿调用方语言信号更新，不影响独立编辑草稿。 */
+    public static View create(
+            ScenePageContext page, SceneEditState state, ReadableSignal<SceneTheme> theme,
+            Consumer<SceneEditState.Submission> submit, SceneTextField.SubmitPolicy policy,
+            ReadableSignal<String> placeholder, ReadableSignal<String> clearText, Runnable clear) {
+        return create(page, state, theme, submit, policy, placeholder, clearText, clear, true);
     }
 
     /** 调用者可为搜索提供应用专属表面，输入与清空仍使用同一正式组合。 */
@@ -45,7 +53,15 @@ public final class SceneSearchField {
             SceneTextField.SubmitPolicy policy,
             ReadableSignal<String> placeholder,
             Runnable clear) {
-        return create(page, state, theme, submit, policy, placeholder, clear, false);
+        return content(page, state, theme, submit, policy, placeholder, () -> "清空搜索", clear);
+    }
+
+    /** 无外框入口与标准入口共用清空动作及动态文案。 */
+    public static View content(
+            ScenePageContext page, SceneEditState state, ReadableSignal<SceneTheme> theme,
+            Consumer<SceneEditState.Submission> submit, SceneTextField.SubmitPolicy policy,
+            ReadableSignal<String> placeholder, ReadableSignal<String> clearText, Runnable clear) {
+        return create(page, state, theme, submit, policy, placeholder, clearText, clear, false);
     }
 
     private static View create(
@@ -55,10 +71,12 @@ public final class SceneSearchField {
             Consumer<SceneEditState.Submission> submit,
             SceneTextField.SubmitPolicy policy,
             ReadableSignal<String> placeholder,
+            ReadableSignal<String> clearText,
             Runnable clear,
             boolean framed) {
         Objects.requireNonNull(page).domain().checkWrite();
         Objects.requireNonNull(clear);
+        Objects.requireNonNull(clearText);
         SceneAppearance style = new SceneAppearance(page, theme);
         SceneNode editor =
                 SceneTextField.create(
@@ -93,7 +111,7 @@ public final class SceneSearchField {
         row.add(editor);
         row.add(
                 SceneIconButton.create(
-                                page, SceneIconButton.Symbol.CLOSE, () -> "清空搜索", theme, clear)
+                                page, SceneIconButton.Symbol.CLOSE, clearText, theme, clear)
                         .bind(
                                 NodeBinding.value(
                                         () -> !state.text().get().isEmpty(), SceneNode::visible)));

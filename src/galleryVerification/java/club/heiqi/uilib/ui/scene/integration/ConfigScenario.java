@@ -12,12 +12,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.config.ConfigCodecs;
 import club.heiqi.uilib.ui.config.ConfigKey;
 import club.heiqi.uilib.ui.config.ConfigSchema;
 import club.heiqi.uilib.ui.config.ConfigSession;
+import club.heiqi.uilib.ui.config.ConfigDocument;
 import club.heiqi.uilib.ui.reactive.Computed;
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
@@ -34,11 +39,60 @@ public final class ConfigScenario extends TestApplication {
 
     @Override
     protected void runTests() throws Exception {
+        scenario("纯文档迁移快照与真实文件发布", this::documentSnapshots);
         scenario("默认空值与真实UTF8往返", this::filesAndValues);
         scenario("批次通知与释放", this::batchAndLifecycle);
         scenario("非法输入定位且不半发布", this::invalidInputs);
         scenario("观察者失败仍完成批次失效", this::observerFailure);
         scenario("纯派生和只读阶段拒绝保存且不触碰文件", this::pureSaveCommands);
+    }
+
+    private void documentSnapshots() throws Exception {
+        Path file = Files.createTempFile("uilib-config-document-", ".yaml");
+        onClose(() -> Files.deleteIfExists(file));
+        ConfigDocument original = ConfigDocument.read(SCHEMA,
+                new StringReader("# 用户标题说明\ntitle: 文件原值 # 行尾说明\nenabled: true\nfont: {candidates: []}\n"), "文档输入");
+        List<String> candidates = new ArrayList<>(Arrays.asList("builtin:迁移", "file:C:/字体.ttf"));
+        Map<ConfigKey<?>, Object> updates = new LinkedHashMap<>();
+        updates.put(TITLE, "迁移后值");
+        updates.put(CANDIDATES, candidates);
+        ConfigDocument captured = original.withAll(updates);
+        candidates.clear();
+        require(original.get(TITLE).equals("文件原值") && original.get(CANDIDATES).isEmpty(), "文档迁移修改了原快照");
+        require(captured.get(CANDIDATES).equals(Arrays.asList("builtin:迁移", "file:C:/字体.ttf")), "快照未深冻结调用者集合");
+        updates.put(TITLE, "拒绝");
+        try { captured.withAll(updates); throw new AssertionError("纯文档迁移跳过声明校验"); }
+        catch (club.heiqi.uilib.ui.config.ConfigException expected) {}
+        require(captured.get(TITLE).equals("迁移后值"), "拒绝迁移改变已有文档");
+        CompletableFuture.runAsync(() -> {
+            try { captured.write(file); }
+            catch (IOException failure) { throw new UncheckedIOException(failure); }
+        }).get(10, TimeUnit.SECONDS);
+        ConfigDocument restored = ConfigDocument.read(SCHEMA, file);
+        require(restored.schema() == SCHEMA && restored.get(TITLE).equals("迁移后值")
+                && restored.get(CANDIDATES).equals(Arrays.asList("builtin:迁移", "file:C:/字体.ttf")), "纯文档文件往返丢失迁移值");
+        String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+        require(text.contains("用户标题说明") && text.contains("行尾说明"), "纯文档保存丢失用户注释");
+        StringWriter first = new StringWriter(), second = new StringWriter();
+        CompletableFuture<Void> a = CompletableFuture.runAsync(() -> {
+            try { captured.write(first); } catch (IOException failure) { throw new UncheckedIOException(failure); }
+        });
+        CompletableFuture<Void> b = CompletableFuture.runAsync(() -> {
+            try { original.write(second); } catch (IOException failure) { throw new UncheckedIOException(failure); }
+        });
+        CompletableFuture.allOf(a, b).get(10, TimeUnit.SECONDS);
+        require(ConfigDocument.read(SCHEMA, new StringReader(first.toString()), "捕获文档").get(TITLE).equals("迁移后值")
+                && ConfigDocument.read(SCHEMA, new StringReader(second.toString()), "原文档").get(TITLE).equals("文件原值"),
+                "并发编码污染共享文档表示");
+        ReactiveDomain domain = ReactiveDomain.direct();
+        ConfigSession config = session(domain);
+        operation(domain, () -> {
+            config.publish(restored);
+            require(config.get(TITLE).equals("迁移后值") && config.get(CANDIDATES).equals(restored.get(CANDIDATES)), "已校验文档未全量发布");
+        });
+        ConfigDocument legacy = ConfigDocument.readProperties(SCHEMA,
+                new StringReader("title=旧输入\nenabled=false\nfont.candidates.count=0\n"), "旧文档");
+        require(!legacy.get(ENABLED) && legacy.get(TITLE).equals("旧输入") && legacy.get(CANDIDATES).isEmpty(), "无域旧格式迁移没有保持有效值");
     }
 
     private void pureSaveCommands() throws Exception {

@@ -14,11 +14,12 @@ import java.util.Map;
 import java.util.Set;
 
 /** 唯一焦点路由拥有的一次空间搜索；复合边界END继续候选，CANCELLED结束原联系。 */
-final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
+final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor, SceneFocusTraversal.DirectionalCursor {
     private final SceneRuntime runtime;
     private final List<SceneNode> roots, enclosing = new ArrayList<>();
     private final MountHandle source;
     private final SceneNavigationEvent direction;
+    private final LayoutBox fallbackOrigin;
     private final Set<SceneNode> exhausted = new HashSet<>(), ordinary = new HashSet<>();
     private int inside;
     private SceneFocusTraversal.DirectionalCursor cursor;
@@ -26,9 +27,16 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
     private boolean closed;
 
     SceneSpatialNavigation(SceneRuntime runtime, List<SceneNode> roots, MountHandle source, SceneNavigationEvent direction) {
-        this.runtime = runtime; this.roots = new ArrayList<>(roots); this.source = source; this.direction = direction;
+        this(runtime, roots, source, direction, null);
         for (SceneNode node = source.node(); node != null; node = node.parent())
             if (traversal(node) != null) enclosing.add(node);
+    }
+
+    /** 所属子树沿同一搜索内核准备，含起点的内层边界已经由路由从近到远搜索。 */
+    SceneSpatialNavigation(SceneRuntime runtime, List<SceneNode> roots, MountHandle source,
+            SceneNavigationEvent direction, LayoutBox origin) {
+        this.runtime = runtime; this.roots = new ArrayList<>(roots); this.source = source; this.direction = direction;
+        fallbackOrigin = origin;
     }
 
     private SceneFocusTraversal traversal(SceneNode node) {
@@ -39,10 +47,16 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
         if (closed || !source.active() || !runtime.interactive(source.node())) return SceneFocusTraversal.Result.cancelled();
         SceneGeometryView geometry = runtime.navigationGeometry();
         if (geometry == null) return SceneFocusTraversal.Result.waiting();
+        return prepare(geometry);
+    }
+
+    @Override public SceneFocusTraversal.Result prepare(SceneGeometryView worldGeometry) {
+        if (closed || !source.active() || !runtime.interactive(source.node())) return SceneFocusTraversal.Result.cancelled();
+        SceneGeometryView geometry = worldGeometry.world();
         SceneGeometryView.Entry entry = geometry.get(source.node());
-        if (entry == null) return SceneFocusTraversal.Result.cancelled();
-        LayoutBox origin = entry.box;
-        while (true) {
+        LayoutBox origin = entry == null ? fallbackOrigin : entry.box;
+        if (origin == null) return SceneFocusTraversal.Result.cancelled();
+        while (!closed) {
             if (cursor != null) {
                 if (!boundary.active() || !runtime.interactive(boundary.node())) return SceneFocusTraversal.Result.cancelled();
                 SceneFocusTraversal.Result result = cursor.prepare(geometry);
@@ -72,6 +86,7 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
             if (candidates.get(next) == null) return SceneFocusTraversal.Result.ready(next);
             if (!begin(next, geometry, origin)) ordinary.add(next);
         }
+        return SceneFocusTraversal.Result.cancelled();
     }
 
     private boolean begin(SceneNode node, SceneGeometryView geometry, LayoutBox origin) {
@@ -86,9 +101,11 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
 
     private void collect(SceneNode node, Map<SceneNode, SceneFocusTraversal> result) {
         if (exhausted.contains(node) || !runtime.locallyInteractive(node)) return;
+        SceneFocusTraversal traversal = traversal(node);
+        // 最近所属边界已先行搜索；外层逐行准备不能再次进入同一内层或只看它的有限行。
+        if (traversal != null && !ordinary.contains(node) && contains(node, source.node())) return;
         boolean focusable = node != source.node() && node.focusable() && runtime.interactive(node);
         if (focusable) result.put(node, null);
-        SceneFocusTraversal traversal = traversal(node);
         if (traversal != null && !ordinary.contains(node)) {
             if (!focusable && runtime.interactive(node)) result.put(node, traversal);
         } else for (SceneNode child : node.children()) collect(child, result);
@@ -100,6 +117,7 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor {
     }
 
     @Override public void close() {
+        if (closed) return;
         closed = true;
         try { if (cursor != null) cursor.close(); }
         finally { cursor = null; boundary = null; roots.clear(); enclosing.clear(); exhausted.clear(); ordinary.clear(); }

@@ -21,18 +21,32 @@ import java.util.function.Consumer;
 public final class SceneFilePicker {
     public static final class Options {
         public final String filterName, extensions;
+        public final ReadableSignal<String> clearText, previousText, nextText;
 
         public Options() {
-            this("", "");
+            this("", "", () -> "清空搜索", () -> "上一页", () -> "下一页");
         }
 
-        private Options(String name, String extensions) {
+        private Options(String name, String extensions, ReadableSignal<String> clearText,
+                ReadableSignal<String> previousText, ReadableSignal<String> nextText) {
             this.filterName = Objects.requireNonNull(name);
             this.extensions = Objects.requireNonNull(extensions);
+            this.clearText = Objects.requireNonNull(clearText);
+            this.previousText = Objects.requireNonNull(previousText);
+            this.nextText = Objects.requireNonNull(nextText);
         }
 
         public Options filter(String name, String extensions) {
-            return new Options(name, extensions);
+            return new Options(name, extensions, clearText, previousText, nextText);
+        }
+
+        /** 搜索清空名称借用调用者来源，筛选设置继续保留该信号。 */
+        public Options clearText(ReadableSignal<String> text) {
+            return new Options(filterName, extensions, text, previousText, nextText);
+        }
+
+        public Options paginationText(ReadableSignal<String> previous, ReadableSignal<String> next) {
+            return new Options(filterName, extensions, clearText, previous, next);
         }
     }
 
@@ -175,7 +189,7 @@ public final class SceneFilePicker {
         SceneSearchField.View search = SceneSearchField.create(
                 context, selection.search, theme, selection::query,
                 SceneTextField.SubmitPolicy.CONFIRM,
-                () -> "按名称搜索", selection::clearQuery);
+                () -> "按名称搜索", options.clearText, selection::clearQuery);
         search.editor.bind(style.spacing(8, 0));
         SceneNode query = FilePickerStyle.row(0).bind(style.spacing(0, 4))
                 .add(search.node)
@@ -289,12 +303,13 @@ public final class SceneFilePicker {
     }
 
     private SceneNode footer(FilePickerStyle style) {
-        SceneNode previous = style.iconAction(SceneIconButton.Symbol.CHEVRON_LEFT, "上一页", () -> selection.turn(-1))
-                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.previous.get(), SceneNode::enabled));
-        SceneNode following = style.iconAction(SceneIconButton.Symbol.CHEVRON_RIGHT, "下一页", () -> selection.turn(1))
-                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.next.get(), SceneNode::enabled));
+        SceneCommand previous = SceneCommand.of(() -> !selection.busy.get() && selection.previous.get(),
+                () -> selection.turn(-1));
+        SceneCommand following = SceneCommand.of(() -> !selection.busy.get() && selection.next.get(),
+                () -> selection.turn(1));
         SceneNode pages = ScenePagination.create(context, theme,
-                () -> "第 " + (selection.page.get() + 1) + " 页", previous, following);
+                () -> "第 " + (selection.page.get() + 1) + " 页",
+                options.previousText, previous, options.nextText, following);
         SceneNode choose = style.action("选择文件", null, selection::confirm, FilePickerStyle.Role.PRIMARY)
                 .bind(NodeBinding.value(() -> !selection.busy.get(), SceneNode::enabled));
         SceneNode actions = FilePickerStyle.row(0).bind(style.spacing(0, 8)).size(Size.natural(), Size.natural())

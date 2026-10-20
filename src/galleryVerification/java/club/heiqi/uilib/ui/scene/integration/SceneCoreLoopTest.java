@@ -72,6 +72,7 @@ public final class SceneCoreLoopTest extends TestApplication {
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
         Signal<club.heiqi.uilib.ui.scene.control.SceneLayer.Policy>[] policy = new Signal[1];
         Signal<Integer>[] value = new Signal[1]; SceneNode[] layer = new SceneNode[1], button = new SceneNode[1];
+        int[] scrolls = {0};
         try (ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
             policy[0] = domain.signal(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(5,
                     club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.INTERACTIVE));
@@ -82,12 +83,20 @@ public final class SceneCoreLoopTest extends TestApplication {
             layer[0] = club.heiqi.uilib.ui.scene.control.SceneLayer.create(context, policy[0]).add(button[0]);
             SceneNode source = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(60),
                     club.heiqi.uilib.ui.scene.layout.Size.fixed(20)).add(layer[0]);
-            context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(80),
-                    club.heiqi.uilib.ui.scene.layout.Size.fixed(20)).clip(true).add(source));
+            context.mountOwned(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fill(1),
+                    club.heiqi.uilib.ui.scene.layout.Size.fill(1)).onScroll(delta -> scrolls[0]++)
+                    .add(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(80),
+                            club.heiqi.uilib.ui.scene.layout.Size.fixed(20)).clip(true).add(source)));
         })) {
             page.frame();
             page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 10, 30));
             page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.up(0, 10, 30)); page.frame();
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(10, 30, 32)); page.frame();
+            require(scrolls[0] == 0, "默认交互Layer丢失菜单沿用的滚轮边界");
+            domain.execute(() -> policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(5,
+                    club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.TARGETS_ONLY))); page.frame();
+            page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(10, 30, 32)); page.frame();
+            require(scrolls[0] == 1, "局部参与Layer没有将无目标滚轮透传后台");
             domain.execute(() -> { require(value[0].get() == 1, "成品Layer没有在来源clip外更新业务值");
                 policy[0].set(new club.heiqi.uilib.ui.scene.control.SceneLayer.Policy(8,
                         club.heiqi.uilib.ui.scene.control.SceneLayer.Participation.PASSIVE)); }); page.frame();

@@ -36,21 +36,23 @@ final class MediaPage {
     private final ReadableSignal<SceneTheme> theme;
     private final SceneAppearance style;
     private final MediaPlayback playback;
+    private final GalleryCompositeLabels labels;
 
     MediaPage(
             ScenePageContext page,
             GalleryEnvironment environment,
-            ReadableSignal<SceneTheme> theme) {
+            ReadableSignal<SceneTheme> theme, GalleryCompositeLabels labels) {
         this.page = page;
         this.environment = environment;
         this.theme = theme;
+        this.labels = labels;
         style = new SceneAppearance(page, theme);
         playback = new MediaPlayback(page.domain(), environment);
         page.own(playback);
     }
 
     SceneNode create(Runnable back) {
-        MediaCatalogView catalog = new MediaCatalogView(page, environment, playback, style, theme);
+        MediaCatalogView catalog = new MediaCatalogView(page, environment, playback, style, theme, labels);
         SceneNode root =
                 new SceneNode()
                         .control(new InputPump())
@@ -112,7 +114,8 @@ final class MediaPage {
                                                 page,
                                                 playback.pickerDirectory,
                                                 theme,
-                                                new SceneFilePicker.Options()
+                                                new SceneFilePicker.Options().clearText(labels.clearSearch)
+                                                        .paginationText(labels.previousPage, labels.nextPage)
                                                         .filter(
                                                                 "媒体文件",
                                                                 "mp4,mkv,mov,webm,avi,ts,m4v,mp3,wav,flac,ogg,m4a,aac"),

@@ -102,6 +102,24 @@ public final class ConfigSession {
     @SuppressWarnings("unchecked")
     private static <T> T checked(ConfigKey<T> key, Object value) { return key.checked((T) value); }
 
+    /** 声明可交给后台文档读取；声明及其 codec/validator 沿纯值合同使用。 */
+    public ConfigSchema schema() { domain.checkAccess(); return schema; }
+
+    /** 在所属域内捕获整份一致值；快照不再依赖本 session 的后续编辑。 */
+    public ConfigDocument snapshot() {
+        domain.checkAccess();
+        return new ConfigDocument(schema, document, values);
+    }
+
+    /** 后台已完成全部读取和校验；这里只在原域发布完整文档。 */
+    public void publish(ConfigDocument next) {
+        domain.checkWrite();
+        Objects.requireNonNull(next, "document");
+        if (!schema.keys().equals(next.schema().keys())) throw new IllegalArgumentException("配置文档声明与会话不一致");
+        document = next.representation();
+        publish(next.values());
+    }
+
     public void load(Path path) throws IOException {
         domain.checkWrite();
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -112,33 +130,11 @@ public final class ConfigSession {
     /** Reader 的关闭由调用者负责；缺失声明重置为声明默认值。 */
     public void load(Reader reader) throws IOException { load(reader, "<Reader>"); }
 
-    /** 可指定输入来源，供语法和字段诊断使用。 */
+    /** 可指定输入来源，供语法和字段诊断使用。同步入口保留域的纯求值保护。 */
     public void load(Reader reader, String source) throws IOException {
         domain.checkWrite();
         YamlDocument parsed = YamlDocument.read(Objects.requireNonNull(reader, "reader"), Objects.requireNonNull(source, "source"));
-        Map<ConfigKey<?>, Object> decoded = domain.readOnly(() -> {
-            try {
-                schema.checkTree(parsed.tree());
-                Map<ConfigKey<?>, Object> next = new LinkedHashMap<>();
-                for (ConfigKey<?> key : schema.keys()) next.put(key, decodeKey(parsed.tree(), key));
-                return next;
-            } catch (ConfigException failure) { throw parsed.locate(failure); }
-        });
-        // 注释属于文档表示；值完全相等时仍换入文档，不发业务通知。
-        document = parsed;
-        publish(decoded);
-    }
-
-    private <T> T decodeKey(Map<String, Object> tree, ConfigKey<T> key) {
-        Object branch = tree;
-        for (String segment : key.name().split("\\.")) {
-            Map<?, ?> map = (Map<?, ?>) branch;
-            if (!map.containsKey(segment)) return key.checked(key.defaultValue());
-            branch = map.get(segment);
-        }
-        try { return key.read(branch); }
-        catch (ConfigException failure) { throw failure; }
-        catch (RuntimeException failure) { throw new ConfigException(key.name(), failure.getMessage(), failure); }
+        publish(domain.readOnly(() -> ConfigDocument.decode(schema, parsed)));
     }
 
     /** 仅供宿主显式一次迁移旧格式。成功保存 YAML 后宿主以 YAML 为唯一来源。 */
@@ -153,12 +149,7 @@ public final class ConfigSession {
         domain.checkWrite();
         Properties input = new Properties();
         input.load(Objects.requireNonNull(reader, "reader"));
-        Map<ConfigKey<?>, Object> decoded = domain.readOnly(() -> {
-            try { return LegacyProperties.read(schema, input); }
-            catch (ConfigException failure) { throw new ConfigException(failure.path(), source + ": " + failure.getMessage(), failure); }
-        });
-        document = YamlDocument.empty();
-        publish(decoded);
+        publish(domain.readOnly(() -> ConfigDocument.decodeProperties(schema, input, source)));
     }
 
     private void publish(Map<ConfigKey<?>, Object> next) {
@@ -170,42 +161,13 @@ public final class ConfigSession {
 
     public void save(Path path) throws IOException {
         domain.checkWrite();
-        // 先完整编码成文本，避免 codec 错误在打开目标文件后才暴露。
-        java.io.StringWriter content = new java.io.StringWriter();
-        save(content);
-        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) { writer.write(content.toString()); }
+        String content = domain.readOnly(() -> snapshot().encode());
+        try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) { writer.write(content); }
     }
 
     /** Writer 保持打开；持久化只由显式调用触发。 */
     public void save(Writer writer) throws IOException {
         domain.checkWrite();
-        Objects.requireNonNull(writer, "writer");
-        java.io.StringWriter content = new java.io.StringWriter();
-        domain.readOnly(() -> {
-            Map<String, Object> tree = new LinkedHashMap<>();
-            Map<String, String> comments = new LinkedHashMap<>();
-            for (ConfigKey<?> key : schema.keys()) encodeKey(tree, comments, key);
-            document.write(tree, comments, content);
-            return null;
-        });
-        writer.write(content.toString());
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> void encodeKey(Map<String, Object> tree, Map<String, String> comments, ConfigKey<T> key) {
-        Object encoded;
-        try { encoded = key.codec().write(value(key)); }
-        catch (RuntimeException failure) { throw new ConfigException(key.name(), failure.getMessage(), failure); }
-        String[] path = key.name().split("\\.");
-        Map<String, Object> branch = tree;
-        for (int i = 0; i < path.length - 1; i++) {
-            Object child = branch.get(path[i]);
-            if (child == null) { child = new LinkedHashMap<String, Object>(); branch.put(path[i], child); }
-            branch = (Map<String, Object>) child;
-        }
-        branch.put(path[path.length - 1], encoded);
-        if (key.comment() != null) comments.put(key.name(), key.comment());
-        for (Map.Entry<String, String> description : key.codec().comments(value(key)).entrySet())
-            comments.put(ConfigCodecs.child(key.name(), description.getKey()), description.getValue());
+        Objects.requireNonNull(writer, "writer").write(domain.readOnly(() -> snapshot().encode()));
     }
 }

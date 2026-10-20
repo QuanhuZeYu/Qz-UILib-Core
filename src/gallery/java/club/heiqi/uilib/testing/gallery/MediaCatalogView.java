@@ -26,18 +26,20 @@ final class MediaCatalogView {
     private final MediaPlayback playback;
     private final SceneAppearance style;
     private final ReadableSignal<SceneTheme> theme;
+    private final GalleryCompositeLabels labels;
 
     MediaCatalogView(
             ScenePageContext page,
             GalleryEnvironment environment,
             MediaPlayback playback,
             SceneAppearance style,
-            ReadableSignal<SceneTheme> theme) {
+            ReadableSignal<SceneTheme> theme, GalleryCompositeLabels labels) {
         this.page = page;
         this.environment = environment;
         this.playback = playback;
         this.style = style;
         this.theme = theme;
+        this.labels = labels;
     }
 
     SceneNode details() {
@@ -162,6 +164,7 @@ final class MediaCatalogView {
                                     : result.quality;
                 },
                 playback::select,
+                labels.cancelChoice,
                 () -> playback.choosing.set(MediaPlayback.Choice.NONE));
     }
 

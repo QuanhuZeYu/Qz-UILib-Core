@@ -32,7 +32,7 @@ import org.yaml.snakeyaml.nodes.Tag;
 /** 内部 YAML 表示层：只 compose 节点，从不调用任意类型 constructor。
  * 业务值与节点分离；merge 按映射键或列表索引复用节点，值变化也保留原注释。 */
 final class YamlDocument {
-    private MappingNode root;
+    private final MappingNode root;
     private final String source;
     private final Map<String, Node> locations = new LinkedHashMap<>();
     private final Map<String, Object> tree;
@@ -152,12 +152,34 @@ final class YamlDocument {
         return negative ? number.negate() : number;
     }
     void write(Map<String, Object> values, Map<String, String> comments, Writer writer) {
-        root = (MappingNode) merge(root, values, "", comments);
+        // merge、语义比较及 SnakeYAML serializer 只接触本次副本，快照可跨线程共享。
+        YamlDocument output = new YamlDocument((MappingNode) copy(root), source);
+        Node merged = output.merge(output.root, values, "", comments);
         DumperOptions options = new DumperOptions();
         options.setProcessComments(true);
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setAllowUnicode(true);
-        new Yaml(options).serialize(root, writer);
+        new Yaml(options).serialize(merged, writer);
+    }
+    private static Node copy(Node node) {
+        Node result;
+        if (node instanceof MappingNode) {
+            List<NodeTuple> tuples = new ArrayList<>();
+            for (NodeTuple tuple : ((MappingNode) node).getValue())
+                tuples.add(new NodeTuple(copy(tuple.getKeyNode()), copy(tuple.getValueNode())));
+            result = new MappingNode(node.getTag(), tuples, ((MappingNode) node).getFlowStyle());
+        } else if (node instanceof SequenceNode) {
+            List<Node> children = new ArrayList<>();
+            for (Node child : ((SequenceNode) node).getValue()) children.add(copy(child));
+            result = new SequenceNode(node.getTag(), children, ((SequenceNode) node).getFlowStyle());
+        } else {
+            ScalarNode scalar = (ScalarNode) node;
+            result = new ScalarNode(node.getTag(), scalar.getValue(), null, null, scalar.getScalarStyle());
+        }
+        result.setBlockComments(node.getBlockComments() == null ? null : new ArrayList<>(node.getBlockComments()));
+        result.setInLineComments(node.getInLineComments() == null ? null : new ArrayList<>(node.getInLineComments()));
+        result.setEndComments(node.getEndComments() == null ? null : new ArrayList<>(node.getEndComments()));
+        return result;
     }
     private static MappingNode mapping() { return new MappingNode(Tag.MAP, new ArrayList<NodeTuple>(), DumperOptions.FlowStyle.BLOCK); }
     private static ScalarNode scalar(Tag tag, String value) { return new ScalarNode(tag, value, null, null, DumperOptions.ScalarStyle.PLAIN); }
