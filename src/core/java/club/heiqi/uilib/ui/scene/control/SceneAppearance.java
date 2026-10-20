@@ -364,27 +364,41 @@ public class SceneAppearance {
         return node;
     }
 
+    /**
+     * 字段外表面包含正文及底部滚动条。正式带框输入在声明期将装饰交给此表面，
+     * 保留原主题、动效和编辑节点的显式 style/padding；无框输入继续由现代外表面装饰。
+     */
     public SceneNode field(SceneNode editor) {
-        SceneNode scrollbar =
-                SceneScrollbar.create(
-                                page,
-                                SceneScrollViewport.of(page, editor, SceneNode.Axis.ROW),
-                                () ->
-                                        new SceneScrollbar.Options()
-                                                .dimensions(4, 24, 1)
-                                                .colors(0, colors.get().border, colors.get().muted),
-                                () -> colors.get().editorTheme())
-                        .size(Size.fill(1), Size.natural());
-        // 显式复用同一编辑视口，替代自动条；条位于字段底部，不覆盖路径文字。
-        Surface surface = new Surface(colors, Role.FIELD, editor, () -> false);
-        SceneNode node =
-                column(0)
-                        .size(Size.fill(1), Size.natural())
-                        .control(surface)
-                        .add(editor)
-                        .add(scrollbar);
+        SceneNode node = column(0).size(Size.fill(1), Size.natural()).add(editor);
+        SceneFieldPaint decoration = SceneFieldPaint.take(editor, node);
+        ReadableSignal<SceneTheme> fieldTheme = decoration == null ? () -> colors.get().source : decoration.theme();
+        // 显式条的挂载与原字段归属一致；move 后真实卸载，释放其对自动条的 claim。
+        node.add(row(0).size(Size.fill(1), Size.natural()).bind(NodeBinding.repeat(
+                () -> {
+                    page.runtime().interactionRevision().get();
+                    return SceneFieldPaint.contains(node, editor)
+                            ? java.util.Collections.singletonList(Boolean.TRUE)
+                            : java.util.Collections.emptyList();
+                }, value -> value, value -> {
+                    SceneNode scrollbar = SceneScrollbar.create(
+                            page, SceneScrollViewport.of(page, editor, SceneNode.Axis.ROW),
+                            () -> new SceneScrollbar.Options().dimensions(4, 24, 1)
+                                    .colors(0, colors.get().border, colors.get().muted),
+                            () -> colors.get().editorTheme()).size(Size.fill(1), Size.natural());
+                    // 同一视口的底条只占圆角内的安全宽度，不覆盖正文。
+                    return row(0).size(Size.fill(1), Size.natural())
+                            .add(fieldGutter(fieldTheme)).add(scrollbar).add(fieldGutter(fieldTheme));
+                })));
+        Surface surface = new Surface(colors, Role.FIELD, editor, () -> false, decoration);
+        node.control(surface);
         surface.install(node);
         return node;
+    }
+
+    private static SceneNode fieldGutter(ReadableSignal<SceneTheme> theme) {
+        return new SceneNode().size(Size.fixed(0), Size.fixed(0))
+                .bind(NodeBinding.value(theme, (node, value) ->
+                        node.size(Size.fixed(value.metrics(SceneControlMetrics.Kind.FIELD).radius), Size.fixed(0))));
     }
 
     public SceneNode line() {
@@ -444,24 +458,52 @@ public class SceneAppearance {
         private final SceneNode target;
         private final Role role;
         private final SceneControlMotion motion = new SceneControlMotion();
+        private final SceneFieldPaint decoration;
+        private final SceneFieldPaint.Frame fieldFrame;
+        private int fieldRadius;
 
         public Surface(
                 ReadableSignal<Palette> colors,
                 Role role,
                 SceneNode target,
                 ReadableSignal<Boolean> selected) {
+            this(colors, role, target, selected, null);
+        }
+
+        Surface(ReadableSignal<Palette> colors, Role role, SceneNode target,
+                ReadableSignal<Boolean> selected, SceneFieldPaint decoration) {
             this.colors = colors;
             this.role = role;
             this.target = target;
             this.selected = selected;
+            this.decoration = decoration;
+            fieldFrame = role == Role.FIELD && decoration == null ? new SceneFieldPaint.Frame() : null;
         }
 
         void install(SceneNode node) {
-            motion.install(node, () -> colors.get().source.feedbackMotion, this::fill);
+            if (fieldFrame != null)
+                node.bind(NodeBinding.value(colors, (self, value) -> fieldRadius = value.source.metrics(SceneControlMetrics.Kind.FIELD).radius));
+            if (decoration == null) motion.install(node, () -> colors.get().source.feedbackMotion, this::fill);
         }
 
         public List<ReadableSignal<?>> paintDependencies(SceneNode n) {
-            return Arrays.asList(colors, selected);
+            return decoration == null ? Arrays.asList(colors, selected) : Arrays.asList(colors, selected, decoration.theme());
+        }
+
+        private boolean focused() {
+            if (target == null || target.runtime() == null) return false;
+            // 只读编辑仍可定位/选择；外表面读取同一个逻辑焦点，不改变路由器的输入方式语义。
+            if (role == Role.FIELD && target.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
+                return target.runtime().focusRouter().focused().get() == target;
+            return target.runtime().focusRouter().focusVisible(target);
+        }
+
+        @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
+            if (decoration != null) decoration.prepare(node, geometry);
+            else if (fieldFrame != null && SceneFieldPaint.contains(node, target)) {
+                Palette p = colors.get();
+                fieldFrame.prepare(geometry.get(node), geometry, fieldRadius, motion.color(fill(node)), focused() ? p.muted : p.border);
+            }
         }
 
         private boolean enabled() {
@@ -496,7 +538,11 @@ public class SceneAppearance {
         }
 
         public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {
-            paint(n, geometry, paint, motion.color(fill(n)));
+            if (decoration != null) decoration.paint(n, paint);
+            else if (fieldFrame != null) {
+                if (SceneFieldPaint.contains(n, target)) fieldFrame.paint(paint);
+            }
+            else paint(n, geometry, paint, motion.color(fill(n)));
         }
 
         void paint(
@@ -504,10 +550,7 @@ public class SceneAppearance {
             SceneGeometryView.Entry e = geometry.get(n);
             if (e == null) return;
             Palette p = colors.get();
-            boolean focused =
-                    target != null
-                            && target.runtime() != null
-                            && target.runtime().focusRouter().focusVisible(target);
+            boolean focused = focused();
             int fill = animatedFill;
             int edge =
                     focused

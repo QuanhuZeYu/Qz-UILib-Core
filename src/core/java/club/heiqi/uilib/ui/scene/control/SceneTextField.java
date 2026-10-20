@@ -25,7 +25,6 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
-import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.toDisplay;
 import static club.heiqi.uilib.ui.scene.control.SceneEditCommands.fromDisplay;
 
@@ -88,24 +87,17 @@ public final class SceneTextField {
                         Objects.requireNonNull(onSubmit, "onSubmit"),
                         Objects.requireNonNull(policy,"policy"),Objects.requireNonNull(placeholder,"placeholder"),framed);
         SceneNode node = SceneEditBindings.create(control, state, theme, readOnly, TextPolicy.SINGLE_LINE);
-        if (framed) {
-            control.fillMotion.install(node, () -> theme.get().feedbackMotion,
-                    self -> SceneControlMotion.enabled(self) ? theme.get().panel : theme.get().disabled);
-            control.edgeMotion.install(node, () -> theme.get().feedbackMotion,
-                    self -> SceneControlMotion.enabled(self) && self.runtime() != null
-                            && self.runtime().focusRouter().focused().get() == self ? theme.get().focus : theme.get().button, "control.edge");
-        }
+        control.decoration.install(node);
         return node;
     }
 
-    private static final class Control implements SceneControl, SceneCompositionTarget {
+    private static final class Control implements SceneControl, SceneCompositionTarget, SceneFieldPaint.Source {
         private final SceneEditState state;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Boolean> readOnly;
         private final SceneEditCommands commands;
         private final ReadableSignal<String> placeholder;
-        private final boolean framed;
-        private final SceneControlMotion fillMotion = new SceneControlMotion(), edgeMotion = new SceneControlMotion();
+        private final SceneFieldPaint decoration;
         private final SceneEditRangePaint ranges = new SceneEditRangePaint(false);
         private TextLayout hint;
         private String hintValue;
@@ -129,12 +121,15 @@ public final class SceneTextField {
                 Consumer<Submission> onSubmit,
                 SubmitPolicy policy, ReadableSignal<String> placeholder, boolean framed) {
             this.state = state;
-            this.placeholder=placeholder;this.framed=framed;
+            this.placeholder = placeholder;
+            decoration = new SceneFieldPaint(theme, framed);
             this.theme = theme;
             this.readOnly = readOnly;
             this.commands = new SceneEditCommands(state, readOnly, onSubmit, policy);
             viewChanged = state.domain().signal(false);
         }
+
+        @Override public SceneFieldPaint fieldDecoration() { return decoration; }
 
         @Override public SceneSemantics semantics(SceneNode node) {
             return commands.semantics(node, SceneSemantics.Role.TEXT_FIELD, Objects.requireNonNull(placeholder.get(), "字段提示"));
@@ -374,6 +369,7 @@ public final class SceneTextField {
 
         @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {
             SceneGeometryView.Entry e=geometry.get(node);if(e==null)return;
+            decoration.prepare(node, geometry);
             ranges.prepare(e, node.padding(), e.text == presented ? presentation : null, theme.get());
             Snapshot value=state.snapshot().get();
             if(!value.text.isEmpty()||value.composing) {hint=null;return;}
@@ -398,10 +394,7 @@ public final class SceneTextField {
                     enabled
                             && node.runtime() != null
                             && node.runtime().focusRouter().focused().get() == node;
-            if(framed) {
-                target.add(PaintCommand.rect(entry.box,entry.clip,fillMotion.color(enabled?colors.panel:colors.disabled)));
-                border(target,entry.box,entry.clip,edgeMotion.color(focused?colors.focus:colors.button));
-            }
+            decoration.paint(node, target);
             LayoutBox inner = inner(entry.box, node.padding());
             LayoutBox clip = entry.clip == null ? inner : entry.clip.intersect(inner);
             Snapshot value = presentation;

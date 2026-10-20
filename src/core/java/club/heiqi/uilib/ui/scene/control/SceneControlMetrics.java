@@ -25,7 +25,7 @@ public final class SceneControlMetrics {
         iconGap = gap;
         iconSize = kind == Kind.SYMBOL ? Math.max(1, (int)Math.ceil(em * 1.15f)) : Math.max(1, Math.round(em * 1.2f));
         radius = kind == Kind.CARD || kind == Kind.PANEL ? theme.spacing(12)
-                : kind == Kind.MODERN_BUTTON || kind == Kind.TOOLTIP ? theme.spacing(8)
+                : kind == Kind.MODERN_BUTTON || kind == Kind.FIELD || kind == Kind.TOOLTIP ? theme.spacing(8)
                 : kind == Kind.POPUP ? Math.max(1, padding) : kind == Kind.SCROLLBAR ? theme.spacing(3) : 0;
         sliderWidth = Math.round(em * 10);
         sliderHeight = Math.max(theme.spacing(28), Math.round(em * 2));

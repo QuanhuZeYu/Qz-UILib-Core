@@ -109,16 +109,15 @@ public final class SceneFilePicker {
                         selection::go,
                         SceneTextField.SubmitPolicy.CONFIRM,
                         () -> "输入目录或文件路径",
-                        false);
+                        false).bind(style.spacing(8, 0));
         SceneNode header = header(style, field);
         SceneNode content =
-                FilePickerStyle.column(10)
+                FilePickerStyle.column(0)
                         .size(Size.fill(1), Size.fill(1))
-                        .padding(12)
-                        .add(style.label(() -> "名称", .86f, true)
-                                .bind(NodeBinding.value(this::fullChrome, SceneNode::visible)))
+                        .bind(style.spacing(6, 6))
                         .add(listing(style))
-                        .add(style.label(selection::feedback, .86f, true));
+                        .add(style.label(selection::feedback, .86f, true)
+                                .bind(NodeBinding.value(this::showFeedback, SceneNode::visible)));
         content.control(new Panel());
         SceneNode modal =
                 SceneDialog.create(
@@ -162,87 +161,42 @@ public final class SceneFilePicker {
                 .add(modal);
     }
 
-    // 矮窗先保留路径、搜索、列表与确认；临界空间随当前字号同步变化。
-    private boolean fullChrome() {
-        return context.viewportHeight().get() >= Math.round(theme.get().textStyle.logicalEm * 32);
+    private boolean showFeedback() {
+        return selection.busy.get()
+                || selection.path.snapshot().get().error != null
+                || selection.entries.get().isEmpty()
+                || selection.selected.get() != null && selection.currentSelection() == null;
     }
 
     private SceneNode header(FilePickerStyle style, SceneNode field) {
-        SceneNode heading =
-                FilePickerStyle.row(14)
-                        .add(style.icon(SceneIconButton.Symbol.FOLDER))
-                        .add(
-                                FilePickerStyle.column(5)
-                                        .add(style.title("选择本地文件"))
-                                        .add(
-                                                style.label(() -> "浏览文件夹，选择需要打开的文件。", .9f, true)
-                                                        .bind(
-                                                                NodeBinding.value(
-                                                                        () ->
-                                                                                context.viewportHeight()
-                                                                                                .get()
-                                                                                        >= 800,
-                                                                        SceneNode::visible))));
-        heading.bind(NodeBinding.value(this::fullChrome, SceneNode::visible));
-        SceneNode header =
-                FilePickerStyle.column(8)
-                        .padding(12)
-                        .add(heading)
-                        .add(navigation(style))
-                        .add(
-                                FilePickerStyle.row(10)
-                                        .add(style.field(field))
-                                        .add(
-                                                style.action(
-                                                        "前往",
-                                                        null,
-                                                        () ->
-                                                                selection.go(
-                                                                        selection.path.request(
-                                                                                true)),
-                                                        FilePickerStyle.Role.OUTLINE)));
-        return header.add(search(style)).add(breadcrumbs(style));
+        SceneNode search = search(style).bind(NodeBinding.value(style.controls, (node, value) ->
+                node.size(Size.fill(1).bounds(0, Math.round(value.textStyle.logicalEm * 25)), Size.natural())));
+        // 标题和当前目录共用层级入口；同批可用宽度决定是否让搜索另起一行。
+        SceneNode heading = SceneLayouts.split(breadcrumbs(style), search, style.splitOptions(12, 8));
+        return FilePickerStyle.column(0).bind(style.spacing(8, 6))
+                .add(heading)
+                .add(navigation(style, field));
     }
 
     private SceneNode search(FilePickerStyle style) {
-        SceneSearchField.View search =
-                SceneSearchField.create(
-                        context,
-                        selection.search,
-                        theme,
-                        selection::query,
-                        SceneTextField.SubmitPolicy.CONFIRM,
-                        () -> "输入名称，按 Enter 搜索",
-                        selection::clearQuery);
-        SceneNode query = FilePickerStyle.row(8)
+        SceneSearchField.View search = SceneSearchField.create(
+                context, selection.search, theme, selection::query,
+                SceneTextField.SubmitPolicy.CONFIRM,
+                () -> "按名称搜索", selection::clearQuery);
+        search.editor.bind(style.spacing(8, 0));
+        SceneNode query = FilePickerStyle.row(0).bind(style.spacing(0, 4))
                 .add(search.node)
+                .add(style.iconAction(SceneIconButton.Symbol.SEARCH, "搜索",
+                        () -> selection.query(selection.search.request(true))));
+        SceneNode tools = FilePickerStyle.row(0).bind(style.spacing(0, 4)).size(Size.natural(), Size.natural())
+                .add(style.action(() -> selection.order.get().label, null, selection::cycleOrder,
+                        FilePickerStyle.Role.GHOST, SceneTextPolicy.ELLIPSIS_SINGLE_LINE))
                 .add(style.action(
-                        "搜索", SceneIconButton.Symbol.SEARCH,
-                        () -> selection.query(selection.search.request(true)),
-                        FilePickerStyle.Role.OUTLINE));
-        SceneNode tools = FilePickerStyle.row(8)
-                .add(
-                        style.action(
-                                () -> selection.order.get().label,
-                                null,
-                                selection::cycleOrder,
-                                FilePickerStyle.Role.OUTLINE))
-                .add(
-                        style.action(
-                                        () ->
-                                                selection.extension.get().isEmpty()
-                                                        ? "所有文件"
-                                                        : options.filterName,
-                                        null,
-                                        this::toggleFilter,
-                                        FilePickerStyle.Role.GHOST)
-                                .bind(
-                                        NodeBinding.value(
-                                                () -> !options.extensions.isEmpty(),
-                                                SceneNode::visible)));
-        return SceneLayouts.split(query, tools,
-                () -> new SceneLayouts.SplitOptions(
-                        Math.round(theme.get().textStyle.logicalEm * 16), 8));
+                                () -> selection.extension.get().isEmpty() ? "所有文件" : options.filterName,
+                                null, this::toggleFilter, FilePickerStyle.Role.GHOST,
+                                SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
+                        .bind(NodeBinding.value(() -> !options.extensions.isEmpty(), SceneNode::visible)));
+        return SceneLayouts.split(query, tools, style.splitOptions(8, 4));
     }
 
     private void toggleFilter() {
@@ -251,82 +205,60 @@ public final class SceneFilePicker {
     }
 
     private SceneNode breadcrumbs(FilePickerStyle style) {
-        SceneNode crumbs = FilePickerStyle.row(3).scrollable(true);
-        crumbs.bind(
-                NodeBinding.repeat(
-                        this::breadcrumbPaths,
-                        part -> part,
-                        item ->
-                                SceneTooltip.attach(
-                                        context,
-                                        style.action(
-                                                        () -> breadcrumbLabel(item.get()),
-                                                        null,
-                                                        () -> selection.navigate(item.get()),
-                                                        FilePickerStyle.Role.GHOST,
-                                                        SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
-                                                .size(Size.fill(1), Size.natural()),
-                                        () -> SceneTooltip.Content.text(item.get().toString()),
-                                        () -> new SceneTooltip.Options(),
-                                        theme)));
-        return crumbs.bind(
-                NodeBinding.value(() -> context.viewportHeight().get() >= 700 && !selection.roots.get(), SceneNode::visible));
+        ReadableSignal<java.util.List<SceneMenu.Item<Path>>> hierarchy = context.domain().computed(style.scope, () -> {
+            java.util.ArrayList<SceneMenu.Item<Path>> items = new java.util.ArrayList<>();
+            for (Path part : breadcrumbPaths()) {
+                items.add(new SceneMenu.Item<>(part, () -> part.toString(),
+                        SceneCommand.of(() -> !selection.busy.get(), () -> selection.navigate(part))));
+            }
+            return items;
+        });
+        SceneNode location = SceneMenu.create(context,
+                () -> "选择文件 · " + directoryLabel(), hierarchy, style.controls);
+        return SceneTooltip.attach(context, location,
+                () -> SceneTooltip.Content.text(selection.roots.get()
+                        ? "选择本地文件：根目录 / 盘符"
+                        : "选择本地文件\n当前目录：" + selection.directory.get()),
+                () -> new SceneTooltip.Options(), style.controls);
+    }
+
+    private String directoryLabel() {
+        if (selection.roots.get()) return "根目录 / 盘符";
+        Path directory = selection.directory.get();
+        return directory.getFileName() == null ? directory.toString() : directory.getFileName().toString();
     }
 
     private java.util.List<Path> breadcrumbPaths() {
         java.util.ArrayList<Path> chain = new java.util.ArrayList<>();
-        if (selection.roots.get()) return chain;
+        // 根范围消费当前 worker 已发布的根事实，不借上次目录伪装当前位置。
+        if (selection.roots.get()) {
+            for (FilePickerDirectory.Entry entry : selection.entries.get()) chain.add(entry.path);
+            return chain;
+        }
         for (Path cursor = selection.directory.get(); cursor != null; cursor = cursor.getParent())
             chain.add(cursor);
         java.util.Collections.reverse(chain);
-        if (chain.size() > 3) chain.subList(1, chain.size() - 2).clear();
         return chain;
     }
 
-    private String breadcrumbLabel(Path part) {
-        Path directory = selection.directory.get();
-        String prefix =
-                part.equals(directory.getParent()) && directory.getNameCount() > 2 ? "… / " : "";
-        return prefix
-                + (part.getFileName() == null ? part.toString() : part.getFileName().toString());
-    }
-
-    private SceneNode navigation(FilePickerStyle style) {
-        SceneNode back =
-                style.action("后退", null, () -> selection.history(-1), FilePickerStyle.Role.GHOST)
-                        .bind(
-                                NodeBinding.value(
-                                        () ->
-                                                selection.backCount.get() > 0
-                                                        && !selection.busy.get(),
-                                        SceneNode::enabled));
-        SceneNode forward =
-                style.action("前进", null, () -> selection.history(1), FilePickerStyle.Role.GHOST)
-                        .bind(
-                                NodeBinding.value(
-                                        () ->
-                                                selection.forwardCount.get() > 0
-                                                        && !selection.busy.get(),
-                                        SceneNode::enabled));
-        SceneNode actions = SceneLayouts.wrap(8)
-                .add(back)
-                .add(forward)
-                .add(
-                        style.action(
-                                "上一级",
-                                SceneIconButton.Symbol.CHEVRON_LEFT,
-                                selection::up,
-                                FilePickerStyle.Role.OUTLINE))
-                .add(
-                        style.action(
-                                "根目录",
-                                SceneIconButton.Symbol.MONITOR,
-                                () -> selection.showRoots(0),
-                                FilePickerStyle.Role.GHOST));
-        SceneNode refresh = style.action("刷新", null, selection::refresh, FilePickerStyle.Role.GHOST);
-        return SceneLayouts.split(actions, refresh,
-                () -> new SceneLayouts.SplitOptions(
-                        Math.round(theme.get().textStyle.logicalEm * 12), 8));
+    private SceneNode navigation(FilePickerStyle style, SceneNode field) {
+        SceneNode back = style.iconAction(SceneIconButton.Symbol.CHEVRON_LEFT, "后退",
+                () -> selection.history(-1))
+                .bind(NodeBinding.value(() -> selection.backCount.get() > 0 && !selection.busy.get(), SceneNode::enabled));
+        SceneNode forward = style.iconAction(SceneIconButton.Symbol.CHEVRON_RIGHT, "前进",
+                () -> selection.history(1))
+                .bind(NodeBinding.value(() -> selection.forwardCount.get() > 0 && !selection.busy.get(), SceneNode::enabled));
+        SceneNode path = FilePickerStyle.row(0).bind(style.spacing(0, 4))
+                .add(back).add(forward).add(style.field(field))
+                .add(style.iconAction(SceneIconButton.Symbol.CHEVRON_RIGHT, "前往",
+                        () -> selection.go(selection.path.request(true))));
+        SceneNode tools = FilePickerStyle.row(0).bind(style.spacing(0, 4)).size(Size.natural(), Size.natural())
+                .add(style.action("上一级", null, selection::up, FilePickerStyle.Role.GHOST,
+                        SceneTextPolicy.ELLIPSIS_SINGLE_LINE))
+                .add(style.iconAction(SceneIconButton.Symbol.MONITOR, "根目录", () -> selection.showRoots(0)))
+                .add(style.action("刷新", null, selection::refresh, FilePickerStyle.Role.GHOST,
+                        SceneTextPolicy.ELLIPSIS_SINGLE_LINE));
+        return SceneLayouts.split(path, tools, style.splitOptions(13, 6));
     }
 
     private SceneNode listing(FilePickerStyle style) {
@@ -335,7 +267,7 @@ public final class SceneFilePicker {
                 item -> style.entry(item,
                         () -> item.get().path.equals(selection.currentSelection()),
                         () -> selection.activate(item.get())));
-        SceneNode viewport = listing.node().gap(4);
+        SceneNode viewport = listing.node().bind(style.spacing(0, 4));
         viewport.bind(NodeBinding.value(selection.revealTarget, (node, target) -> {
             if (target != null) listing.reveal(target);
         }));
@@ -369,46 +301,20 @@ public final class SceneFilePicker {
     }
 
     private SceneNode footer(FilePickerStyle style) {
-        SceneNode previous =
-                style.action("上一页", null, () -> selection.turn(-1), FilePickerStyle.Role.GHOST);
-        previous.bind(
-                NodeBinding.value(
-                        () -> !selection.busy.get() && selection.previous.get(),
-                        SceneNode::enabled));
-        SceneNode following =
-                style.action("下一页", null, () -> selection.turn(1), FilePickerStyle.Role.GHOST);
-        following.bind(
-                NodeBinding.value(
-                        () -> !selection.busy.get() && selection.next.get(), SceneNode::enabled));
-        SceneNode pages =
-                ScenePagination.create(
-                        context,
-                        theme,
-                        () -> "第 " + (selection.page.get() + 1) + " 页",
-                        previous,
-                        following);
-        SceneNode choose =
-                style.action("选择文件", null, selection::confirm, FilePickerStyle.Role.PRIMARY);
-        choose.bind(NodeBinding.value(() -> !selection.busy.get(), SceneNode::enabled));
-        SceneNode actions =
-                FilePickerStyle.row(10)
-                        .add(
-                                style.ellipsis(selection::targetLabel, .86f, true)
-                                        .size(Size.fill(1), Size.natural())
-                                        .bind(NodeBinding.value(this::fullChrome, SceneNode::visible)))
-                        .add(
-                                style.action(
-                                        "取消",
-                                        null,
-                                        selection::cancel,
-                                        FilePickerStyle.Role.OUTLINE))
-                        .add(choose);
-        // 紧凑高度把分页与确认并排，完整模式保持两行及待打开目标提示。
-        return SceneLayouts.split(pages, actions,
-                () -> new SceneLayouts.SplitOptions(
-                        fullChrome() ? context.viewportWidth().get()
-                                : Math.round(theme.get().textStyle.logicalEm * 16), 8))
-                .padding(12);
+        SceneNode previous = style.iconAction(SceneIconButton.Symbol.CHEVRON_LEFT, "上一页", () -> selection.turn(-1))
+                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.previous.get(), SceneNode::enabled));
+        SceneNode following = style.iconAction(SceneIconButton.Symbol.CHEVRON_RIGHT, "下一页", () -> selection.turn(1))
+                .bind(NodeBinding.value(() -> !selection.busy.get() && selection.next.get(), SceneNode::enabled));
+        SceneNode pages = ScenePagination.create(context, theme,
+                () -> "第 " + (selection.page.get() + 1) + " 页", previous, following);
+        SceneNode choose = style.action("选择文件", null, selection::confirm, FilePickerStyle.Role.PRIMARY)
+                .bind(NodeBinding.value(() -> !selection.busy.get(), SceneNode::enabled));
+        SceneNode actions = FilePickerStyle.row(0).bind(style.spacing(0, 8)).size(Size.natural(), Size.natural())
+                .add(style.action("取消", null, selection::cancel, FilePickerStyle.Role.OUTLINE))
+                .add(choose);
+        // 分页与确认只在实际正文宽度不足时换行，不再按窗口高度强制保留两行。
+        return SceneLayouts.split(pages, actions, style.splitOptions(8, 8))
+                .bind(style.spacing(8, 0));
     }
 
     /** 正式输入帧领取目录结果；表面装饰和普通流继续走同一扩展合同。 */
