@@ -42,7 +42,7 @@ public final class CoreGalleryChecks implements GalleryChecks {
                 EditingScenario::new, MultilineEditingScenario::new, CompositionIdentityScenario::new, CommandScenario::new),
         new Module("controls", "标准控件", "按钮、状态选择、标签页、弹层、滑杆与提示的正式输入",
                 StandardControlsScenario::new, StateControlsScenario::new, TabsScenario::new,
-                PopupControlsScenario::new, SliderScenario::new, ScrollbarScenario::new, TooltipScenario::new),
+                PopupControlsScenario::new, SliderScenario::new, ScrollbarScenario::new, TooltipScenario::new, NotificationsScenario::new),
         new Module("collections", "有限集合", "索引与选择、可变行高、表格列宽、树投影及屏外导航",
                 VirtualCollectionIndexScenario::new, VirtualCollectionScenario::new, DataTableScenario::new, TreeViewScenario::new),
         new Module("presentation", "呈现与检查", "仿射与精确裁剪、绘制载荷、密度、场景检查和语义动作",

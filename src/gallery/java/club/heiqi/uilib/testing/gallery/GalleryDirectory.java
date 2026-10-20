@@ -29,6 +29,7 @@ public final class GalleryDirectory {
                 "弹层与选择",
                 "模态确认、内容选择、本地文件与提示。",
                 TestGallery.Page.DIALOGS,
+                TestGallery.Page.NOTIFICATIONS,
                 TestGallery.Page.FILE_PICKER,
                 TestGallery.Page.TOOLTIP),
         DATA(

@@ -212,9 +212,25 @@ public final class GalleryJourney {
         click(driver, "显示成功");
         require(contains(driver, "已保存示例"), "公共短暂反馈没有显示");
         click(driver, "返回场景概览");
+        go(driver, TestGallery.Page.NOTIFICATIONS);
+        click(driver, "连续三条");
+        require(contains(driver, "保存成功"), "通知广场未追加轻提示");
+        click(driver, "显示持续通知");
+        click(driver, "显示带动作通知");
+        require(contains(driver, "新的协作消息") && actionTarget(driver, "撤销归档") != null,
+                "通知广场未展示持续内容和真实操作");
+        driver.evidence("notifications-stacked");
+        click(driver, "撤销归档");
+        require(text(driver, "已执行撤销：1"), "通知动作没有更新业务结果");
+        click(driver, "关闭通知");
+        require(actionTarget(driver, "关闭通知") == null, "关闭后仍保留通知输入资格");
+        click(driver, "切换通知位置");
+        click(driver, "清空通知");
+        driver.evidence("notifications-cleared");
+        click(driver, "返回场景概览");
         System.out.println(
                 "GALLERY_COMPONENTS field=true search=true nestedDialog=true choice=true"
-                        + " pagination=true masterDetail=true notice=true");
+                        + " pagination=true masterDetail=true notice=true notifications=true");
     }
 
     private static void settings(Driver driver) {

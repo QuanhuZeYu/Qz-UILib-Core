@@ -25,6 +25,7 @@ public final class TestGallery implements ScenePage {
         FILE_PICKER("本地文件选择", "目录浏览、路径导航、搜索与文件核验"),
         COLLECTIONS("集合与主从", "稳定键虚拟列表、主从区域与已知或未知总数分页"),
         NOTICES("状态反馈", "说明、成功、警告、错误与空态"),
+        NOTIFICATIONS("浮动通知", "Toast 轻提示、持续通知、堆叠与附属动作"),
         DOCUMENTS("文字与文档", "标签、富文本、链接、文档与数学"),
         MAILBOX("收件箱", "查找、阅读和整理团队邮件"),
         SETTINGS("配置", "管理字体、外观与当前宿主配置"),
@@ -72,6 +73,8 @@ public final class TestGallery implements ScenePage {
                     return "参考：HTML video / 媒体控制";
                 case TOOLTIP:
                     return "参考：shadcn Base / Tooltip";
+                case NOTIFICATIONS:
+                    return "参考：shadcn Toast / Sonner";
                 case MAILBOX:
                     return "参考：Gmail";
                 case DRAGGABLE:
@@ -227,6 +230,10 @@ public final class TestGallery implements ScenePage {
                     page =
                             NoticeComponentsPage.create(
                                     context, theme, () -> navigate.accept(Page.HOME));
+                    break;
+                case NOTIFICATIONS:
+                    page = NotificationComponentsPage.create(
+                            context, theme, () -> navigate.accept(Page.HOME));
                     break;
                 case DOCUMENTS:
                     page =
