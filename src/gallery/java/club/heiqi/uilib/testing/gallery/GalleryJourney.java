@@ -1,5 +1,6 @@
 package club.heiqi.uilib.testing.gallery;
 
+import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
@@ -41,8 +42,11 @@ public final class GalleryJourney {
 
     public static void run(Driver driver) {
         driver.frame();
-        require(text(driver, "探索场景"), "默认入口不是参考案例目录");
-        require(action(driver, "打开收件箱") && action(driver, "打开配置"), "新版参考案例入口缺失");
+        require(text(driver, "组件广场"), "默认入口不是参考案例目录");
+        require(
+                actionTarget(driver, "打开收件箱") != null && actionTarget(driver, "打开配置") != null,
+                "综合应用入口缺失");
+        requireCategories(driver);
         require(
                 !contains(driver, "打开知识库")
                         && !contains(driver, "打开项目设置")
@@ -50,6 +54,7 @@ public final class GalleryJourney {
                 "旧页面仍在目录中");
         settings(driver);
         mailbox(driver);
+        components(driver);
         click(driver, "场景概览");
     }
 
@@ -73,9 +78,143 @@ public final class GalleryJourney {
                                 ? "返回"
                                 : page == TestGallery.Page.MAILBOX ? "场景概览" : "返回场景概览";
                 click(driver, back);
-                require(action(driver, "打开收件箱") || contains(driver, "探索场景"), "页面未返回同一目录：" + page);
+                require(
+                        actionTarget(driver, "打开收件箱") != null
+                                && actionTarget(driver, "打开基础输入") != null,
+                        "页面未返回同一分类目录：" + page);
             }
         }
+    }
+
+    private static void requireCategories(Driver driver) {
+        java.util.EnumSet<TestGallery.Page> covered =
+                java.util.EnumSet.noneOf(TestGallery.Page.class);
+        for (GalleryDirectory.Category category : GalleryDirectory.Category.values()) {
+            require(actionTarget(driver, category.title) != null, "分类标题缺失：" + category.title);
+            for (TestGallery.Page page : category.pages) {
+                require(covered.add(page), "组件重复归类：" + page);
+                require(actionTarget(driver, "打开" + page.title) != null, "分类组件入口缺失：" + page);
+            }
+        }
+        java.util.EnumSet<TestGallery.Page> expected =
+                java.util.EnumSet.allOf(TestGallery.Page.class);
+        expected.remove(TestGallery.Page.HOME);
+        require(covered.equals(expected), "分类目录遗漏共享组件页面");
+    }
+
+    /** 同一输入旅程用于无窗口集成与真实 GLFW，避免示例成为只有外观的空壳。 */
+    public static void components(Driver driver) {
+        driver.resize(1400, 900);
+        driver.frame();
+        go(driver, TestGallery.Page.FORMS);
+        SceneGeometryView.Entry field =
+                driver.geometry().ordered().stream()
+                        .filter(
+                                e ->
+                                        e.node.control() != null
+                                                && e.node.control().acceptsTextInput(e.node))
+                        .findFirst()
+                        .get();
+        SceneGeometryView.Entry label = actionTarget(driver, "项目名称");
+        require(
+                label != null
+                        && label.box.width > 0
+                        && field.box.y > label.box.y + label.box.height,
+                "默认字段标签没有按竖排布置");
+        clickField(driver, 0);
+        driver.command(SceneEditEvent.Command.CONFIRM, false);
+        driver.frame();
+        require(text(driver, "请填写名称后再提交。"), "公共字段未展示正式编辑错误");
+        driver.replaceText("组件项目");
+        driver.command(SceneEditEvent.Command.CONFIRM, false);
+        driver.frame();
+        require(text(driver, "已接受：组件项目"), "字段提交未保持业务确认");
+        clickField(driver, 1);
+        driver.replaceText("弹窗");
+        driver.frame();
+        require(text(driver, "搜索结果：弹窗"), "公共搜索框没有提交查询");
+        namedAction(driver, "清空搜索");
+        require(text(driver, "全部示例内容"), "公共搜索清空没有更新查询");
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.DIALOGS);
+        click(driver, "打开确认框");
+        click(driver, "确认操作");
+        require(text(driver, "已确认操作"), "公共确认弹窗未发布业务结果");
+        click(driver, "打开输入框");
+        click(driver, "选择预设名称");
+        driver.escape();
+        driver.frame();
+        require(actionTarget(driver, "选择预设名称") != null, "嵌套 ESC 未只关闭顶层选择");
+        click(driver, "选择预设名称");
+        click(driver, "Beta 项目");
+        require(actionTarget(driver, "选择预设名称") != null, "选择完成未返回输入弹窗");
+        driver.escape();
+        driver.frame();
+        require(text(driver, "已选择：Beta 项目"), "内容选择没有发布结果");
+        require(driver.geometry().activeModal() == null, "关闭弹窗仍拦截页面输入");
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.FILE_PICKER);
+        click(driver, "打开文件选择器");
+        require(driver.geometry().activeModal() != null, "独立文件选择入口没有打开正式模态");
+        driver.escape();
+        driver.frame();
+        require(driver.geometry().activeModal() == null, "取消文件选择仍拦截页面输入");
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.MEDIA);
+        SceneGeometryView.Entry mediaBefore =
+                driver.geometry().ordered().stream()
+                        .filter(
+                                e ->
+                                        e.node.control() != null
+                                                && e.node.control().acceptsTextInput(e.node))
+                        .findFirst()
+                        .get();
+        click(driver, "选择本地视频");
+        SceneGeometryView.Entry dialog = driver.geometry().get(driver.geometry().activeModal());
+        require(
+                dialog != null
+                        && dialog.box.width == driver.geometry().viewport().width
+                        && dialog.box.height == driver.geometry().viewport().height,
+                "媒体文件选择未覆盖完整视口");
+        SceneGeometryView.Entry mediaDuring = driver.geometry().get(mediaBefore.node);
+        require(
+                mediaDuring != null
+                        && mediaBefore.box.x == mediaDuring.box.x
+                        && mediaBefore.box.y == mediaDuring.box.y
+                        && mediaBefore.box.width == mediaDuring.box.width
+                        && mediaBefore.box.height == mediaDuring.box.height,
+                "媒体文件选择挤压原正文");
+        driver.escape();
+        driver.frame();
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.DOCUMENTS);
+        require(text(driver, "普通文字与 粗体、斜体，以及 可操作链接。"), "富文本示例退化为源码");
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.COLLECTIONS);
+        namedAction(driver, "下一页");
+        require(text(driver, "第 2 页 / 共 4 页"), "公共分页未触发下一页");
+        click(driver, "项目 7");
+        require(text(driver, "项目 7 的详情"), "公共主从区域没有呈现选中详情");
+        click(driver, "返回列表");
+        require(actionTarget(driver, "项目 7") != null, "公共主从返回丢失当前列表页");
+        click(driver, "返回场景概览");
+
+        go(driver, TestGallery.Page.NOTICES);
+        click(driver, "显示错误");
+        require(text(driver, "操作失败"), "公共错误反馈未显示");
+        click(driver, "清除错误");
+        require(!text(driver, "操作失败"), "公共错误反馈未按业务状态撤销");
+        click(driver, "显示成功");
+        require(contains(driver, "已保存示例"), "公共短暂反馈没有显示");
+        click(driver, "返回场景概览");
+        System.out.println(
+                "GALLERY_COMPONENTS field=true search=true nestedDialog=true choice=true"
+                        + " pagination=true masterDetail=true notice=true");
     }
 
     private static void settings(Driver driver) {
@@ -99,13 +238,13 @@ public final class GalleryJourney {
         click(driver, "放弃编辑");
         require(text(driver, "已保存"), "放弃编辑未回到当前生效配置");
         click(driver, "返回");
-        require(action(driver, "打开收件箱"), "配置返回没有回到同一工作台");
+        require(actionTarget(driver, "打开收件箱") != null, "配置返回没有回到同一工作台");
         click(driver, "打开配置");
         click(driver, "外观");
         click(driver, "深色外观");
         click(driver, "返回");
         click(driver, "不保存并离开");
-        require(action(driver, "打开配置"), "确认离开没有回到目录");
+        require(actionTarget(driver, "打开配置") != null, "确认离开没有回到目录");
         click(driver, "打开配置");
         require(!text(driver, "离开配置工作区？") && text(driver, "已保存"), "确认离开后重入残留旧模态或草稿");
         click(driver, "返回");
@@ -336,6 +475,12 @@ public final class GalleryJourney {
     }
 
     private static SceneGeometryView.Entry actionTarget(Driver driver, String value) {
+        SceneGeometryView.Entry action =
+                driver.geometry().ordered().stream()
+                        .filter(e -> e.node.clickAction() != null && value.equals(e.node.text()))
+                        .findFirst()
+                        .orElse(null);
+        if (action != null) return action;
         return driver.geometry().ordered().stream()
                 .filter(
                         e ->
@@ -345,10 +490,34 @@ public final class GalleryJourney {
                 .orElse(null);
     }
 
+    private static void clickField(Driver driver, int index) {
+        clickTarget(
+                driver,
+                () ->
+                        driver.geometry().ordered().stream()
+                                .filter(
+                                        e ->
+                                                e.node.control() != null
+                                                        && e.node.control()
+                                                                .acceptsTextInput(e.node))
+                                .skip(index)
+                                .findFirst()
+                                .orElse(null),
+                "编辑字段 " + index);
+    }
+
     private static void click(Driver driver, String value) {
+        clickTarget(driver, () -> actionTarget(driver, value), value);
+    }
+
+    private static void clickTarget(
+            Driver driver,
+            java.util.function.Supplier<SceneGeometryView.Entry> locate,
+            String value) {
         SceneGeometryView.Entry target;
-        for (; ; ) {
-            target = actionTarget(driver, value);
+        for (int attempts = 0; ; attempts++) {
+            require(attempts < 80, "目标反复滚动仍不可达：" + value);
+            target = locate.get();
             require(target != null, "找不到输入目标：" + value);
             if (visible(target)) break;
             SceneGeometryView geometry = driver.geometry();

@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.settings;
 
-import java.util.*;
 import club.heiqi.uilib.ui.reactive.*;
 import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
@@ -8,6 +7,8 @@ import club.heiqi.uilib.ui.scene.input.*;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+
+import java.util.*;
 
 /** 工作区只组合分类、共同操作和关闭意图；不复制模型或字体编辑器状态。 */
 final class SettingsWorkspace {
@@ -75,9 +76,7 @@ final class SettingsWorkspace {
                 SettingsLayout.workspace(
                                 ui, toolbar(), navigation(), scrolling.node(), footer(), ledger())
                         .bind(NodeBinding.value(ui.colors, (n, p) -> n.background(p.background)));
-        return ui.stack(0)
-                .size(Size.fill(1), Size.fill(1))
-                .control(new SettingsLayout.Layers())
+        return club.heiqi.uilib.ui.scene.layout.SceneLayouts.overlay()
                 .add(shell)
                 .add(fonts.build())
                 .add(confirmDialog(Confirmation.CLOSE))
@@ -265,7 +264,14 @@ final class SettingsWorkspace {
         Signal<String> transientMessage = ui.context.domain().signal("");
         ReadableSignal<SettingsModel.Feedback> feedback = ui.model.feedback();
         SceneNode success =
-                ui.text(transientMessage, 12, true)
+                SceneNotice.create(
+                                ui.context,
+                                () -> ui.colors.get().source,
+                                () ->
+                                        new SceneNotice.Message(
+                                                SceneNotice.Kind.SUCCESS,
+                                                "",
+                                                transientMessage.get()))
                         .bind(
                                 NodeBinding.transientValue(
                                         () ->
@@ -278,7 +284,17 @@ final class SettingsWorkspace {
                                                         value == null ? "" : value.text)));
         // 成功提示短暂显示；失败沿原反馈保留，低高度也不隐藏错误，滚动保证可达。
         return ui.stack(5)
-                .add(ui.errorText(this::operationError))
+                .add(
+                        SceneNotice.create(
+                                ui.context,
+                                () -> ui.colors.get().source,
+                                () ->
+                                        operationError().isEmpty()
+                                                ? null
+                                                : new SceneNotice.Message(
+                                                        SceneNotice.Kind.ERROR,
+                                                        "",
+                                                        operationError())))
                 .add(ui.motion.reveal(success, () -> !transientMessage.get().isEmpty()));
     }
 

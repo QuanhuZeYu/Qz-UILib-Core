@@ -1,6 +1,5 @@
 package club.heiqi.uilib.ui.settings;
 
-import java.util.List;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
@@ -8,6 +7,8 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
+
+import java.util.List;
 
 /** 设置专用文字与度量；按钮、字段、表面和反馈均复用正式现代外观。 */
 final class SettingsUi extends SceneAppearance {
@@ -109,7 +110,7 @@ final class SettingsUi extends SceneAppearance {
     }
 
     SceneNode actions(SceneNode... children) {
-        SceneNode row = stack(0).control(new SettingsLayout.WrapRow(scale, 8));
+        SceneNode row = club.heiqi.uilib.ui.scene.layout.SceneLayouts.wrap(() -> px(8));
         for (SceneNode child : children) row.add(child);
         return row;
     }

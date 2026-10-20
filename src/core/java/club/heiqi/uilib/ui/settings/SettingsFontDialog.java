@@ -1,7 +1,5 @@
 package club.heiqi.uilib.ui.settings;
 
-import java.util.*;
-import java.nio.file.*;
 import club.heiqi.uilib.ui.reactive.*;
 import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
@@ -9,6 +7,9 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
+
+import java.nio.file.*;
+import java.util.*;
 
 /** 字体字段编辑器；添加子视图和所属文件选择器只在此拥有，不发布配置。 */
 final class SettingsFontDialog {
@@ -71,9 +72,7 @@ final class SettingsFontDialog {
     SceneNode build() {
         // 两个互斥的视图范围沿同一外框位置替换，不叠加第二个添加模态；
         // 范围进入/返回由正式初始焦点和恢复规则处理，路径编辑节点持续保留。
-        return ui.stack(0)
-                .size(Size.fill(1), Size.fill(1))
-                .control(new SettingsLayout.Layers())
+        return club.heiqi.uilib.ui.scene.layout.SceneLayouts.overlay()
                 .add(listView())
                 .add(addView());
     }
@@ -308,38 +307,37 @@ final class SettingsFontDialog {
                         .add(selector)
                         .add(ui.path(selected, 12))
                         .bind(NodeBinding.value(fileSource, (n, value) -> n.visible(!value)));
-        SceneNode fileLabel = ui.heading("字体文件路径", 14),
-                help = ui.text("支持 ttf、otf、ttc、woff、woff2；应用前会检查字体来源。", 12, true);
         pathField =
                 SceneTextField.create(
-                                ui.context,
-                                path,
-                                () ->
-                                        ui.colors
-                                                .get()
-                                                .source
-                                                .withTextStyle(
-                                                        SettingsTypography.pathStyle(
-                                                                ui.px(14), ui.colors.get().text)),
-                                () -> false,
-                                this::addFile,
-                                SceneTextField.SubmitPolicy.CONFIRM,
-                                () -> "C:/Fonts/Example.ttf",
-                                false)
-                        .bind(
-                                NodeBinding.semantics(
-                                        () ->
-                                                SceneSemantics.builder()
-                                                        .labelledBy(fileLabel)
-                                                        .describedBy(help)
-                                                        .build()));
+                        ui.context,
+                        path,
+                        () ->
+                                ui.colors
+                                        .get()
+                                        .source
+                                        .withTextStyle(
+                                                SettingsTypography.pathStyle(
+                                                        ui.px(14), ui.colors.get().text)),
+                        () -> false,
+                        this::addFile,
+                        SceneTextField.SubmitPolicy.CONFIRM,
+                        () -> "C:/Fonts/Example.ttf",
+                        false);
         SceneNode browse =
                 ui.button("浏览字体文件", () -> picking.set(true), SceneAppearance.Role.OUTLINE);
         SceneNode file =
-                ui.stack(10)
-                        .add(SettingsLayout.split(ui, fileLabel, ui.actions(browse)))
-                        .add(ui.field(pathField))
-                        .add(help)
+                SceneField.create(
+                                ui.context,
+                                () -> ui.colors.get().source,
+                                () ->
+                                        new SceneField.Labels(
+                                                "字体文件路径",
+                                                "支持 ttf、otf、ttc、woff、woff2；应用前会检查字体来源。",
+                                                path.snapshot().get().error == null
+                                                        ? ""
+                                                        : path.snapshot().get().error),
+                                new SceneField.Content(
+                                        ui.field(pathField), pathField, ui.actions(browse)))
                         .bind(NodeBinding.value(fileSource, SceneNode::visible));
         SceneNode content =
                 ui.inset(
@@ -348,12 +346,7 @@ final class SettingsFontDialog {
                                 .add(types.node())
                                 .add(builtin)
                                 .add(file)
-                                .add(
-                                        ui.errorText(
-                                                () ->
-                                                        path.snapshot().get().error == null
-                                                                ? ui.model.fontError().get()
-                                                                : path.snapshot().get().error)),
+                                .add(ui.errorText(() -> ui.model.fontError().get())),
                         20,
                         8);
         SceneCommand add =
