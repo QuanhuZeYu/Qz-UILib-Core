@@ -58,7 +58,7 @@ final class SettingsFontDialog {
         SceneNode list=SceneSortable.create(ui.context,()->Collections.singletonList(new SceneSortable.Group<>("fonts",ui.model.sources().get())),
                 SettingsModel.Source::identity,key->{
                     SceneNode rows=ui.inset(ui.scroll(ui.stack(8)),16,12);return new SceneSortable.Container(rows,rows,SceneSortable.Layout.VERTICAL);
-                },this::row,this::preview,move->ui.model.moveBefore(move.key,move.beforeKey),
+                },this::row,source->row(source).content,move->ui.model.moveBefore(move.key,move.beforeKey),
                 ()->new SceneSortable.Options<SettingsModel.Source,String>().reorderMotion(ui.motion.spatial.get()).dropMotion(ui.motion.spatial.get()))
                 .size(Size.fill(1),Size.fill(1));
         SceneNode empty=ui.inset(ui.stack(12).add(ui.heading("还没有字体来源",16))
@@ -93,10 +93,6 @@ final class SettingsFontDialog {
         },()->ui.model.move(source.get(),offset));
         return ui.button(glyph,command,SceneAppearance.Role.GHOST)
                 .bind(NodeBinding.semantics(()->SceneSemantics.builder().name(name+" "+ui.sourceName(source.get().declaration())).build()));
-    }
-    private SceneNode preview(ReadableSignal<SettingsModel.Source> source) {
-        return ui.card(ui.inset(ui.stack(5).add(ui.text(()->ui.sourceName(source.get().declaration()),14,false))
-                .add(ui.text(()->source.get().declaration().startsWith("builtin:")?"内置字体":"本地文件",12,true)),12));
     }
     private SceneNode addView() {
         SceneNode back=ui.button("返回字体来源",()->view.set(View.LIST),SceneAppearance.Role.GHOST);
