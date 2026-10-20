@@ -19,16 +19,29 @@ public final class SettingsModel {
     public static final class Source {
         private final Object identity = new Object();
         private final String declaration;
-        private Source(String declaration) { this.declaration = declaration; }
-        public Object identity() { return identity; }
-        public String declaration() { return declaration; }
+
+        private Source(String declaration) {
+            this.declaration = declaration;
+        }
+
+        public Object identity() {
+            return identity;
+        }
+
+        public String declaration() {
+            return declaration;
+        }
     }
 
     /** 同文案的两次成功仍是两个操作；呈现期限不改变业务结果。 */
     static final class Feedback {
         final String text;
         final boolean success;
-        Feedback(String text, boolean success) { this.text = text; this.success = success; }
+
+        Feedback(String text, boolean success) {
+            this.text = text;
+            this.success = success;
+        }
     }
 
     private final SettingsConfiguration configuration;
@@ -62,30 +75,78 @@ public final class SettingsModel {
         fileError = domain.signal("");
         message = domain.signal(null);
         dirty = domain.computed(scope, () -> !draft().equals(configuration.current()));
-        unsaved = domain.computed(scope, () -> !configuration.current().equals(configuration.saved().get()));
-        error = domain.computed(scope, () -> !fontError.get().isEmpty() ? fontError.get()
-                : !fileError.get().isEmpty() ? fileError.get() : configuration.resourceError().get());
-        saveDisabledReason = domain.computed(scope, () -> dirty.get() ? "先应用更改" : unsaved.get() ? "" : "没有需要保存的更改");
+        unsaved =
+                domain.computed(
+                        scope, () -> !configuration.current().equals(configuration.saved().get()));
+        error =
+                domain.computed(
+                        scope,
+                        () ->
+                                !fontError.get().isEmpty()
+                                        ? fontError.get()
+                                        : !fileError.get().isEmpty()
+                                                ? fileError.get()
+                                                : configuration.resourceError().get());
+        saveDisabledReason =
+                domain.computed(
+                        scope, () -> dirty.get() ? "先应用更改" : unsaved.get() ? "" : "没有需要保存的更改");
         domain.effect(scope, this::synchronize);
     }
 
-    public SettingsConfiguration configuration() { return configuration; }
-    public ReadableSignal<List<Source>> sources() { return sources; }
-    public ReadableSignal<Boolean> replace() { return replace; }
-    public ReadableSignal<ThemeMode> theme() { return theme; }
-    public ReadableSignal<Boolean> dirty() { return dirty; }
-    public ReadableSignal<Boolean> unsaved() { return unsaved; }
-    public ReadableSignal<Boolean> externalChanged() { return externalChanged; }
-    public ReadableSignal<String> error() { return error; }
-    public ReadableSignal<String> fontError() { return fontError; }
-    public ReadableSignal<String> fileError() { return fileError; }
-    public ReadableSignal<String> message() {
-        return () -> { Feedback value = feedback().get(); return value == null ? "" : value.text; };
+    public SettingsConfiguration configuration() {
+        return configuration;
     }
+
+    public ReadableSignal<List<Source>> sources() {
+        return sources;
+    }
+
+    public ReadableSignal<Boolean> replace() {
+        return replace;
+    }
+
+    public ReadableSignal<ThemeMode> theme() {
+        return theme;
+    }
+
+    public ReadableSignal<Boolean> dirty() {
+        return dirty;
+    }
+
+    public ReadableSignal<Boolean> unsaved() {
+        return unsaved;
+    }
+
+    public ReadableSignal<Boolean> externalChanged() {
+        return externalChanged;
+    }
+
+    public ReadableSignal<String> error() {
+        return error;
+    }
+
+    public ReadableSignal<String> fontError() {
+        return fontError;
+    }
+
+    public ReadableSignal<String> fileError() {
+        return fileError;
+    }
+
+    public ReadableSignal<String> message() {
+        return () -> {
+            Feedback value = feedback().get();
+            return value == null ? "" : value.text;
+        };
+    }
+
     ReadableSignal<Feedback> feedback() {
         return () -> configuration.resourceError().get().isEmpty() ? message.get() : null;
     }
-    public ReadableSignal<String> saveDisabledReason() { return saveDisabledReason; }
+
+    public ReadableSignal<String> saveDisabledReason() {
+        return saveDisabledReason;
+    }
 
     private Snapshot draft() {
         List<String> values = new ArrayList<>();
@@ -99,7 +160,10 @@ public final class SettingsModel {
         for (String value : values) {
             Source match = null;
             for (Source source : available) {
-                if (source.declaration().equals(value)) { match = source; break; }
+                if (source.declaration().equals(value)) {
+                    match = source;
+                    break;
+                }
             }
             if (match == null) match = new Source(value);
             else available.remove(match);
@@ -128,12 +192,13 @@ public final class SettingsModel {
     }
 
     private void restore(Snapshot snapshot) {
-        domain.batch(() -> {
-            sources.set(rows(snapshot.candidates(), sources.get()));
-            replace.set(snapshot.replace());
-            theme.set(snapshot.theme());
-            externalChanged.set(false);
-        });
+        domain.batch(
+                () -> {
+                    sources.set(rows(snapshot.candidates(), sources.get()));
+                    replace.set(snapshot.replace());
+                    theme.set(snapshot.theme());
+                    externalChanged.set(false);
+                });
     }
 
     private void clearFeedback() {
@@ -152,7 +217,9 @@ public final class SettingsModel {
             List<Source> next = new ArrayList<>(sources.get());
             next.add(new Source(declaration));
             sources.set(Collections.unmodifiableList(next));
-        } catch (RuntimeException failure) { fontError.set("添加来源失败：" + reason(failure)); }
+        } catch (RuntimeException failure) {
+            fontError.set("添加来源失败：" + reason(failure));
+        }
     }
 
     public void remove(Source source) {
@@ -178,14 +245,19 @@ public final class SettingsModel {
     /** 只在排序正常结束时变更草稿；来源身份独立于声明值，重复字体也不会串行。 */
     public void moveBefore(Object sourceKey, Object beforeKey) {
         write();
-        List<Source> current=sources.get();
-        Source source=null,before=null;
-        for(Source item:current){if(item.identity()==sourceKey)source=item;if(item.identity()==beforeKey)before=item;}
-        if(source==null||source==before||beforeKey!=null&&before==null)return;
-        List<Source> next=new ArrayList<>(current);next.remove(source);
-        next.add(before==null?next.size():next.indexOf(before),source);
-        if(next.equals(current))return;
-        clearFeedback();sources.set(Collections.unmodifiableList(next));
+        List<Source> current = sources.get();
+        Source source = null, before = null;
+        for (Source item : current) {
+            if (item.identity() == sourceKey) source = item;
+            if (item.identity() == beforeKey) before = item;
+        }
+        if (source == null || source == before || beforeKey != null && before == null) return;
+        List<Source> next = new ArrayList<>(current);
+        next.remove(source);
+        next.add(before == null ? next.size() : next.indexOf(before), source);
+        if (next.equals(current)) return;
+        clearFeedback();
+        sources.set(Collections.unmodifiableList(next));
     }
 
     public void setReplace(boolean value) {
@@ -225,19 +297,26 @@ public final class SettingsModel {
      * 校验/I/O 拒绝留在对应表单，已发布后的异常按 live 事实反馈且不回滚。 */
     public void apply() {
         write();
-        domain.enqueue(() -> {
-            if (scope.isDisposed()) return;
-            synchronize();
-            if (!dirty.get()) return;
-            clearFeedback();
-            Snapshot submitted = draft();
-            try {
-                configuration.apply(submitted.candidates(), submitted.replace(), submitted.theme());
-                observed = configuration.current();
-                externalChanged.set(false);
-                message.set(new Feedback("已应用全部更改", true));
-            } catch (RuntimeException failure) { applicationFailure(failure); }
-        }, failure -> { if (!scope.isDisposed()) applicationFailure(failure); });
+        domain.enqueue(
+                () -> {
+                    if (scope.isDisposed()) return;
+                    synchronize();
+                    if (!dirty.get()) return;
+                    clearFeedback();
+                    Snapshot submitted = draft();
+                    try {
+                        configuration.apply(
+                                submitted.candidates(), submitted.replace(), submitted.theme());
+                        observed = configuration.current();
+                        externalChanged.set(false);
+                        message.set(new Feedback("已应用全部更改", true));
+                    } catch (RuntimeException failure) {
+                        applicationFailure(failure);
+                    }
+                },
+                failure -> {
+                    if (!scope.isDisposed()) applicationFailure(failure);
+                });
     }
 
     private void applicationFailure(Throwable failure) {
@@ -250,32 +329,47 @@ public final class SettingsModel {
 
     public void save() {
         write();
-        domain.enqueue(() -> {
-            if (scope.isDisposed()) return;
-            synchronize();
-            if (dirty.get()) { message.set(new Feedback("先应用更改", false)); return; }
-            if (!unsaved.get()) return;
-            clearFeedback();
-            try {
-                configuration.save();
-                message.set(new Feedback("已保存到 " + configuration.path(), true));
-            } catch (IOException | RuntimeException failure) { fileFailure("保存", failure); }
-        }, failure -> { if (!scope.isDisposed()) fileFailure("保存后的通知", failure); });
+        domain.enqueue(
+                () -> {
+                    if (scope.isDisposed()) return;
+                    synchronize();
+                    if (dirty.get()) {
+                        message.set(new Feedback("先应用更改", false));
+                        return;
+                    }
+                    if (!unsaved.get()) return;
+                    clearFeedback();
+                    try {
+                        configuration.save();
+                        message.set(new Feedback("已保存到 " + configuration.path(), true));
+                    } catch (IOException | RuntimeException failure) {
+                        fileFailure("保存", failure);
+                    }
+                },
+                failure -> {
+                    if (!scope.isDisposed()) fileFailure("保存后的通知", failure);
+                });
     }
 
     /** 放弃未落盘变化的确认归页面模态；本方法执行已确认的实际加载。 */
     public void reload() {
         write();
-        domain.enqueue(() -> {
-            if (scope.isDisposed()) return;
-            clearFeedback();
-            try {
-                configuration.reload();
-                observed = configuration.current();
-                restore(observed);
-                message.set(new Feedback("已从 " + configuration.path() + " 重新加载", true));
-            } catch (IOException | RuntimeException failure) { fileFailure("重新加载", failure); }
-        }, failure -> { if (!scope.isDisposed()) fileFailure("重新加载后的资源更新", failure); });
+        domain.enqueue(
+                () -> {
+                    if (scope.isDisposed()) return;
+                    clearFeedback();
+                    try {
+                        configuration.reload();
+                        observed = configuration.current();
+                        restore(observed);
+                        message.set(new Feedback("已从 " + configuration.path() + " 重新加载", true));
+                    } catch (IOException | RuntimeException failure) {
+                        fileFailure("重新加载", failure);
+                    }
+                },
+                failure -> {
+                    if (!scope.isDisposed()) fileFailure("重新加载后的资源更新", failure);
+                });
     }
 
     private void fileFailure(String action, Throwable failure) {

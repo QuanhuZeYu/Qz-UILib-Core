@@ -14,7 +14,8 @@ final class SettingsMotion {
     final ReadableSignal<MotionSpec> feedback;
     private final ReadableSignal<PresenceOptions> presence;
 
-    SettingsMotion(ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette> palette) {
+    SettingsMotion(
+            ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneAppearance.Palette> palette) {
         spatial = () -> palette.get().source.spatialMotion;
         feedback = () -> palette.get().source.feedbackMotion;
         presence = () -> new PresenceOptions(feedback.get()).budget(4);
@@ -27,10 +28,13 @@ final class SettingsMotion {
     SceneNode dialog(SceneNode layer, SceneNode window, ReadableSignal<Boolean> present) {
         // 退场快照跟随当前父几何；定位层持续存在，隐藏子树和重新进入共享同一空间轨迹。
         window.bind(SceneMotion.presence(present, presence));
-        return layer.bind(SceneMotion.translateY(() -> present.get() ? 0f : 16f, spatial)).add(window);
+        return layer.bind(SceneMotion.translateY(() -> present.get() ? 0f : 16f, spatial))
+                .add(window);
     }
 
     SceneNode scroll(SceneNode viewport) {
-        return viewport.bind(SceneMotion.scroll(() -> new ScrollMotionOptions(spatial.get()).maximumDisplacement(24)));
+        return viewport.bind(
+                SceneMotion.scroll(
+                        () -> new ScrollMotionOptions(spatial.get()).maximumDisplacement(24)));
     }
 }

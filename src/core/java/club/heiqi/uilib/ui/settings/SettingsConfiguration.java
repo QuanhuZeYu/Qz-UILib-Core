@@ -29,20 +29,38 @@ public final class SettingsConfiguration {
         public Snapshot(List<String> candidates, boolean replace) {
             this(candidates, replace, ThemeMode.LIGHT);
         }
+
         public Snapshot(List<String> candidates, boolean replace, ThemeMode theme) {
             this.candidates = freeze(candidates);
             this.replace = replace;
             this.theme = Objects.requireNonNull(theme, "theme");
         }
-        public List<String> candidates() { return candidates; }
-        public boolean replace() { return replace; }
-        public ThemeMode theme() { return theme; }
-        @Override public boolean equals(Object other) {
+
+        public List<String> candidates() {
+            return candidates;
+        }
+
+        public boolean replace() {
+            return replace;
+        }
+
+        public ThemeMode theme() {
+            return theme;
+        }
+
+        @Override
+        public boolean equals(Object other) {
             if (!(other instanceof Snapshot)) return false;
             Snapshot next = (Snapshot) other;
-            return replace == next.replace && theme == next.theme && candidates.equals(next.candidates);
+            return replace == next.replace
+                    && theme == next.theme
+                    && candidates.equals(next.candidates);
         }
-        @Override public int hashCode() { return Objects.hash(candidates, replace, theme); }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(candidates, replace, theme);
+        }
     }
 
     private final ReactiveDomain domain;
@@ -56,17 +74,36 @@ public final class SettingsConfiguration {
     private final Signal<String> resourceError;
     private final Runnable reloadResources;
 
-    public SettingsConfiguration(ReactiveDomain domain, ConfigSession session,
-            ConfigKey<List<String>> fontKey, ConfigKey<Boolean> mcKey, Path path,
-            List<String> builtinCandidates, Consumer<List<String>> validateCandidates) {
-        this(domain, session, fontKey, mcKey, path, builtinCandidates, validateCandidates, () -> {});
+    public SettingsConfiguration(
+            ReactiveDomain domain,
+            ConfigSession session,
+            ConfigKey<List<String>> fontKey,
+            ConfigKey<Boolean> mcKey,
+            Path path,
+            List<String> builtinCandidates,
+            Consumer<List<String>> validateCandidates) {
+        this(
+                domain,
+                session,
+                fontKey,
+                mcKey,
+                path,
+                builtinCandidates,
+                validateCandidates,
+                () -> {});
     }
 
     /** 显式文件加载完成后让宿主更新所属资源；同值加载仍刷新原地替换的字体文件。
      * 回调失败保留已经读取并发布的配置事实，不增加监视或恢复策略。 */
-    public SettingsConfiguration(ReactiveDomain domain, ConfigSession session,
-            ConfigKey<List<String>> fontKey, ConfigKey<Boolean> mcKey, Path path,
-            List<String> builtinCandidates, Consumer<List<String>> validateCandidates, Runnable reloadResources) {
+    public SettingsConfiguration(
+            ReactiveDomain domain,
+            ConfigSession session,
+            ConfigKey<List<String>> fontKey,
+            ConfigKey<Boolean> mcKey,
+            Path path,
+            List<String> builtinCandidates,
+            Consumer<List<String>> validateCandidates,
+            Runnable reloadResources) {
         this.domain = Objects.requireNonNull(domain, "domain");
         domain.checkAccess();
         this.session = Objects.requireNonNull(session, "session");
@@ -87,18 +124,48 @@ public final class SettingsConfiguration {
         return Collections.unmodifiableList(copy);
     }
 
-    public ReactiveDomain domain() { return domain; }
-    public Path path() { return path; }
-    public List<String> builtinCandidates() { return builtins; }
-    public boolean hasMinecraft() { return mcKey != null; }
-    public List<String> defaultCandidates() { return fontKey.defaultValue(); }
-    public boolean defaultReplace() { return mcKey != null && mcKey.defaultValue(); }
-    public ThemeMode defaultTheme() { return ThemeConfiguration.KEY.defaultValue(); }
-    public Snapshot current() {
-        return new Snapshot(session.get(fontKey), mcKey != null && session.get(mcKey), session.get(ThemeConfiguration.KEY));
+    public ReactiveDomain domain() {
+        return domain;
     }
-    public ReadableSignal<Snapshot> saved() { return saved; }
-    public ReadableSignal<String> resourceError() { return resourceError; }
+
+    public Path path() {
+        return path;
+    }
+
+    public List<String> builtinCandidates() {
+        return builtins;
+    }
+
+    public boolean hasMinecraft() {
+        return mcKey != null;
+    }
+
+    public List<String> defaultCandidates() {
+        return fontKey.defaultValue();
+    }
+
+    public boolean defaultReplace() {
+        return mcKey != null && mcKey.defaultValue();
+    }
+
+    public ThemeMode defaultTheme() {
+        return ThemeConfiguration.KEY.defaultValue();
+    }
+
+    public Snapshot current() {
+        return new Snapshot(
+                session.get(fontKey),
+                mcKey != null && session.get(mcKey),
+                session.get(ThemeConfiguration.KEY));
+    }
+
+    public ReadableSignal<Snapshot> saved() {
+        return saved;
+    }
+
+    public ReadableSignal<String> resourceError() {
+        return resourceError;
+    }
 
     /** 仅为宿主字体资源更新提供已知失败边界；不捕获域、布局或绘制的一般异常。
      * 配置已经发布后资源失败仍保留当前值，错误交给共享工作区显示；无回滚或自动重试。 */
@@ -127,7 +194,11 @@ public final class SettingsConfiguration {
 
     void validateCandidates(List<String> candidates) {
         List<String> frozen = freeze(candidates);
-        domain.readOnly(() -> { validateCandidates.accept(frozen); return null; });
+        domain.readOnly(
+                () -> {
+                    validateCandidates.accept(frozen);
+                    return null;
+                });
     }
 
     /** 旧调用仅应用原有字段，保留当前全局主题。 */
@@ -157,11 +228,16 @@ public final class SettingsConfiguration {
         domain.checkWrite();
         IOException[] loadFailure = new IOException[1];
         // 先写完已加载值与文件基线，再递交资源观察；观察失败不改变已接受的文件事实。
-        domain.batch(() -> {
-            try { session.load(path); }
-            catch (IOException failure) { loadFailure[0] = failure; return; }
-            saved.set(current());
-        });
+        domain.batch(
+                () -> {
+                    try {
+                        session.load(path);
+                    } catch (IOException failure) {
+                        loadFailure[0] = failure;
+                        return;
+                    }
+                    saved.set(current());
+                });
         if (loadFailure[0] != null) throw loadFailure[0];
         reloadResources.run();
     }
