@@ -63,7 +63,7 @@ public final class CoreArtifactScenario extends TestApplication {
                     () -> {
                         verifyCore(new File(inputArgs[1]));
                         verifyAdapter(new File(inputArgs[2]));
-                        for (int i = 3; i < inputArgs.length; i++) verifyHost(new File(inputArgs[i]));
+                        for (int i = 3; i < inputArgs.length; i++) verifyHost(new File(inputArgs[1]), new File(inputArgs[i]));
                     });
             return;
         }
@@ -359,11 +359,12 @@ public final class CoreArtifactScenario extends TestApplication {
         }
     }
 
-    private void verifyHost(File file) throws Exception {
-        try (JarFile jar = new JarFile(file)) {
+    private void verifyHost(File coreFile, File file) throws Exception {
+        try (JarFile core = new JarFile(coreFile); JarFile jar = new JarFile(file)) {
             Enumeration<JarEntry> entries = jar.entries();
             while (entries.hasMoreElements()) {
-                String name = entries.nextElement().getName();
+                JarEntry entry = entries.nextElement();
+                String name = entry.getName();
                 require(
                         !(name.endsWith(".class")
                                 && (startsWith(name, CORE)
@@ -382,14 +383,32 @@ public final class CoreArtifactScenario extends TestApplication {
                 require(!name.startsWith("club/heiqi/uilib/host/desktop/"), "MC成品嵌入桌面宿主：" + name);
                 require(!name.startsWith("club/heiqi/uilib/host/media/")&&!name.startsWith("assets/qz_uilib/runtime/media/"), "MC重复嵌入独立媒体模块："+name);
                 if(name.endsWith(".class")&&name.startsWith("club/heiqi/uilib/"))verifyMajor(jar.getInputStream(jar.getJarEntry(name)),name);
+                if (entry.isDirectory()) continue;
+                // ResourceManager只识别外层Mod资源包；只允许同一正式Core资源的完整镜像，不形成第二份实现。
+                if (name.startsWith("assets/qz_uilib/fonts/") || name.startsWith("assets/qz_uilib/unicode/emoji17/")) {
+                    JarEntry original = core.getJarEntry(name);
+                    require(original != null && !original.isDirectory() && original.getSize() == entry.getSize(),
+                            "MC字体或Unicode资源不是正式Core镜像：" + name);
+                    require(java.util.Arrays.equals(resourceDigest(core, original), resourceDigest(jar, entry)),
+                            "MC字体或Unicode资源与正式Core字节不同：" + name);
+                    continue;
+                }
                 require(
                         !name.startsWith("assets/qz_uilib/runtime/font/")
-                                && !name.startsWith("assets/qz_uilib/fonts/")
                                 && !name.startsWith("assets/qz_uilib/unicode/")
                                 && !name.startsWith("assets/qz_uilib/math/"),
                         "MC成品重复持有独立模块资源：" + name);
             }
         }
+    }
+
+    private byte[] resourceDigest(JarFile jar, JarEntry entry) throws Exception {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        try (InputStream input = jar.getInputStream(entry)) {
+            byte[] buffer = new byte[8192];
+            for (int count; (count = input.read(buffer)) >= 0;) digest.update(buffer, 0, count);
+        }
+        return digest.digest();
     }
 
     private void verifyDesktop(File file) throws Exception {
