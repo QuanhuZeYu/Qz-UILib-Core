@@ -1,10 +1,18 @@
 name: Core build
-on: [push, pull_request]
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: core-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,6 +26,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
       - name: 完整构建与发布资产
         shell: bash
         run: |
@@ -29,10 +39,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: core-jars
+          compression-level: 0
           path: build/release/qz-uilib-core-*.jar
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: core-maven-zip
+          compression-level: 0
           path: build/release/qz-uilib-core-*-maven.zip
           if-no-files-found: error
+      - name: 保留失败诊断
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-build-reports
+          path: build/reports
+          retention-days: 7
+          if-no-files-found: ignore
