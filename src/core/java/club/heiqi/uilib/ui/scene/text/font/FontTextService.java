@@ -250,7 +250,14 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 loader,
                                 base + "noto/NotoSansSinhala.ttf",
                                 false,
-                                set("Sinh"))));
+                                set("Sinh")),
+                        FontSource.resource(
+                                "noto-symbols",
+                                revision,
+                                loader,
+                                base + "noto/NotoSansSymbols-Regular.ttf",
+                                false,
+                                Collections.<String>emptySet())));
     }
 
     private static Map<String, List<FontSource>> synchronousNamed(long revision, List<FontSource> defaults) {

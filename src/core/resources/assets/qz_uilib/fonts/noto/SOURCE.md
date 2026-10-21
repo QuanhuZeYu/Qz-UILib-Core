@@ -20,4 +20,6 @@ Noto文字锁定commit ffebf8c1ee449e544955a7e813c54f9b73848eac；emoji锁定v2.
 - `NotoSansSinhala.ttf`：[固定上游](https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansSinhala/NotoSansSinhala-Regular.ttf)；SHA256 `a966549310b2d3046ba25bbeef11985428ff9356fa656fd6118bc90fb82df031`；310232 bytes。
 - `NotoEmoji.ttf`：[固定上游](https://raw.githubusercontent.com/google/fonts/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/notoemoji/NotoEmoji%5Bwght%5D.ttf)；SHA256 `de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551`；1982596 bytes。
 
-单色NotoEmoji固定google/fonts commit8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5；所有字体保持原字节并随附OFL许可。
+- `NotoSansSymbols-Regular.ttf`：[固定上游](https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansSymbols/NotoSansSymbols-Regular.ttf)；SHA256 `8f02f31959bbdf6061547a188248e13f84dc5fdd940326ec494675f453f072bb`；258156 bytes。
+
+单色NotoEmoji固定google/fonts commit8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5；所有字体保持原字节并随附OFL许可。Noto Sans Symbols 与上述复杂脚本字体共用 notofonts/noto-fonts 固定版本及完整 `LICENSE-Noto.txt`；该 SIL OFL 1.1 允许随软件分发，字体继续按原许可提供，不改变自有代码的 MIT 许可。

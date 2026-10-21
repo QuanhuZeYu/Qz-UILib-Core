@@ -14,7 +14,7 @@ Qz-UILib Core 自有代码采用 MIT，见 [LICENSE](<LICENSE>)。以下第三�
 
 随核心资源分发的字体、Unicode 数据与数学字体事实保留各自许可，文本位于对应资源目录：
 
-- Noto / Noto Emoji 字体：`fonts/noto/LICENSE-Noto*.txt`（SIL OFL 1.1）
+- Noto（含 Noto Sans Symbols）/ Noto Emoji 字体：`fonts/noto/LICENSE-Noto*.txt`（SIL OFL 1.1）
 - GNU Unifont：`fonts/unifont/LICENSE.txt`（GPL-2.0+ 字体例外与 SIL OFL 1.1）
 - 默认 UI 字体：`fonts/ui/OFL.txt`（SIL OFL 1.1）
 - STIX Two Math：`fonts/math/OFL.txt`（SIL OFL 1.1）
