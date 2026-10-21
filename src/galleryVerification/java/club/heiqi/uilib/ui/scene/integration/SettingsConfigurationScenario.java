@@ -13,6 +13,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -218,13 +221,27 @@ public final class SettingsConfigurationScenario extends TestApplication {
 
     /** 只控制真实 codec 执行阶段；文档解析、Files 和 Signal 都使用生产实现。 */
     private static final class PreparationGate {
-        final CompletableFuture<Void> entered = new CompletableFuture<>();
-        final CompletableFuture<Void> release = new CompletableFuture<>();
+        final CompletableFuture<Thread> entered = new CompletableFuture<>();
+        final CountDownLatch release = new CountDownLatch(1);
+        private ForkJoinPool workerPool;
+
         void enter(Thread owner) {
-            require(Thread.currentThread() != owner, "文档 I/O 准备阻塞了 UI 所属线程");
-            entered.complete(null);
-            try { release.get(10, TimeUnit.SECONDS); }
-            catch (Exception failure) { throw new AssertionError("后台准备未获确定性释放", failure); }
+            Thread worker = Thread.currentThread();
+            require(worker != owner, "文档 I/O 准备阻塞了 UI 所属线程");
+            workerPool = ForkJoinTask.getPool();
+            entered.complete(worker);
+            // 普通门闩不将进行中的任务计为空闲；CompletableFuture 等待会触发 managed blocking。
+            try { require(release.await(10, TimeUnit.SECONDS), "后台准备未获确定性释放"); }
+            catch (InterruptedException failure) { throw new AssertionError("后台准备被中断", failure); }
+        }
+
+        void awaitCompletion() throws Exception {
+            Thread worker = entered.get(10, TimeUnit.SECONDS);
+            // 低 CPU 时 CompletableFuture 使用专用线程；只能等待本次实际 worker，不能猜 common pool。
+            if (workerPool == null) {
+                worker.join(TimeUnit.SECONDS.toMillis(10));
+                require(!worker.isAlive(), "已开始文件操作没有结束");
+            } else require(workerPool.awaitQuiescence(10, TimeUnit.SECONDS), "已开始文件操作没有结束");
         }
     }
 
@@ -277,7 +294,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
         onClose(() -> ui.run(() -> { page[0].dispose(); page[1].dispose(); }));
         PreparationGate firstWrite = new PreparationGate(), secondWrite = new PreparationGate();
         writes.add(firstWrite); writes.add(secondWrite);
-        onClose(() -> { firstWrite.release.complete(null); secondWrite.release.complete(null); });
+        onClose(() -> { firstWrite.release.countDown(); secondWrite.release.countDown(); });
         CompletableFuture<Void>[] requests = new CompletableFuture[3];
         ui.run(() -> {
             config[0].set(ThemeConfiguration.KEY, ThemeMode.DARK);
@@ -291,7 +308,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
             model[0].setTheme(ThemeMode.LIGHT);
         });
         require(!secondWrite.entered.isDone(), "连续文件请求并发写入同一来源");
-        firstWrite.release.complete(null);
+        firstWrite.release.countDown();
         ui.await(requests[0]);
         secondWrite.entered.get(10, TimeUnit.SECONDS);
         ui.run(() -> {
@@ -306,7 +323,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
         });
         ConfigDocument firstDisk = ConfigDocument.read(schema, file);
         require(firstDisk.get(fonts).equals(Collections.singletonList("builtin:" + builtins.get(0).id)), "首个真实文件值不是捕获快照");
-        secondWrite.release.complete(null);
+        secondWrite.release.countDown();
         ui.await(requests[1]);
         ui.run(() -> require(!model[0].unsaved().get() && model[0].dirty().get(), "页面关闭后真实保存基线未完成或覆盖重开草稿"));
         String disk = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
@@ -314,14 +331,14 @@ public final class SettingsConfigurationScenario extends TestApplication {
         Files.write(file, initial.replace("初值", "文件新值").getBytes(StandardCharsets.UTF_8));
         PreparationGate reload = new PreparationGate();
         reading.set(reload);
-        onClose(() -> reload.release.complete(null));
+        onClose(() -> reload.release.countDown());
         ui.run(() -> requests[2] = model[0].reload());
         reload.entered.get(10, TimeUnit.SECONDS);
         ui.run(() -> {
             require(config[0].get(extra).equals("初值"), "后台读取未全量验证就发布");
             model[0].add("builtin:" + builtins.get(2).id);
         });
-        reload.release.complete(null);
+        reload.release.countDown();
         ui.await(requests[2]);
         ui.run(() -> {
             require(config[0].get(extra).equals("文件新值") && config[0].get(ThemeConfiguration.KEY) == ThemeMode.LIGHT,
@@ -333,7 +350,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
         reading.set(null);
         PreparationGate closing = new PreparationGate();
         writes.add(closing);
-        onClose(() -> closing.release.complete(null));
+        onClose(() -> closing.release.countDown());
         ui.run(() -> {
             config[0].set(ThemeConfiguration.KEY, ThemeMode.DARK);
             requests[0] = settings[0].save();
@@ -348,8 +365,8 @@ public final class SettingsConfigurationScenario extends TestApplication {
             try { settings[0].apply(Collections.emptyList(), false); throw new AssertionError("关闭后允许新应用"); }
             catch (IllegalStateException expected) {}
         });
-        closing.release.complete(null);
-        require(java.util.concurrent.ForkJoinPool.commonPool().awaitQuiescence(10, TimeUnit.SECONDS), "已开始文件操作没有结束");
+        closing.release.countDown();
+        closing.awaitCompletion();
         require(ui.queue.isEmpty() && observed.size() == notifications, "宿主关闭后后台仍递交或发布配置");
         ConfigDocument afterClose = ConfigDocument.read(schema, file);
         require(afterClose.get(ThemeConfiguration.KEY) == ThemeMode.DARK, "宿主关闭中断已开始的真实保存");
