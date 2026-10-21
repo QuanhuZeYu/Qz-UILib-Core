@@ -1,6 +1,6 @@
 # UILib 独立仓发布规格
 
-状态：5.0.0-beta1 发布准备；自有代码采用 MIT，随附第三方适用各自许可。
+状态：5.0.0-beta3 发布准备；自有代码采用 MIT，随附第三方适用各自许可。
 
 ## 仓库与产物
 
@@ -10,7 +10,7 @@ Core 交付 Java21、Java8 正式 Jar、开发与源码产物；gallery 和 core
 
 ## 版本与发布操作
 
-本次统一为 5.0.0-beta1。用户可验证域名为 quanhuzeyu.asia，Central 命名空间为 asia.quanhuzeyu，5.0 的公开 Maven group 为 asia.quanhuzeyu.uilib。默认 group 按有效版本选择：4.x 保留 club.heiqi.uilib，5.x 起使用新 group；显式 -PuilibGroup 优先。原有 -PuilibVersion 与 -PuilibRepository 调用无需为旧版本补充 group 参数；Java 包名及 4.x 历史不修改。Maven 版本、Mod 元数据、产物与 tag 使用同一版本；允许现有稳定 x.y.z、alpha/beta/rc 的连续编号写法（beta1、beta.1、beta-1），不把 tag 前缀引入 Maven 版本。所有预发布标记 GitHub prerelease 且不设为 latest；稳定版才可设为 latest。
+Core、Platform 与 Minecraft 本次统一为 5.0.0-beta3；独立 Forge 1.7.10 兼容 Mod Qz-UILib-Compat 首版为 1.0.0-beta1，明确消费同一 5.0.0-beta3 的 UILib 组合。用户可验证域名为 quanhuzeyu.asia，Central 命名空间为 asia.quanhuzeyu，5.0 的公开 Maven group 为 asia.quanhuzeyu.uilib。默认 group 按有效版本选择：4.x 保留 club.heiqi.uilib，5.x 起使用新 group；显式 -PuilibGroup 优先。原有 -PuilibVersion 与 -PuilibRepository 调用无需为旧版本补充 group 参数；Java 包名及 4.x 历史不修改。Maven 版本、Mod 元数据、产物与 tag 使用同一版本；允许现有稳定 x.y.z、alpha/beta/rc 的连续编号写法（beta1、beta.1、beta-1），不把 tag 前缀引入 Maven 版本。所有预发布标记 GitHub prerelease 且不设为 latest；稳定版才可设为 latest。
 
 普通分支与 PR 工作流只构建和上传 Actions artifact。实际发布使用 workflow_dispatch，接收既存 tag 与确认短语 PUBLISH <tag>，从该 tag 检出并完整构建，再创建或更新同一 Release。tag 不创建、不移动、不重写；发布并发按 tag 串行。PR 不取得发布权限或跨仓私有凭据。
 
