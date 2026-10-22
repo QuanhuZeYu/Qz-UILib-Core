@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.render.batch;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -12,9 +14,11 @@ import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Draw;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 
-/** 只合并相邻兼容图元；A/B/A绝不全局页分组。容量/宿主屏障自动输出封闭提交段。 */
+/** 默认只合并相邻兼容图元；显式允许重排时只在当前容量段按完整状态分组。
+ * 容量与宿主屏障始终输出封闭提交段，分组不持有外部资源或跨段载荷。 */
 public final class OrderedQuadCollector {
     private final int capacity;
+    private final boolean allowReordering;
     private final Consumer<OrderedQuadBatch> submit;
     private final List<Quad> quads = new ArrayList<>();
     private final List<Draw> draws = new ArrayList<>();
@@ -23,6 +27,12 @@ public final class OrderedQuadCollector {
     private boolean submitting;
 
     public OrderedQuadCollector(int capacity, Consumer<OrderedQuadBatch> submit) {
+        this(capacity, submit, false);
+    }
+
+    /** allowReordering明确接受不同状态组间的覆盖变化；同组原序与所有提交屏障保持。 */
+    public OrderedQuadCollector(int capacity, Consumer<OrderedQuadBatch> submit, boolean allowReordering) {
+        this.allowReordering = allowReordering;
         if (capacity <= 0 || capacity > Integer.MAX_VALUE / 6)
             throw new IllegalArgumentException("无效提交容量");
         this.capacity = capacity;
@@ -113,12 +123,29 @@ public final class OrderedQuadCollector {
         active = null;
     }
 
+    private OrderedQuadBatch grouped() {
+        Map<State, List<Draw>> groups = new LinkedHashMap<>();
+        for (Draw draw : draws)
+            groups.computeIfAbsent(draw.state, key -> new ArrayList<>()).add(draw);
+        if (groups.size() == draws.size()) return new OrderedQuadBatch(quads, draws);
+        List<Quad> ordered = new ArrayList<>(quads.size());
+        List<Draw> combined = new ArrayList<>(groups.size());
+        for (Map.Entry<State, List<Draw>> group : groups.entrySet()) {
+            int start = ordered.size();
+            for (Draw draw : group.getValue())
+                ordered.addAll(quads.subList(draw.firstQuad, draw.firstQuad + draw.quadCount));
+            combined.add(new Draw(group.getKey(), start, ordered.size() - start));
+        }
+        return new OrderedQuadBatch(ordered, combined);
+    }
+
     /** 调用方在变换/深度/pass变化及委托其他渲染之前调用；业务组件不管理它。 */
     public void flush() {
         if (submitting) throw new IllegalStateException("提交回调不能重入收集器");
         if (quads.isEmpty()) return;
         endDraw();
-        OrderedQuadBatch output = new OrderedQuadBatch(quads, draws);
+        OrderedQuadBatch output = allowReordering && draws.size() > 2
+                ? grouped() : new OrderedQuadBatch(quads, draws);
         quads.clear();
         draws.clear();
         first = 0;

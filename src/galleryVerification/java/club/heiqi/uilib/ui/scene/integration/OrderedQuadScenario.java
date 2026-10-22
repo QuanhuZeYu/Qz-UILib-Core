@@ -20,6 +20,8 @@ public final class OrderedQuadScenario extends TestApplication {
         scenario("旧构造保留坐标UV相邻合批顺序和容量", this::legacy);
         scenario("仿射反射保留四角和逐顶点UV且局部矩形随变换裁剪", this::transformed);
         scenario("孔裁剪的实际三角载荷保留面积覆盖和线性UV", this::shapeClip);
+        scenario("显式分组稳定合并完整状态且默认ABA保持", this::grouped);
+        scenario("激进分组不跨容量和显式屏障且失败不重交", this::groupedBoundaries);
     }
     private static void near(double actual, double expected, double tolerance, String message) {
         require(Math.abs(actual - expected) <= tolerance, message + " got=" + actual + " expected=" + expected);
@@ -112,6 +114,47 @@ public final class OrderedQuadScenario extends TestApplication {
             boolean expected = x > 1 && x < 9 && y > 1 && y < 9 && !(x > 4 && x < 6 && y > 4 && y < 6);
             require(covered(batches, x + 12, y - 5) == expected, "实际顶点覆盖与矩形孔不符: " + x + "," + y);
         }
+    }
+    private void grouped() {
+        State a = new State(1, 101, 4, null), b = new State(1, 202, 4, null);
+        Quad first = new Quad(1,1,4,4,0,0,1,1,0,0x80ff0000);
+        Quad second = new Quad(2,2,4,4,0,0,1,1,1,0x8000ff00);
+        Quad third = new Quad(3,3,4,4,0,0,1,1,2,0x800000ff);
+        for (boolean enabled : new boolean[] {false,true}) {
+            List<OrderedQuadBatch> batches = new ArrayList<>();
+            OrderedQuadCollector collector = new OrderedQuadCollector(16,batches::add,enabled);
+            collector.add(a,first); collector.add(b,second);
+            collector.add(new State(1,101,4,null),third); collector.flush();
+            OrderedQuadBatch batch = batches.get(0);
+            require(batch.draws().size()==(enabled?2:3),"默认或完整状态相等分组结果不符");
+            require(batch.quads().get(0)==first && batch.quads().get(1)==(enabled?third:second)
+                    && batch.quads().get(2)==(enabled?second:third),"分组顺序或组内UV/layer/color载荷改变");
+            if(enabled) require(batch.draws().get(0).firstQuad==0&&batch.draws().get(0).quadCount==2
+                    &&batch.draws().get(1).firstQuad==2&&batch.draws().get(1).quadCount==1,"分组未重建完整range");
+        }
+        List<OrderedQuadBatch> separate=new ArrayList<>();
+        OrderedQuadCollector collector=new OrderedQuadCollector(16,separate::add,true);
+        collector.add(a,first); collector.add(new State(1,101,5,null),second);
+        collector.add(new State(2,101,4,null),second);
+        collector.add(new State(1,101,4,new LayoutBox(0,0,20,20)),second);
+        collector.add(a,third); collector.flush();
+        require(separate.get(0).draws().size()==4,"不同资源代际、材质或裁剪被按页误合并");
+    }
+    private void groupedBoundaries() {
+        State a=new State(1,101,4,null), b=new State(1,202,4,null);
+        Quad q=new Quad(1,1,4,4,0,0,1,1,0,0xffffffff);
+        List<OrderedQuadBatch> batches=new ArrayList<>();
+        OrderedQuadCollector collector=new OrderedQuadCollector(2,batches::add,true);
+        collector.add(a,q); collector.add(b,q); collector.add(a,q); collector.flush();
+        require(batches.size()==2&&resources(batches).equals(Arrays.asList(101L,202L,101L)),"容量边界被跨越分组");
+        batches.clear(); collector.add(a,q); collector.flush(); collector.add(b,q); collector.add(a,q); collector.flush();
+        require(batches.size()==2&&batches.get(0).quads().size()==1,"显式屏障被跨越分组");
+        int[] calls={0};
+        OrderedQuadCollector failure=new OrderedQuadCollector(3, batch->{if(++calls[0]==1)throw new IllegalStateException("预期后端失败");},true);
+        failure.add(a,q); failure.add(b,q); failure.add(a,q);
+        try {failure.flush(); throw new AssertionError("后端失败被吞");} catch(IllegalStateException expected) { }
+        failure.flush(); require(calls[0]==1,"可能部分绘制的失败批次被重交");
+        failure.add(b,q); failure.flush(); require(calls[0]==2,"失败后下一封闭段不可用");
     }
     private static List<Long> resources(List<OrderedQuadBatch> batches) {
         List<Long> result = new ArrayList<>();
