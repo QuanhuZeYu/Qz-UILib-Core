@@ -68,6 +68,17 @@ public final class PaintPlan {
      * 同一片段引用只在最早可达层处理一次；资源owner仍按GlyphKey/内容identity去重。
      */
     public List<List<PaintCommand>> resourceLayers() {
+        boolean flat = true;
+        for (int i = 0; i < commands.size(); i++) {
+            PaintCommand command = commands.get(i);
+            if (command.readyOverlay != null || command.pendingPaint != null || command.failedPaint != null) {
+                flat = false;
+                break;
+            }
+        }
+        // 无资源分支时复用构造器封闭的只读快照；branchSource只表示回放选择。
+        if (flat) return commands.isEmpty() ? Collections.emptyList() : Collections.singletonList(commands);
+
         List<List<PaintCommand>> layers = new ArrayList<>();
         java.util.Set<PaintPlan> visited =
                 Collections.newSetFromMap(new java.util.IdentityHashMap<PaintPlan, Boolean>());
@@ -100,8 +111,11 @@ public final class PaintPlan {
     }
 
     public List<PaintCommand> resourceCommands() {
+        List<List<PaintCommand>> layers = resourceLayers();
+        if (layers.isEmpty()) return Collections.emptyList();
+        if (layers.size() == 1) return layers.get(0);
         List<PaintCommand> resources = new ArrayList<>();
-        visitResources(resources::add);
+        for (List<PaintCommand> layer : layers) resources.addAll(layer);
         return Collections.unmodifiableList(resources);
     }
 }

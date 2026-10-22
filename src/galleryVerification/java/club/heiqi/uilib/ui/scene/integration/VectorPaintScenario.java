@@ -5,12 +5,18 @@ import club.heiqi.uilib.ui.scene.geometry.*;
 import club.heiqi.uilib.ui.scene.image.*;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.paint.*;
+import club.heiqi.uilib.ui.scene.text.TextStyle;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /** 新绘制状态保持原资源和分支值身份，旧plan被保留时不发生隐式修改。 */
 public final class VectorPaintScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("局部clip和外层矩阵组合保持曲线网格与同代覆盖",this::states);
         scenario("备用图像与延后overlay共用一次分支映射",this::branches);
+        scenario("flat资源复用只读快照，图像分支保持主需求优先与片段去重",this::resources);
         scenario("旧呈现片段和新仿射片段平移保持各自坐标合同",this::presentation);
     }
     private static PaintPlan plan(PaintCommand...commands){PaintPlanBuilder b=new PaintPlanBuilder();for(PaintCommand c:commands)b.add(c);return b.build();}
@@ -39,6 +45,83 @@ public final class VectorPaintScenario extends TestApplication {
         require(mapped.sceneGeometry&&deferred.sceneGeometry&&mapped.pendingPaint.commands().get(0).sceneGeometry&&deferred.branchSource==mapped&&mapped.pendingPaint==mapped.failedPaint,"备用/overlay丢失原主图分支身份");
         require(mapped.pendingPaint.commands().get(0).transform.equals(transform)&&mapped.readyOverlay.commands().get(0).transform.equals(transform),"备用或readyOverlay未受同一外层变换");
         require(image.pendingPaint.commands().get(0).transform.identity()&&image.image==mapped.image,"外层变换烘坏旧image或原计划");
+    }
+    private void resources() {
+        LayoutBox box = new LayoutBox(0, 0, 120, 24);
+        ImagePlacement placement = ImagePlacement.fit(
+                new ImageContent(1, 1, new byte[]{-1, -1, -1, -1}), box, ImageOptions.defaults());
+        PaintCommand label = PaintCommand.text(box, null, new MultilineEditingScenario.PlainHost()
+                .layout("文字墙资源", new TextStyle("default", 16, -1), box.width));
+        PaintCommand plainImage = PaintCommand.image(box, null, placement);
+        PaintCommand sharedMark = PaintCommand.rect(box, null, 0xFF00FF00);
+        PaintPlan shared = plan(sharedMark);
+
+        resourceOrder(plan(), Collections.emptyList());
+        PaintPlanBuilder builder = new PaintPlanBuilder().add(label).add(plainImage).add(label);
+        PaintPlan flat = builder.build();
+        builder.add(sharedMark);
+        resourceOrder(flat, Collections.singletonList(Arrays.asList(label, plainImage, label)));
+        require(flat.resourceLayers().get(0) == flat.commands() && flat.resourceCommands() == flat.commands(),
+                "flat资源遍历重新复制只读命令快照");
+
+        // 每个字段单独出现且位于后续命令，防止把含分支计划误判为flat。
+        PaintCommand[] oneBranch = {
+                PaintCommand.image(box, null, placement, null, null, shared),
+                PaintCommand.image(box, null, placement, shared, null, null),
+                PaintCommand.image(box, null, placement, null, shared, null)
+        };
+        for (int i = 0; i < oneBranch.length; i++) {
+            PaintCommand branch = oneBranch[i];
+            List<List<PaintCommand>> expected = i == 0
+                    ? Collections.singletonList(Arrays.asList(label, branch, sharedMark))
+                    : Arrays.asList(Arrays.asList(label, branch), Collections.singletonList(sharedMark));
+            resourceOrder(plan(label, branch), expected);
+        }
+
+        PaintCommand pendingMark = PaintCommand.rect(box, null, 0xFFFFFF00);
+        PaintCommand failedMark = PaintCommand.rect(box, null, 0xFFFF0000);
+        PaintCommand readyMark = PaintCommand.rect(box, null, 0xFF0000FF);
+        PaintPlan deep = plan(label);
+        PaintCommand pendingImage = PaintCommand.image(box, null, placement, deep, deep, shared);
+        PaintPlan pending = plan(pendingMark, pendingImage), failed = plan(failedMark);
+        PaintCommand readyImage = PaintCommand.image(box, null, placement, null, null, shared);
+        PaintPlan ready = plan(readyMark, readyImage);
+        PaintCommand main = PaintCommand.image(box, null, placement, pending, failed, ready);
+        PaintCommand deferred = PaintCommand.imageBranchOverlay(main, shared, shared);
+        // shared先以备用可达，随后经ready闭包提升；同一片段只在最早层出现。
+        resourceOrder(plan(main, label, deferred, main), Arrays.asList(
+                Arrays.asList(main, label, deferred, main, readyMark, readyImage, sharedMark),
+                Arrays.asList(pendingMark, pendingImage, failedMark),
+                Collections.singletonList(label)));
+
+        PaintCommand sourceOnly = PaintCommand.imageBranchOverlay(main, null, null);
+        PaintPlan projection = plan(sourceOnly);
+        resourceOrder(projection, Collections.singletonList(Collections.singletonList(sourceOnly)));
+        require(projection.resourceLayers().get(0) == projection.commands(),
+                "branchSource被误当成资源分支");
+    }
+    private void resourceOrder(PaintPlan plan, List<List<PaintCommand>> expected) {
+        List<List<PaintCommand>> layers = plan.resourceLayers();
+        require(layers.equals(expected), "资源分层改变主命令、ready闭包或备用的次序/片段身份");
+        List<PaintCommand> flattened = new ArrayList<>();
+        for (List<PaintCommand> layer : expected) flattened.addAll(layer);
+        List<PaintCommand> commands = plan.resourceCommands(), visited = new ArrayList<>();
+        plan.visitResources(visited::add);
+        require(commands.equals(flattened) && visited.equals(flattened), "资源入口的顺序或去重结果不一致");
+        readOnly(layers);
+        for (List<PaintCommand> layer : layers) readOnly(layer);
+        readOnly(commands);
+        readOnly(plan.commands());
+    }
+    private void readOnly(List<?> values) {
+        try { values.add(null); throw new AssertionError("资源列表允许追加"); }
+        catch (UnsupportedOperationException expected) { }
+        if (!values.isEmpty()) {
+            try { values.set(0, null); throw new AssertionError("资源列表允许替换"); }
+            catch (UnsupportedOperationException expected) { }
+            try { values.remove(0); throw new AssertionError("资源列表允许删除"); }
+            catch (UnsupportedOperationException expected) { }
+        }
     }
     private void presentation(){
         SceneMesh mesh=ScenePath.rectangle(0,0,10,10).fillMesh(.1);PaintPlan old=plan(PaintCommand.path(mesh,null,0xFFFFFFFF));
