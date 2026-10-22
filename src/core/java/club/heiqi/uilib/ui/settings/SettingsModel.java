@@ -61,6 +61,7 @@ public final class SettingsModel {
     private final Signal<List<Source>> sources;
     private final Signal<Boolean> replace;
     private final Signal<ThemeMode> theme;
+    private final Signal<Boolean> aggressiveBatching;
     private final Signal<Boolean> externalChanged;
     private final Signal<String> fontError;
     private final Signal<String> fileError;
@@ -85,6 +86,7 @@ public final class SettingsModel {
         sources = domain.signal(rows(observed.candidates(), Collections.emptyList()));
         replace = domain.signal(observed.replace());
         theme = domain.signal(observed.theme());
+        aggressiveBatching = domain.signal(observed.aggressiveBatching());
         externalChanged = domain.signal(false);
         fontError = domain.signal("");
         fileError = domain.signal("");
@@ -122,6 +124,10 @@ public final class SettingsModel {
 
     public ReadableSignal<ThemeMode> theme() {
         return theme;
+    }
+
+    public ReadableSignal<Boolean> aggressiveBatching() {
+        return aggressiveBatching;
     }
 
     public ReadableSignal<Boolean> dirty() {
@@ -166,7 +172,7 @@ public final class SettingsModel {
     private Snapshot draft() {
         List<String> values = new ArrayList<>();
         for (Source source : sources.get()) values.add(source.declaration());
-        return new Snapshot(values, replace.get(), theme.get());
+        return new Snapshot(values, replace.get(), theme.get(), aggressiveBatching.get());
     }
 
     private static List<Source> rows(List<String> values, List<Source> previous) {
@@ -213,6 +219,7 @@ public final class SettingsModel {
                     sources.set(rows(snapshot.candidates(), sources.get()));
                     replace.set(snapshot.replace());
                     theme.set(snapshot.theme());
+                    aggressiveBatching.set(snapshot.aggressiveBatching());
                     externalChanged.set(false);
                 });
     }
@@ -299,6 +306,17 @@ public final class SettingsModel {
         theme.set(value);
     }
 
+    public void setAggressiveBatching(boolean value) {
+        write();
+        if (!configuration.hasBatching() || aggressiveBatching.get() == value) return;
+        clearFeedback();
+        aggressiveBatching.set(value);
+    }
+
+    public void resetPerformance() {
+        setAggressiveBatching(configuration.defaultAggressiveBatching());
+    }
+
     public void resetFonts() {
         write();
         clearFeedback();
@@ -327,7 +345,8 @@ public final class SettingsModel {
         feedbackIdentity = request;
         return validated(request, submittedEdits, submitted.candidates(), () -> {
             try {
-                configuration.applyValidated(submitted.candidates(), submitted.replace(), submitted.theme());
+                configuration.applyValidated(
+                        submitted.candidates(), submitted.replace(), submitted.theme(), submitted.aggressiveBatching());
                 observed = configuration.current();
                 externalChanged.set(false);
                 message.set(new Feedback("已应用全部更改", true));

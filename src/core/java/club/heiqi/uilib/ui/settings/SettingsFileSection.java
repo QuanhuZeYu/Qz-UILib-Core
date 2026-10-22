@@ -74,6 +74,14 @@ final class SettingsFileSection {
                                             + (ui.configuration.current().replace() ? "开启" : "关闭"),
                             13,
                             true));
+        if (ui.configuration.hasBatching())
+            current.add(
+                    ui.text(
+                            () ->
+                                    "激进合批："
+                                            + (ui.configuration.current().aggressiveBatching() ? "开启" : "关闭"),
+                            13,
+                            true));
         current.add(
                 ui.text(
                         () ->

@@ -187,6 +187,9 @@ final class SettingsUi extends SceneAppearance {
         if (model.theme().get() != live.theme()) fields.add("界面主题");
         if (configuration.hasMinecraft() && model.replace().get() != live.replace())
             fields.add("Minecraft 接入");
+        if (configuration.hasBatching()
+                && model.aggressiveBatching().get() != live.aggressiveBatching())
+            fields.add("激进合批");
         return String.join("、", fields);
     }
 

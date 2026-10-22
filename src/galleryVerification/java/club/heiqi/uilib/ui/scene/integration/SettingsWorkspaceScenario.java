@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.integration;
 import club.heiqi.uilib.testing.TestApplication;
 import club.heiqi.uilib.ui.config.*;
 import club.heiqi.uilib.ui.reactive.*;
+import club.heiqi.uilib.ui.render.batch.BatchingConfiguration;
 import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.host.*;
 import club.heiqi.uilib.ui.scene.input.*;
@@ -28,6 +29,9 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         scenario("弹窗退场绘制跟随弹簧且快速重开位置连续", this::motionPaint);
         scenario("宿主请求重载结束添加窗口所属的文件选择模态", this::pickerOwnership);
         scenario("宿主接管选项跨分类保留草稿且恢复真实默认", this::minecraftOption);
+        scenario("性能开关真实点击跨分类应用与文件布尔往返", this::performanceOption);
+        scenario("性能页面关闭释放Owner和旧动作且共享配置可重开", this::performanceLifecycle);
+        scenario("旧schema不显示性能分类和合批开关", this::performanceUnavailable);
         scenario("同窗字体子视图的初始焦点与逐级返回焦点", this::editorFocus);
         scenario("外观分类的全局保存与宿主重载失败持续可见", this::operationFailure);
     }
@@ -43,6 +47,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         SettingsConfiguration configuration;
         SettingsPage page;
         ScenePageSession session;
+        Owner pageOwner;
         int refreshes, leaves;
         Signal<MotionPolicy> motion;
 
@@ -56,6 +61,10 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         Fixture(boolean minecraft) throws Exception { this(minecraft, null); }
 
         Fixture(boolean minecraft, java.util.function.Function<List<String>, CompletableFuture<Void>> asyncValidation) throws Exception {
+            this(minecraft, asyncValidation, true);
+        }
+
+        Fixture(boolean minecraft, java.util.function.Function<List<String>, CompletableFuture<Void>> asyncValidation, boolean batching) throws Exception {
             file = Files.createTempFile("uilib-workspace-", ".yaml");
             onClose(() -> Files.deleteIfExists(file));
             host.width = 1280;
@@ -63,13 +72,12 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             domain.execute(
                     () -> {
                         motion = domain.signal(MotionPolicy.NORMAL);
-                        config =
-                                new ConfigSession(
-                                        domain,
-                                        minecraft
-                                                ? ConfigSchema.of(
-                                                        fonts, ThemeConfiguration.KEY, replace)
-                                                : ConfigSchema.of(fonts, ThemeConfiguration.KEY));
+                        List<ConfigKey<?>> keys = new ArrayList<>();
+                        keys.add(fonts);
+                        keys.add(ThemeConfiguration.KEY);
+                        if (minecraft) keys.add(replace);
+                        if (batching) keys.add(BatchingConfiguration.KEY);
+                        config = new ConfigSession(domain, ConfigSchema.of(keys.toArray(new ConfigKey<?>[0])));
                         try {
                             config.load(
                                     new StringReader(
@@ -110,6 +118,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                             host,
                             host,
                             context -> {
+                                pageOwner = context.scope();
                                 context.motionPolicy(motion);
                                 page.build(context);
                             });
@@ -133,6 +142,17 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                     request(SceneSemanticRequest.of(entry(role, name).id, action))
                             == SceneSemanticRequest.Result.APPLIED,
                     "正式动作拒绝 " + name);
+            awaitFiles();
+        }
+
+        void click(SceneSemantics.Role role, String name) {
+            SceneSemanticSnapshot.Entry target = entry(role, name);
+            require(target.rangeInteractive && !target.offscreen && !target.actions.isEmpty(), "点击目标不可交互 " + name);
+            int x = target.box.x + target.box.width / 2, y = target.box.y + target.box.height / 2;
+            require(target.clip == null || target.clip.contains(x, y), "点击目标被裁剪 " + name);
+            session.pointer(ScenePointerEvent.down(0, x, y));
+            session.pointer(ScenePointerEvent.up(0, x, y));
+            session.frame();
             awaitFiles();
         }
 
@@ -166,6 +186,12 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         boolean replaced() {
             final boolean[] result = {false};
             domain.execute(() -> result[0] = configuration.current().replace());
+            return result[0];
+        }
+
+        boolean aggressiveBatching() {
+            final boolean[] result = {false};
+            domain.execute(() -> result[0] = configuration.current().aggressiveBatching());
             return result[0];
         }
 
@@ -512,6 +538,138 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                     && e.rangeInteractive
                     && !e.offscreen) return true;
         return false;
+    }
+
+    private void performanceOption() throws Exception {
+        for (boolean minecraft : Arrays.asList(false, true)) {
+            try (Fixture f = new Fixture(minecraft)) {
+                f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+                f.session.frame();
+                String original = f.disk();
+                f.click(SceneSemantics.Role.BUTTON, "性能");
+                SceneSemanticSnapshot.Entry toggle = f.entry(SceneSemantics.Role.SWITCH, "激进合批");
+                require(Boolean.FALSE.equals(toggle.values.checked) && !toggle.labelledBy.isEmpty(), "性能分类缺少默认关闭的关联开关");
+                boolean risk = false;
+                for (SceneSemanticId id : toggle.describedBy) {
+                    SceneSemanticSnapshot.Entry help = f.host.semantics.get(id);
+                    if (help != null && help.values.name.contains("可能改变重叠文字、阴影和透明内容的覆盖顺序。默认关闭。")) risk = true;
+                }
+                require(risk, "合批开关缺少关联风险说明");
+                f.click(SceneSemantics.Role.SWITCH, "激进合批");
+                require(!f.aggressiveBatching() && f.disk().equals(original), "开关点击提前发布或写文件");
+                require(f.entry(SceneSemantics.Role.BUTTON, "保存到文件").actions.isEmpty()
+                                && visibleError(f, "性能 · 未应用") && visibleError(f, "有未应用的更改"),
+                        "合批草稿未接共同dirty提示及保存资格");
+                f.click(SceneSemantics.Role.BUTTON, "外观");
+                f.click(SceneSemantics.Role.BUTTON, "深色外观");
+                f.click(SceneSemantics.Role.BUTTON, "配置文件");
+                require(visibleError(f, "激进合批：关闭"), "文件摘要误用了未应用草稿");
+                f.click(SceneSemantics.Role.BUTTON, "性能");
+                require(toggle.id.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").id)
+                                && Boolean.TRUE.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").values.checked),
+                        "跨分类丢失合批草稿或重建开关身份");
+                f.click(SceneSemantics.Role.BUTTON, "恢复默认");
+                require(Boolean.FALSE.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").values.checked)
+                                && visibleError(f, "有未应用的更改") && !visibleError(f, "性能 · 未应用"),
+                        "性能恢复默认没有只恢复所属草稿");
+                f.click(SceneSemantics.Role.SWITCH, "激进合批");
+                for (boolean savedValue : Arrays.asList(true, false)) {
+                    if (Boolean.TRUE.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").values.checked) != savedValue)
+                        f.click(SceneSemantics.Role.SWITCH, "激进合批");
+                    String before = f.disk();
+                    f.click(SceneSemantics.Role.BUTTON, "外观");
+                    f.click(SceneSemantics.Role.BUTTON, "应用全部更改");
+                    require(f.aggressiveBatching() == savedValue && f.disk().equals(before)
+                                    && visibleError(f, "已应用，未保存"),
+                            "跨分类应用没有发布合批或隐式落盘");
+                    f.domain.execute(() -> require(f.configuration.current().theme() == ThemeMode.DARK,
+                            "性能与外观没有共同应用草稿"));
+                    f.click(SceneSemantics.Role.BUTTON, "配置文件");
+                    require(visibleError(f, "激进合批：" + (savedValue ? "开启" : "关闭")), "当前生效摘要漏掉合批值");
+                    f.click(SceneSemantics.Role.BUTTON, "保存到文件");
+                    String saved = f.disk();
+                    require(saved.contains("aggressiveBatching: " + savedValue) && saved.contains("用户字体说明")
+                                    && visibleError(f, "已保存"),
+                            "保存未保留真实布尔值、注释或状态");
+                    f.click(SceneSemantics.Role.BUTTON, "性能");
+                    f.click(SceneSemantics.Role.SWITCH, "激进合批");
+                    f.click(SceneSemantics.Role.BUTTON, "应用全部更改");
+                    require(f.aggressiveBatching() != savedValue && f.disk().equals(saved), "相反合批值应用错误");
+                    f.click(SceneSemantics.Role.BUTTON, "配置文件");
+                    f.click(SceneSemantics.Role.BUTTON, "从文件重新加载");
+                    require(f.entry(SceneSemantics.Role.GROUP, "重新加载配置").rangeInteractive, "未保存合批值绕过重载确认");
+                    f.click(SceneSemantics.Role.BUTTON, "放弃更改并加载");
+                    f.click(SceneSemantics.Role.BUTTON, "性能");
+                    require(f.aggressiveBatching() == savedValue
+                                    && Boolean.TRUE.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").values.checked) == savedValue
+                                    && visibleError(f, "已保存"),
+                            "重载未将文件布尔值同步到开关与共同基线");
+                }
+            }
+        }
+    }
+
+    private void performanceLifecycle() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            f.session.frame();
+            String original = f.disk();
+            f.click(SceneSemantics.Role.BUTTON, "性能");
+            f.click(SceneSemantics.Role.SWITCH, "激进合批");
+            f.page.requestClose();
+            f.session.frame();
+            require(f.leaves == 0 && f.entry(SceneSemantics.Role.GROUP, "离开配置工作区").rangeInteractive,
+                    "合批草稿关闭未请求共同确认");
+            f.click(SceneSemantics.Role.BUTTON, "继续编辑");
+            f.click(SceneSemantics.Role.BUTTON, "应用全部更改");
+            f.page.requestClose();
+            f.session.frame();
+            f.click(SceneSemantics.Role.BUTTON, "不保存并离开");
+            require(f.leaves == 1 && f.aggressiveBatching() && f.disk().equals(original), "离开撤销已应用合批或隐式保存");
+            SceneSemanticId old = f.entry(SceneSemantics.Role.SWITCH, "激进合批").id;
+            Owner released = f.pageOwner;
+            f.session.close();
+            f.domain.execute(() -> {
+                require(released.isDisposed(), "页面关闭没有释放所属Owner");
+                f.config.set(BatchingConfiguration.KEY, false);
+            });
+            f.session = ScenePageSession.open(f.domain, f.host, f.host, context -> {
+                f.pageOwner = context.scope();
+                context.motionPolicy(f.motion);
+                f.page.build(context);
+            });
+            f.session.frame();
+            f.click(SceneSemantics.Role.BUTTON, "性能");
+            require(f.request(SceneSemanticRequest.of(old, SceneSemantics.Action.ACTIVATE)) != SceneSemanticRequest.Result.APPLIED
+                            && Boolean.FALSE.equals(f.entry(SceneSemantics.Role.SWITCH, "激进合批").values.checked),
+                    "旧页面动作操作了重开的合批草稿");
+            f.click(SceneSemantics.Role.SWITCH, "激进合批");
+            f.session.close();
+            f.domain.execute(() -> require(f.pageOwner.isDisposed(), "重开页面Owner未释放"));
+            require(!f.aggressiveBatching() && f.disk().equals(original), "关闭未应用合批草稿仍影响配置或文件");
+        }
+    }
+
+    private void performanceUnavailable() throws Exception {
+        for (boolean minecraft : Arrays.asList(false, true)) {
+            try (Fixture f = new Fixture(minecraft, null, false)) {
+                f.domain.execute(() -> require(!f.configuration.hasBatching(), "旧schema误识别共享合批键"));
+                for (SceneSemanticSnapshot.Entry e : f.host.semantics.entries)
+                    require(!"性能".equals(e.values.name) && !"激进合批".equals(e.values.name), "旧schema仍装配性能入口");
+                f.host.width = 640;
+                f.session.frame();
+                // SceneSelect 将占位说明声明为description；选中项标题并非name。
+                SceneSemanticSnapshot.Entry selector = f.host.semantics.entries.stream()
+                        .filter(e -> e.values.role == SceneSemantics.Role.SELECT && "设置分类".equals(e.values.description))
+                        .findFirst().orElseThrow(() -> new AssertionError("窄窗缺少真实分类选择器"));
+                require(f.request(SceneSemanticRequest.of(selector.id, SceneSemantics.Action.EXPAND)) == SceneSemanticRequest.Result.APPLIED,
+                        "正式窄窗分类选择器无法展开");
+                for (SceneSemanticSnapshot.Entry e : f.host.semantics.entries)
+                    require(e.values.role != SceneSemantics.Role.OPTION || !e.values.name.startsWith("性能"),
+                            "窄屏分类选择仍包含不可用性能项");
+                require(!f.aggressiveBatching(), "旧schema合批值没有保持false");
+            }
+        }
     }
 
     private void minecraftOption() throws Exception {

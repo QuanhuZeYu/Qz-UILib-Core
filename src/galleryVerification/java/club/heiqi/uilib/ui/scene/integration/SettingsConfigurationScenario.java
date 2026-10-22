@@ -30,6 +30,7 @@ import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
+import club.heiqi.uilib.ui.render.batch.BatchingConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.text.font.FontCandidateConfiguration;
@@ -68,6 +69,10 @@ public final class SettingsConfigurationScenario extends TestApplication {
         }
 
         Fixture(boolean minecraft, boolean rejectFalse, Runnable reloadResources) throws Exception {
+            this(minecraft, rejectFalse, reloadResources, BatchingConfiguration.KEY);
+        }
+
+        Fixture(boolean minecraft, boolean rejectFalse, Runnable reloadResources, ConfigKey<Boolean> batchingKey) throws Exception {
             mc =
                     minecraft
                             ? new ConfigKey<>(
@@ -80,14 +85,13 @@ public final class SettingsConfigurationScenario extends TestApplication {
             onClose(() -> Files.deleteIfExists(file));
             domain.execute(
                     () -> {
-                        session =
-                                new ConfigSession(
-                                        domain,
-                                        minecraft
-                                                ? ConfigSchema.of(
-                                                        fonts, mc, profile, ThemeConfiguration.KEY)
-                                                : ConfigSchema.of(
-                                                        fonts, profile, ThemeConfiguration.KEY));
+                        List<ConfigKey<?>> keys = new ArrayList<>();
+                        keys.add(fonts);
+                        if (minecraft) keys.add(mc);
+                        keys.add(profile);
+                        keys.add(ThemeConfiguration.KEY);
+                        if (batchingKey != null) keys.add(batchingKey);
+                        session = new ConfigSession(domain, ConfigSchema.of(keys.toArray(new ConfigKey<?>[0])));
                         try {
                             session.load(
                                     new StringReader(
@@ -181,9 +185,13 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("后台真实文件请求与原域全量递交及关闭后基线", this::asynchronousFiles);
         scenario("异步字体校验拒绝迟到草稿和释放后的发布", this::asynchronousValidation);
         scenario("公开应用等待已完成校验后的资源Effect失败", this::publicApplyFailure);
+        scenario("旧应用异步校验期间保留较新的合批发布", this::legacyBatchingDuringValidation);
         scenario("忙碌观察者失败后真实保存链仍可继续", this::persistingObserverFailure);
         scenario("主题草稿放弃应用与真实文件新会话往返", this::themeLifecycle);
         scenario("主题外部正式发布保留草稿与同步", this::themeExternal);
+        scenario("共享合批草稿及兼容应用与真实文件布尔往返", this::batchingLifecycle);
+        scenario("合批外部发布保留完整草稿且Owner关闭结束同步", this::batchingExternalAndLifecycle);
+        scenario("旧schema和同名异键不装配合批也不写未声明键", this::batchingSchemaBoundary);
         scenario("完整草稿应用保存与注释及其他模块字段保留", this::applyAndSave);
         scenario("重复来源排序身份与空列表及语义改回", this::identityAndEmpty);
         scenario("外部正式发布与关闭作用域及重开保存基线", this::externalAndLifecycle);
@@ -454,10 +462,30 @@ public final class SettingsConfigurationScenario extends TestApplication {
             next[0] = f.configuration.save();
         });
         next[0].get(10, TimeUnit.SECONDS);
-        ConfigDocument written = ConfigDocument.read(ConfigSchema.of(f.fonts, f.profile, ThemeConfiguration.KEY), f.file);
+        ConfigDocument written = ConfigDocument.read(ConfigSchema.of(f.fonts, f.profile, ThemeConfiguration.KEY, BatchingConfiguration.KEY), f.file);
         require(written.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT, "坏观察者释放后第二次保存没有真实落盘");
         f.run(() -> require(!f.configuration.persisting().get()
                 && f.configuration.saved().get().theme() == ThemeMode.LIGHT, "保存链没有结清真实请求和busy基线"));
+    }
+
+    private void legacyBatchingDuringValidation() throws Exception {
+        Fixture f=new Fixture(false,false);
+        CompletableFuture<Void> validation=new CompletableFuture<>();
+        AtomicReference<CompletableFuture<Void>> applied=new AtomicReference<>();
+        SettingsConfiguration[] delayed={null};
+        f.run(()-> {
+            delayed[0]=SettingsConfiguration.withAsyncValidation(f.domain,f.session,f.fonts,null,f.file,
+                    f.configuration.builtinCandidates(),values->validation,()->{});
+            applied.set(delayed[0].apply(delayed[0].current().candidates(),false,ThemeMode.DARK));
+            require(!applied.get().isDone(),"未进入受控异步校验");
+            f.session.set(BatchingConfiguration.KEY,true);
+        });
+        try {
+            validation.complete(null);
+            applied.get().get(10,TimeUnit.SECONDS);
+            f.run(()->require(f.session.get(BatchingConfiguration.KEY)
+                    &&f.session.get(ThemeConfiguration.KEY)==ThemeMode.DARK,"旧应用覆盖了校验期间的新合批值"));
+        } finally { f.run(delayed[0]::close); }
     }
 
     private void publicApplyFailure() throws Exception {
@@ -592,16 +620,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
                         ConfigSession reopened =
                                 new ConfigSession(
                                         f.domain,
-                                        minecraft
-                                                ? ConfigSchema.of(
-                                                        f.fonts,
-                                                        f.mc,
-                                                        f.profile,
-                                                        ThemeConfiguration.KEY)
-                                                : ConfigSchema.of(
-                                                        f.fonts,
-                                                        f.profile,
-                                                        ThemeConfiguration.KEY));
+                                        f.session.schema());
                         try {
                             reopened.load(f.file);
                         } catch (IOException failure) {
@@ -676,6 +695,132 @@ public final class SettingsConfigurationScenario extends TestApplication {
                                 "外部变化后可明确再次应用全部草稿"));
     }
 
+    private void batchingLifecycle() throws Exception {
+        for (boolean minecraft : Arrays.asList(false, true)) {
+            Fixture f = new Fixture(minecraft, false);
+            f.run(() -> {
+                require(f.configuration.hasBatching() && !f.model.aggressiveBatching().get(),
+                        "共享选项缺省关闭且不依赖MC分类");
+                require(!new SettingsConfiguration.Snapshot(Collections.emptyList(), false).aggressiveBatching()
+                                && !new SettingsConfiguration.Snapshot(Collections.emptyList(), false, ThemeMode.DARK).aggressiveBatching(),
+                        "旧快照构造保留关闭默认");
+                f.model.setAggressiveBatching(true);
+                require(f.model.dirty().get() && !f.model.unsaved().get()
+                                && !f.configuration.current().aggressiveBatching(),
+                        "合批编辑只改共同草稿");
+                f.model.setAggressiveBatching(false);
+                require(!f.model.dirty().get(), "合批改回生效值消除dirty");
+            });
+            for (boolean value : Arrays.asList(true, false)) {
+                String before = f.disk();
+                f.run(() -> f.model.setAggressiveBatching(value));
+                f.save();
+                require(f.disk().equals(before), "未应用合批草稿不能保存");
+                f.apply();
+                f.run(() -> require(f.configuration.current().aggressiveBatching() == value
+                                && f.model.unsaved().get() && !f.model.dirty().get(),
+                        "合批应用更新生效值与未保存状态"));
+                require(f.disk().equals(before), "合批应用不落盘");
+                f.save();
+                require(f.disk().contains("aggressiveBatching: " + value), "实际YAML没有保存合批布尔值");
+                f.run(() -> {
+                    require(!f.model.unsaved().get() && f.configuration.saved().get().aggressiveBatching() == value,
+                            "保存基线包含合批值");
+                    ConfigSession reopened = new ConfigSession(f.domain, f.session.schema());
+                    try { reopened.load(f.file); }
+                    catch (IOException failure) { throw new UncheckedIOException(failure); }
+                    require(reopened.get(BatchingConfiguration.KEY) == value, "新会话没有从文件读回合批值");
+                });
+                AtomicReference<CompletableFuture<Void>> applied = new AtomicReference<>();
+                f.run(() -> applied.set(f.configuration.apply(f.configuration.current().candidates(),
+                        f.configuration.current().replace(), ThemeMode.DARK)));
+                applied.get().get(10, TimeUnit.SECONDS);
+                f.run(() -> applied.set(f.configuration.apply(f.configuration.current().candidates(),
+                        f.configuration.current().replace())));
+                applied.get().get(10, TimeUnit.SECONDS);
+                f.run(() -> require(f.configuration.current().aggressiveBatching() == value
+                                && f.configuration.current().theme() == ThemeMode.DARK,
+                        "旧应用重载保留当前合批与主题"));
+                f.run(() -> applied.set(f.configuration.apply(f.configuration.current().candidates(),
+                        f.configuration.current().replace(), ThemeMode.LIGHT, !value)));
+                applied.get().get(10, TimeUnit.SECONDS);
+                f.run(() -> require(f.configuration.current().aggressiveBatching() != value, "新应用重载未发布合批值"));
+                f.reload();
+                f.run(() -> require(f.model.aggressiveBatching().get() == value
+                                && !f.model.dirty().get() && !f.model.unsaved().get(),
+                        "真实重载同步合批草稿、生效值和保存基线"));
+            }
+        }
+    }
+
+    private void batchingExternalAndLifecycle() throws Exception {
+        Fixture f = new Fixture(false, false);
+        f.run(() -> f.session.set(BatchingConfiguration.KEY, true));
+        f.run(() -> {
+            require(f.model.aggressiveBatching().get() && !f.model.dirty().get(), "无草稿随外部合批发布同步");
+            f.model.setTheme(ThemeMode.DARK);
+        });
+        f.run(() -> f.session.set(BatchingConfiguration.KEY, false));
+        f.run(() -> {
+            require(f.model.aggressiveBatching().get() && f.model.theme().get() == ThemeMode.DARK
+                            && f.model.externalChanged().get(),
+                    "外部合批变化保留整个跨分类草稿并提示");
+            f.model.discard();
+            require(!f.model.aggressiveBatching().get() && !f.model.dirty().get()
+                            && !f.model.externalChanged().get(),
+                    "放弃编辑采用当前合批值");
+            f.model.setAggressiveBatching(true);
+        });
+        f.run(() -> f.session.set(f.fonts, Collections.singletonList(f.declaration(1))));
+        f.run(() -> require(f.model.aggressiveBatching().get()
+                        && f.model.sources().get().get(0).declaration().equals(f.declaration(0))
+                        && f.model.externalChanged().get(),
+                "只有性能草稿时外部字体发布仍保留完整草稿"));
+        f.apply();
+        SettingsModel released = f.model;
+        f.run(f.owner::dispose);
+        f.run(() -> f.session.set(BatchingConfiguration.KEY, false));
+        f.run(() -> {
+            require(released.aggressiveBatching().get() && !f.configuration.current().aggressiveBatching(),
+                    "Owner关闭结束原模型同步但不释放共享配置");
+            try {
+                released.setAggressiveBatching(false);
+                throw new AssertionError("已释放页面仍接受合批编辑");
+            } catch (IllegalStateException expected) { }
+            f.owner = f.domain.owner();
+            f.model = new SettingsModel(f.configuration, f.owner);
+            require(!f.model.aggressiveBatching().get() && !f.model.dirty().get(), "重开从当前合批值建立草稿");
+        });
+    }
+
+    private void batchingSchemaBoundary() throws Exception {
+        ConfigKey<Boolean> sameName = new ConfigKey<>("render.aggressiveBatching", ConfigCodecs.BOOLEAN, true);
+        for (ConfigKey<Boolean> declared : Arrays.<ConfigKey<Boolean>>asList(null, sameName)) {
+            Fixture f = new Fixture(false, false, () -> {}, declared);
+            f.run(() -> {
+                require(!f.configuration.hasBatching() && !f.configuration.current().aggressiveBatching(),
+                        "缺少共享键身份时合批不可用且值为false");
+                f.model.setAggressiveBatching(true);
+                require(!f.model.aggressiveBatching().get() && !f.model.dirty().get(), "旧schema不能创建不可应用草稿");
+            });
+            AtomicReference<CompletableFuture<Void>> applied = new AtomicReference<>();
+            f.run(() -> applied.set(f.configuration.apply(Collections.emptyList(), false, ThemeMode.DARK, true)));
+            applied.get().get(10, TimeUnit.SECONDS);
+            f.run(() -> {
+                require(f.configuration.current().candidates().isEmpty()
+                                && f.configuration.current().theme() == ThemeMode.DARK
+                                && !f.configuration.current().aggressiveBatching(),
+                        "旧schema的四参应用仍可提交已声明字段");
+                if (declared != null) require(f.session.get(declared), "同名异键不能被共享合批选项写入");
+            });
+            f.save();
+            f.reload();
+            f.run(() -> require(!f.model.aggressiveBatching().get() && !f.model.dirty().get()
+                            && !f.model.unsaved().get(),
+                    "旧schema文件往返不访问schema外键"));
+        }
+    }
+
     private void applyAndSave() throws Exception {
         Fixture f = new Fixture(true, false);
         String original = f.disk();
@@ -697,10 +842,13 @@ public final class SettingsConfigurationScenario extends TestApplication {
                                                     + "/"
                                                     + f.session.get(f.mc)
                                                     + "/"
-                                                    + f.session.get(ThemeConfiguration.KEY)));
+                                                    + f.session.get(ThemeConfiguration.KEY)
+                                                    + "/"
+                                                    + f.session.get(BatchingConfiguration.KEY)));
                     f.model.add(f.declaration(1));
                     f.model.setReplace(false);
                     f.model.setTheme(ThemeMode.DARK);
+                    f.model.setAggressiveBatching(true);
                     require(f.model.dirty().get() && !f.model.unsaved().get(), "草稿不自动生效");
                     require(f.model.saveDisabledReason().get().equals("先应用更改"), "未应用保存禁用原因");
                 });
@@ -715,8 +863,8 @@ public final class SettingsConfigurationScenario extends TestApplication {
                 });
         require(f.disk().equals(original), "应用不写文件");
         require(
-                notifications.size() == 2 && notifications.get(1).endsWith("/false/DARK"),
-                "字体、MC与主题在同一批次通知");
+                notifications.size() == 2 && notifications.get(1).endsWith("/false/DARK/true"),
+                "字体、MC、主题与合批在同一批次通知");
         f.apply();
         require(notifications.size() == 2, "无变化应用不通知");
         f.save();
@@ -857,6 +1005,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
                     f.model.add(f.declaration(1));
                     f.model.setReplace(false);
                     f.model.setTheme(ThemeMode.DARK);
+                    f.model.setAggressiveBatching(true);
                 });
         f.apply();
         f.run(
@@ -864,15 +1013,17 @@ public final class SettingsConfigurationScenario extends TestApplication {
                     require(
                             f.model.dirty().get()
                                     && f.model.sources().get().size() == 2
-                                    && f.model.theme().get() == ThemeMode.DARK,
-                            "校验失败保留包括主题的完整草稿");
+                                    && f.model.theme().get() == ThemeMode.DARK
+                                    && f.model.aggressiveBatching().get(),
+                            "校验失败保留包括主题和合批的完整草稿");
                     require(
                             f.session
                                             .get(f.fonts)
                                             .equals(Collections.singletonList(f.declaration(0)))
                                     && f.session.get(f.mc)
-                                    && f.session.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT,
-                            "MC字段拒绝时字体与主题也不发布");
+                                    && f.session.get(ThemeConfiguration.KEY) == ThemeMode.LIGHT
+                                    && !f.session.get(BatchingConfiguration.KEY),
+                            "MC字段拒绝时字体、主题与合批也不发布");
                     require(
                             f.model.fontError().get().contains("mc.replaceVanillaFont"),
                             "全字段诊断保留实际声明路径");

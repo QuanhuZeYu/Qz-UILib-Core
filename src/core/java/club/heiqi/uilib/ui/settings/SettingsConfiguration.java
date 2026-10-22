@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.BooleanSupplier;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CancellationException;
@@ -23,6 +24,7 @@ import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
+import club.heiqi.uilib.ui.render.batch.BatchingConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 
@@ -33,12 +35,18 @@ public final class SettingsConfiguration implements AutoCloseable {
         private final List<String> candidates;
         private final boolean replace;
         private final ThemeMode theme;
+        private final boolean aggressiveBatching;
 
         public Snapshot(List<String> candidates, boolean replace) {
-            this(candidates, replace, ThemeMode.LIGHT);
+            this(candidates, replace, ThemeMode.LIGHT, false);
         }
 
         public Snapshot(List<String> candidates, boolean replace, ThemeMode theme) {
+            this(candidates, replace, theme, false);
+        }
+
+        public Snapshot(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
+            this.aggressiveBatching = aggressiveBatching;
             this.candidates = freeze(candidates);
             this.replace = replace;
             this.theme = Objects.requireNonNull(theme, "theme");
@@ -56,18 +64,23 @@ public final class SettingsConfiguration implements AutoCloseable {
             return theme;
         }
 
+        public boolean aggressiveBatching() {
+            return aggressiveBatching;
+        }
+
         @Override
         public boolean equals(Object other) {
             if (!(other instanceof Snapshot)) return false;
             Snapshot next = (Snapshot) other;
             return replace == next.replace
+                    && aggressiveBatching == next.aggressiveBatching
                     && theme == next.theme
                     && candidates.equals(next.candidates);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(candidates, replace, theme);
+            return Objects.hash(candidates, replace, theme, aggressiveBatching);
         }
     }
 
@@ -189,6 +202,11 @@ public final class SettingsConfiguration implements AutoCloseable {
         return mcKey != null;
     }
 
+    /** ConfigKey 按实例身份归属 schema；旧宿主未声明时不读取或写入此键。 */
+    public boolean hasBatching() {
+        return session.schema().keys().contains(BatchingConfiguration.KEY);
+    }
+
     public List<String> defaultCandidates() {
         return fontKey.defaultValue();
     }
@@ -201,11 +219,16 @@ public final class SettingsConfiguration implements AutoCloseable {
         return ThemeConfiguration.KEY.defaultValue();
     }
 
+    public boolean defaultAggressiveBatching() {
+        return BatchingConfiguration.KEY.defaultValue();
+    }
+
     public Snapshot current() {
         return new Snapshot(
                 session.get(fontKey),
                 mcKey != null && session.get(mcKey),
-                session.get(ThemeConfiguration.KEY));
+                session.get(ThemeConfiguration.KEY),
+                hasBatching() && session.get(BatchingConfiguration.KEY));
     }
 
     public ReadableSignal<Snapshot> saved() {
@@ -285,12 +308,21 @@ public final class SettingsConfiguration implements AutoCloseable {
             request.completeExceptionally(new CancellationException("设置配置已关闭"));
     }
 
-    /** 旧调用仅应用原有字段，保留当前全局主题。 */
+    /** 旧调用仅应用原有字段，保留当前全局主题和合批选项。 */
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace) {
         return apply(candidates, replace, current().theme());
     }
 
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme) {
+        // 旧调用未选择合批策略；异步校验期间发布的新值必须在真正提交时保留。
+        return applySelection(candidates, replace, theme, () -> current().aggressiveBatching());
+    }
+
+    public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
+        return applySelection(candidates, replace, theme, () -> aggressiveBatching);
+    }
+
+    private CompletableFuture<Void> applySelection(List<String> candidates, boolean replace, ThemeMode theme, BooleanSupplier aggressiveBatching) {
         domain.checkWrite();
         checkOpen();
         List<String> frozen = freeze(candidates);
@@ -301,7 +333,7 @@ public final class SettingsConfiguration implements AutoCloseable {
             domain.enqueue(() -> {
                 if (closed) return;
                 domain.deferCleanup(() -> { requests.remove(result); result.complete(null); });
-                try { applyValidated(frozen, replace, theme); }
+                try { applyValidated(frozen, replace, theme, aggressiveBatching.getAsBoolean()); }
                 catch (RuntimeException failure) { result.completeExceptionally(failure); }
             }, result::completeExceptionally);
             return result;
@@ -309,13 +341,14 @@ public final class SettingsConfiguration implements AutoCloseable {
     }
 
     /** 仅由完成所属校验且仍持有请求身份的设置协调者调用。 */
-    void applyValidated(List<String> candidates, boolean replace, ThemeMode theme) {
+    void applyValidated(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
         domain.checkWrite();
         checkOpen();
         Map<ConfigKey<?>, Object> updates = new LinkedHashMap<>();
         updates.put(fontKey, candidates);
         if (mcKey != null) updates.put(mcKey, replace);
         updates.put(ThemeConfiguration.KEY, theme);
+        if (hasBatching()) updates.put(BatchingConfiguration.KEY, aggressiveBatching);
         session.setAll(updates);
     }
 
@@ -350,7 +383,11 @@ public final class SettingsConfiguration implements AutoCloseable {
     public ReadableSignal<Boolean> persisting() { return persisting; }
 
     private Snapshot snapshot(ConfigDocument document) {
-        return new Snapshot(document.get(fontKey), mcKey != null && document.get(mcKey), document.get(ThemeConfiguration.KEY));
+        return new Snapshot(
+                document.get(fontKey),
+                mcKey != null && document.get(mcKey),
+                document.get(ThemeConfiguration.KEY),
+                hasBatching() && document.get(BatchingConfiguration.KEY));
     }
 
     @FunctionalInterface
