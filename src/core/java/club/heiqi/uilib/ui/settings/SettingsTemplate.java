@@ -6,6 +6,9 @@ import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.host.ScenePage;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
+import club.heiqi.uilib.ui.scene.layout.SceneLayouts;
+import club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions;
+import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.*;
@@ -30,10 +33,18 @@ public final class SettingsTemplate implements ScenePage {
 
     public SettingsTemplate section(String id, ReadableSignal<String> title,
             Function<ScenePageContext, SceneNode> content) {
+        return section(id, title, () -> "", SceneIconButton.Symbol.SLIDERS, content);
+    }
+
+    /** 分类元数据只表达当前内容层级，不改变业务草稿或提交策略。 */
+    public SettingsTemplate section(String id, ReadableSignal<String> title,
+            ReadableSignal<String> description, SceneIconButton.Symbol icon,
+            Function<ScenePageContext, SceneNode> content) {
         Objects.requireNonNull(id, "id");
         for (Section section : sections)
             if (section.id.equals(id)) throw new IllegalArgumentException("重复设置分类：" + id);
         sections.add(new Section(id, Objects.requireNonNull(title, "title"),
+                Objects.requireNonNull(description, "description"), Objects.requireNonNull(icon, "icon"),
                 Objects.requireNonNull(content, "content")));
         return this;
     }
@@ -65,65 +76,103 @@ public final class SettingsTemplate implements ScenePage {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         SceneAppearance ui = new SceneAppearance(context, context.theme());
         SettingsMotion motion = new SettingsMotion(ui.colors);
-        ReadableSignal<Float> scale = () -> context.theme().get().textStyle.logicalEm / 18f;
-        ReadableSignal<Boolean> compact = () -> context.viewportWidth().get() < Math.round(760 * scale.get());
-        ReadableSignal<Boolean> shortWindow = () -> context.viewportHeight().get() < Math.round(560 * scale.get());
+        ReadableSignal<SceneTheme> editorTheme = () -> ui.colors.get().editorTheme();
+        ReadableSignal<Integer> gap = () -> ui.colors.get().source.metrics(SceneControlMetrics.Kind.PANEL).gap;
+        ReadableSignal<Boolean> compact = () -> context.viewportWidth().get()
+                < Math.round(ui.colors.get().textStyle.logicalEm * 48) + gap.get() * 6;
         Signal<String> selected = context.domain().signal(sections.isEmpty() ? "" : sections.get(0).id);
-        SceneNode content = SceneAppearance.column(16)
-                .add(ui.label(title, 1.8f, false))
-                .add(ui.label(description, .95f, true)
-                        .bind(NodeBinding.value(() -> !description.get().isEmpty() && !shortWindow.get(), SceneNode::visible)));
-        content.add(ui.line());
+        SceneNode content = column(gap, 3);
         SceneScrollArea.Area scrolling = SceneScrollArea.create(context, content,
-                () -> new SceneScrollArea.Options().autoHide(false), context.theme());
+                () -> new SceneScrollArea.Options().autoHide(false)
+                        .motion(new ScrollMotionOptions(motion.spatial.get()).maximumDisplacement(24))
+                        .colors(0, ui.colors.get().border, ui.colors.get().muted), editorTheme);
         SceneNode viewport = scrolling.viewport(SceneNode.Axis.COLUMN);
         java.util.function.Consumer<String> navigate = id -> {
             selected.set(id);
             SceneScrollViewport.of(context, viewport).moveToPixels(0);
         };
-        SceneNode rail = SceneAppearance.column(8).padding(16)
-                .bind(NodeBinding.value(compact, (n, v) -> n.visible(!v)));
+        SceneNode rail = motion.scroll(column(gap, 1).size(Size.fill(1), Size.fill(1)).clip(true).scrollable(true))
+                .bind(NodeBinding.value(compact, (n, value) -> n.visible(!value)));
         List<SceneSelect.Option<String>> options = new ArrayList<>();
-        // 分类声明只构造一次；切换仅结束输入资格，外部草稿及原编辑身份持续保留。
+        // 面板只构造一次；分类动效只结束输入资格，外部草稿及原编辑身份持续保留。
         for (Section section : sections) {
             ReadableSignal<Boolean> active = () -> selected.get().equals(section.id);
-            rail.add(ui.action(section.title, ui.label(section.title, 1, false),
-                    () -> navigate.accept(section.id), SceneAppearance.Role.ENTRY, active));
+            SceneNode entry = SceneAppearance.row(0)
+                    .bind(NodeBinding.value(gap, SceneNode::gap))
+                    .add(ui.icon(section.icon))
+                    .add(ui.label(section.title, .95f, false).size(Size.fill(1), Size.natural()));
+            rail.add(ui.action(section.title, entry, () -> navigate.accept(section.id), SceneAppearance.Role.ENTRY, active)
+                    .size(Size.fill(1), Size.natural()));
             options.add(new SceneSelect.Option<>(section.id, section.title));
-            content.add(motion.reveal(SceneAppearance.column(12)
-                    .add(ui.label(section.title, 1.25f, false))
+            content.add(motion.reveal(column(gap, 3)
                     .add(Objects.requireNonNull(section.content.apply(context), "分类内容")), active));
         }
-        SceneNode selector = SceneSelect.create(context, () -> options, selected, navigate,
-                sectionLabel, context.theme())
-                .size(Size.fill(1), Size.natural())
-                .bind(NodeBinding.value(compact, SceneNode::visible));
-        SceneNode navigation = SceneAppearance.column(0).add(rail).add(selector)
+        SceneNode selector = SceneSelect.create(context, () -> options, selected, navigate, sectionLabel, editorTheme)
+                .size(Size.fill(1), Size.natural());
+        SceneNode compactNavigation = ui.field(selector).bind(NodeBinding.value(compact, SceneNode::visible));
+        SceneNode navigation = column(gap, 0).add(rail).add(compactNavigation)
                 .bind(NodeBinding.value(compact,
-                        (n, v) -> n.size(Size.fill(1), v ? Size.natural() : Size.fill(1))));
-        SceneNode toolbar = SceneAppearance.row(8)
-                .add(ui.label(title, 1, true).size(Size.fill(1), Size.natural()))
-                .add(ui.action(closeLabel, SceneIconButton.Symbol.CLOSE, () -> close.run(), SceneAppearance.Role.GHOST));
-        SceneNode buttons = SceneAppearance.row(8);
-        for (Action action : actions)
-            buttons.add(ui.action(action.label, null, action.command,
-                    action.primary ? SceneAppearance.Role.PRIMARY : SceneAppearance.Role.OUTLINE));
-        SceneNode feedback = ui.label(notice, .9f, true)
-                .bind(NodeBinding.value(() -> !notice.get().isEmpty(), SceneNode::visible));
-        SceneNode footer = SceneAppearance.column(8).add(feedback).add(buttons).clip(true).scrollable(true);
-        return SettingsLayout.workspace(scale, compact, shortWindow, toolbar, navigation,
-                scrolling.node(), footer, null)
-                .bind(NodeBinding.value(ui.colors, (n, p) -> n.background(p.background)))
+                        (n, value) -> n.size(Size.fill(1), value ? Size.natural() : Size.fill(1))));
+        SceneNode brand = SceneAppearance.row(0).bind(NodeBinding.value(gap, SceneNode::gap))
+                .add(ui.icon(SceneIconButton.Symbol.SLIDERS))
+                .add(heading(ui, title, 1, 600).size(Size.fill(1), Size.natural()));
+        SceneNode toolbar = column(gap, 2)
+                .add(SceneAppearance.row(0).bind(NodeBinding.value(gap, SceneNode::gap))
+                        .add(brand)
+                        .add(ui.action(closeLabel, SceneIconButton.Symbol.CLOSE, () -> close.run(), SceneAppearance.Role.GHOST)))
+                .add(ui.line());
+        ReadableSignal<String> currentTitle = () -> current(selected.get()) == null ? "" : current(selected.get()).title.get();
+        ReadableSignal<String> currentDescription = () -> {
+            Section section = current(selected.get());
+            return section == null || section.description.get().isEmpty() ? description.get() : section.description.get();
+        };
+        SceneNode sectionHeader = column(gap, 1)
+                .add(heading(ui, currentTitle, 1.45f, 600))
+                .add(ui.label(currentDescription, .92f, true)
+                        .bind(NodeBinding.value(() -> !currentDescription.get().isEmpty(), SceneNode::visible)))
+                .add(ui.line())
+                .add(new SceneNode().bind(NodeBinding.value(gap,
+                        (node, value) -> node.size(Size.fill(1), Size.fixed(value)))));
+        SceneNode body = SceneLayouts.frame(sectionHeader, scrolling.node(), new SceneNode().size(Size.fill(1), Size.fixed(0)));
+        SceneNode buttons = SceneLayouts.wrap(gap).size(Size.natural(), Size.natural());
+        // 只安排视觉主次；各按钮仍执行业务提供的同一 SceneCommand。
+        for (boolean primary : new boolean[] {false, true})
+            for (Action action : actions) if (action.primary == primary)
+                buttons.add(ui.action(action.label, null, action.command,
+                        primary ? SceneAppearance.Role.PRIMARY : SceneAppearance.Role.OUTLINE));
+        SceneNode feedback = motion.reveal(ui.label(notice, .9f, true), () -> !notice.get().isEmpty());
+        SceneNode operations = SceneLayouts.split(feedback, buttons,
+                () -> new SceneLayouts.SplitOptions(Math.round(ui.colors.get().textStyle.logicalEm * 10), gap.get() * 2));
+        SceneNode footer = column(gap, 2).add(ui.line()).add(operations).clip(true).scrollable(true);
+        return SettingsLayout.template(ui.colors, compact, toolbar, navigation, body, footer)
+                .bind(NodeBinding.value(ui.colors, (n, palette) -> n.background(palette.canvas)))
                 .onEscape(() -> { close.run(); return true; })
                 .own(ui.scope);
     }
 
+    private Section current(String id) {
+        for (Section section : sections) if (section.id.equals(id)) return section;
+        return null;
+    }
+
+    private static SceneNode column(ReadableSignal<Integer> gap, int units) {
+        return SceneAppearance.column(0).bind(NodeBinding.value(() -> gap.get() * units, SceneNode::gap));
+    }
+
+    private static SceneNode heading(SceneAppearance ui, ReadableSignal<String> title, float scale, int weight) {
+        return ui.label(title, scale, false).bind(NodeBinding.value(ui.colors, (node, palette) -> node.style(
+                palette.textStyle.withEm(palette.textStyle.logicalEm * scale).withColor(palette.text)
+                        .withFontStyle(new FontStyle(weight, FontStyle.Posture.NORMAL)))));
+    }
+
     private static final class Section {
         final String id;
-        final ReadableSignal<String> title;
+        final ReadableSignal<String> title, description;
+        final SceneIconButton.Symbol icon;
         final Function<ScenePageContext, SceneNode> content;
-        Section(String id, ReadableSignal<String> title, Function<ScenePageContext, SceneNode> content) {
-            this.id = id; this.title = title; this.content = content;
+        Section(String id, ReadableSignal<String> title, ReadableSignal<String> description,
+                SceneIconButton.Symbol icon, Function<ScenePageContext, SceneNode> content) {
+            this.id = id; this.title = title; this.description = description; this.icon = icon; this.content = content;
         }
     }
 

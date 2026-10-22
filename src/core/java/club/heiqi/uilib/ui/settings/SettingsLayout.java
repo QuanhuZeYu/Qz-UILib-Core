@@ -2,6 +2,8 @@ package club.heiqi.uilib.ui.settings;
 
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.control.SceneControl;
+import club.heiqi.uilib.ui.scene.control.SceneAppearance;
+import club.heiqi.uilib.ui.scene.control.SceneControlMetrics;
 import club.heiqi.uilib.ui.scene.layout.*;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.*;
@@ -32,6 +34,13 @@ final class SettingsLayout {
                 .control(new Workspace(scale, compact, shortWindow, toolbar, navigation, body, footer, ledger))
                 .add(toolbar).add(navigation).add(body).add(footer);
         return ledger == null ? node : node.add(ledger);
+    }
+
+    static SceneNode template(ReadableSignal<SceneAppearance.Palette> colors, ReadableSignal<Boolean> compact,
+            SceneNode toolbar, SceneNode navigation, SceneNode body, SceneNode footer) {
+        return new SceneNode().size(Size.fill(1), Size.fill(1))
+                .control(new TemplateWorkspace(colors, compact, toolbar, navigation, body, footer))
+                .add(toolbar).add(navigation).add(body).add(footer);
     }
 
     static SceneNode split(SettingsUi ui, SceneNode info, SceneNode actions) {
@@ -90,6 +99,53 @@ final class SettingsLayout {
             result.add(
                     new ChildPlacements.Entry(
                             child, new LayoutBox(x, y, Math.max(0, w), Math.max(0, h))));
+        }
+    }
+
+    /** 模板使用同一正式区域协议；原内建设置页保留 Workspace 的分类与更改侧注分配。 */
+    private static final class TemplateWorkspace extends Arrangement {
+        final ReadableSignal<SceneAppearance.Palette> colors;
+        final ReadableSignal<Boolean> compact;
+        final SceneNode toolbar, navigation, body, footer;
+
+        TemplateWorkspace(ReadableSignal<SceneAppearance.Palette> colors, ReadableSignal<Boolean> compact,
+                SceneNode toolbar, SceneNode navigation, SceneNode body, SceneNode footer) {
+            this.colors = colors; this.compact = compact;
+            this.toolbar = toolbar; this.navigation = navigation; this.body = body; this.footer = footer;
+        }
+
+        public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(colors, compact); }
+
+        Result layout(Constraints limits, SceneChildMeasurer children) {
+            SceneAppearance.Palette palette = colors.get();
+            float em = palette.textStyle.logicalEm;
+            int gap = palette.source.metrics(SceneControlMetrics.Kind.PANEL).gap;
+            int margin = Math.max(gap * 2, Math.round(em * 1.25f));
+            boolean narrow = compact.get();
+            int rail = narrow ? 0 : Math.round(em * 12), columns = narrow ? 0 : gap * 5;
+            int width = Math.max(0, Math.min(limits.availableWidth - margin * 2, rail + columns + Math.round(em * 40)));
+            int reading = Math.max(0, width - rail - columns);
+            int x = Math.max(0, (limits.availableWidth - width) / 2), bodyX = x + rail + columns;
+            int toolbarHeight = children.measureChild(toolbar, new Constraints(width, Integer.MAX_VALUE)).height;
+            int start = margin + toolbarHeight + gap * 3;
+            int navigationHeight = narrow
+                    ? children.measureChild(navigation, new Constraints(width, Integer.MAX_VALUE)).height : 0;
+            int bodyY = start + (narrow ? navigationHeight + gap * 3 : 0);
+            int footerHeight = Math.min(limits.availableHeight / 2,
+                    children.measureChild(footer, new Constraints(reading, Integer.MAX_VALUE)).height);
+            int footerY = Math.max(bodyY, limits.availableHeight - margin - footerHeight);
+            int bodyHeight = Math.max(0, footerY - bodyY - gap * 2);
+            List<ChildPlacements.Entry> placed = new ArrayList<>();
+            place(placed, toolbar, x, margin, width, toolbarHeight);
+            int navHeight = narrow ? navigationHeight : Math.max(0, limits.availableHeight - start - margin);
+            int navWidth = narrow ? width : rail;
+            children.measureChild(navigation, new Constraints(navWidth, navHeight));
+            place(placed, navigation, x, start, navWidth, navHeight);
+            children.measureChild(body, new Constraints(reading, bodyHeight));
+            place(placed, body, bodyX, bodyY, reading, bodyHeight);
+            children.measureChild(footer, new Constraints(reading, footerHeight));
+            place(placed, footer, bodyX, footerY, reading, footerHeight);
+            return new Result(limits.availableWidth, limits.availableHeight, placed);
         }
     }
 

@@ -9,6 +9,10 @@ import club.heiqi.uilib.ui.scene.input.*;
 import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.semantics.*;
+import club.heiqi.uilib.ui.scene.layout.*;
+import club.heiqi.uilib.ui.scene.paint.PaintCommand;
+import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import java.util.*;
 import club.heiqi.uilib.ui.settings.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -19,12 +23,15 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("动态文案主题窄屏与禁用沿原控件输入", this::dynamicEnvironment);
         scenario("关闭重开释放旧输入并保留外部草稿", this::reopen);
         scenario("外部单行换行初值与活跃恢复收敛且同值保留选区历史", this::singleLineExternalDraft);
+        scenario("现代分类整行命中与统一字段选择及窄屏操作可达", this::modernComposition);
+        scenario("重复字段移除释放局部外观且共享 helper 的兄弟仍可编辑", this::fieldOwnership);
     }
 
     private final class Fixture implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();
         final SettingsHudHost host = new SettingsHudHost();
-        Signal<String> draft, live, error, notice, title, closeLabel, categoryLabel;
+        Signal<String> draft, live, error, notice, title, closeLabel, categoryLabel, sectionDescription, choice;
+        Signal<SceneDensity> density;
         Signal<Boolean> enabled, toggle;
         Owner owner;
         ConfigSession config;
@@ -41,14 +48,24 @@ public final class SettingsTemplateScenario extends TestApplication {
                 error = domain.signal(""); notice = domain.signal(""); title = domain.signal("业务设置");
                 closeLabel = domain.signal("关闭设置"); categoryLabel = domain.signal("业务分类");
                 enabled = domain.signal(true); toggle = domain.signal(false);
+                sectionDescription = domain.signal("管理业务名称与本次编辑草稿。");
+                choice = domain.signal("safe"); density = domain.signal(SceneDensity.COMFORTABLE);
                 domain.effect(owner, () -> error.set("拒绝".equals(draft.get()) ? "名称不可使用" : ""));
                 template = new SettingsTemplate(title).description(() -> "共用外部草稿")
                         .labels(closeLabel, categoryLabel)
-                        .section("name", () -> "基本", context -> new SettingsFields(context)
-                                .text(() -> "名称", () -> "输入业务名称", draft, enabled, error))
-                        .section("options", () -> "选项", context -> new SettingsFields(context)
-                                .toggle(() -> "启用提示", () -> "只修改草稿", toggle, enabled, () -> ""))
+                        .section("name", () -> "基本", sectionDescription, SceneIconButton.Symbol.SLIDERS,
+                                context -> new SettingsFields(context).text(() -> "名称", () -> "输入业务名称", draft, enabled, error))
+                        .section("options", () -> "选项", () -> "调整提示与处理策略。", SceneIconButton.Symbol.MONITOR, context -> {
+                            SettingsFields fields = new SettingsFields(context);
+                            return SceneAppearance.column(24)
+                                    .add(fields.toggle(() -> "启用提示", () -> "只修改草稿", toggle, enabled, () -> ""))
+                                    .add(fields.choice(() -> "处理策略", () -> "选择本次处理方式",
+                                            () -> Arrays.asList(new SceneSelect.Option<>("safe", () -> "稳妥"),
+                                                    new SceneSelect.Option<>("fast", () -> "快速")), choice, enabled, () -> ""));
+                        })
                         .notice(notice).onClose(() -> leaves++)
+                        .action(() -> "恢复此页默认设置", SceneCommand.of(() -> true, () -> draft.set("初始")), false)
+                        .action(() -> "重新载入生效配置", SceneCommand.of(() -> true, () -> draft.set(live.get())), false)
                         .action(() -> "提交业务", SceneCommand.of(() -> true, () -> {
                             if (!error.get().isEmpty()) notice.set("业务拒绝，输入保留");
                             else { live.set(draft.get()); notice.set("业务已接受"); }
@@ -58,7 +75,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         }
         void open() {
             page = ScenePageSession.open(domain, host, host, context -> {
-                context.motionPolicy(() -> MotionPolicy.OFF);
+                context.motionPolicy(() -> MotionPolicy.OFF); context.density(density);
                 root = template.create(context); context.mountOwned(root);
             });
             page.frame();
@@ -132,6 +149,78 @@ public final class SettingsTemplateScenario extends TestApplication {
             f.host.width = 1200; f.host.height = 900; f.page.frame(); f.activate("基本");
             require(field.equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").id), "动态环境丢失字段身份");
             f.type("禁止输入"); f.domain.execute(() -> require("初始".equals(f.draft.get()), "禁用字段接受了输入"));
+        }
+    }
+
+    private void modernComposition() {
+        try (Fixture f = new Fixture()) {
+            SceneSemanticSnapshot.Entry navigation = f.entry(SceneSemantics.Role.BUTTON, "选项");
+            require(navigation.box.width > navigation.box.height * 3, "分类导航仍按短文字收窄");
+            int x = navigation.box.x + navigation.box.width - 4, y = navigation.box.y + navigation.box.height / 2;
+            f.page.pointer(ScenePointerEvent.down(0, x, y)); f.page.pointer(ScenePointerEvent.up(0, x, y)); f.page.frame();
+            SceneSemanticSnapshot.Entry toggle = f.entry(SceneSemantics.Role.SWITCH, "启用提示");
+            SceneSemanticSnapshot.Entry toggleLabel = f.entry(SceneSemantics.Role.LABEL, "启用提示");
+            require(toggle.box.x > toggleLabel.box.x + toggleLabel.box.width, "开关未排列到说明右侧");
+            SceneSemanticSnapshot.Entry choice = f.entry(SceneSemantics.Role.SELECT, "处理策略");
+            f.click(choice);
+            f.page.key(new SceneKeyEvent(SceneKey.DOWN, false, false, false, false, false, null)); f.page.frame();
+            f.page.key(new SceneKeyEvent(SceneKey.ENTER, false, false, false, false, false, null)); f.page.frame();
+            f.domain.execute(() -> require("fast".equals(f.choice.get()), "现代 choice 未提交正式选择意图"));
+            for (PaintCommand command : f.host.plan.commands()) if (command.kind == PaintCommand.Kind.TEXT && !command.text.logicalText.isEmpty())
+                require(!"default".equals(command.text.style.font), "模板或字段仍使用默认业务字族：" + command.text.logicalText);
+            SceneSemanticId choiceId = f.entry(SceneSemantics.Role.SELECT, "处理策略").id;
+            int comfortable = f.entry(SceneSemantics.Role.SWITCH, "启用提示").box.height;
+            f.domain.execute(() -> f.density.set(SceneDensity.COMPACT)); f.page.frame();
+            require(choiceId.equals(f.entry(SceneSemantics.Role.SELECT, "处理策略").id)
+                    && f.entry(SceneSemantics.Role.SWITCH, "启用提示").box.height < comfortable,
+                    "密度变化重建字段或没有更新真实控件度量");
+            f.host.width = 220; f.host.height = 700;
+            f.domain.execute(() -> f.notice.set("有未保存的更改，请确认后提交业务。")); f.page.frame();
+            SceneSemanticSnapshot.Entry secondary = f.entry(SceneSemantics.Role.BUTTON, "恢复此页默认设置");
+            SceneSemanticSnapshot.Entry primary = f.entry(SceneSemantics.Role.BUTTON, "提交业务");
+            require(primary.box.y > secondary.box.y, "窄屏操作没有按可用空间换行");
+            require(primary.box.x >= 0 && primary.box.x + primary.box.width <= f.host.width
+                    && primary.box.y + primary.box.height <= f.host.height, "窄屏主操作超出可用视口");
+            f.click(primary); f.domain.execute(() -> require(f.notice.get().equals("业务已接受"), "窄屏主操作不可点击"));
+        }
+    }
+
+    private void fieldOwnership() throws Exception {
+        ReactiveDomain domain = ReactiveDomain.direct(); SettingsHudHost host = new SettingsHudHost();
+        Owner[] pageScope = new Owner[1]; Signal<Boolean>[] show = new Signal[1];
+        Signal<String>[] draft = new Signal[1]; List<SceneNode> generated = new ArrayList<>();
+        java.lang.reflect.Field children = Owner.class.getDeclaredField("children"); children.setAccessible(true);
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, scope -> {
+            pageScope[0] = scope.scope(); scope.motionPolicy(() -> MotionPolicy.OFF);
+            SettingsFields fields = new SettingsFields(scope);
+            show[0] = domain.signal(false); draft[0] = domain.signal("兄弟字段");
+            SceneNode permanent = fields.text(() -> "保留字段", () -> "", draft[0], () -> true, () -> "");
+            SceneNode repeated = new SceneNode().bind(NodeBinding.repeat(
+                    () -> show[0].get() ? Collections.singletonList("row") : Collections.emptyList(), key -> key, key -> {
+                        Signal<String> text = domain.signal("成员"), value = domain.signal("first");
+                        Signal<Boolean> checked = domain.signal(false);
+                        SceneNode row = SceneAppearance.column(8)
+                                .add(fields.text(() -> "成员名称", () -> "", text, () -> true, () -> ""))
+                                .add(fields.toggle(() -> "成员开关", () -> "", checked, () -> true, () -> ""))
+                                .add(fields.choice(() -> "成员选项", () -> "", () -> Collections.singletonList(
+                                        new SceneSelect.Option<>("first", () -> "第一项")), value, () -> true, () -> ""))
+                                .add(new SettingsFields(scope).row(() -> "成员说明", () -> "", new SceneNode(), () -> ""));
+                        generated.add(row); return row;
+                    }));
+            scope.mountOwned(SceneAppearance.column(12).size(Size.fill(1), Size.fill(1)).add(permanent).add(repeated));
+        })) {
+            page.frame(); int baseline = ((List<?>) children.get(pageScope[0])).size();
+            for (int i = 0; i < 4; i++) {
+                domain.execute(() -> show[0].set(true)); page.frame();
+                domain.execute(() -> show[0].set(false)); page.frame();
+                require(generated.get(generated.size() - 1).destroyed(), "重复字段移除未销毁所属子树");
+                require(((List<?>) children.get(pageScope[0])).size() == baseline, "移除字段后局部外观作用域仍积累");
+            }
+            domain.execute(() -> draft[0].set("仍可编辑")); page.frame();
+            boolean retained = false;
+            for (SceneSemanticSnapshot.Entry entry : host.semantics.entries)
+                if (entry.values.role == SceneSemantics.Role.TEXT_FIELD && "仍可编辑".equals(entry.values.value)) retained = true;
+            require(retained, "移除一行提前释放了共享 helper 的其他字段");
         }
     }
 
