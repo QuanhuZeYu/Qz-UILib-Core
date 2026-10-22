@@ -1,6 +1,6 @@
 # UILib 设置页面规格
 
-共享设置页编辑 `font.candidates`、`ui.theme` 及 MC 宿主的 `mc.replaceVanillaFont`，共同持有一份跨分类草稿。配置发布、校验和 YAML 注释归[配置规格](<2026-10-11-uilib-config-spec.md>)；字体、宿主资源和焦点沿所属能力，不另建状态、输入或资源权威。
+共享设置页复用[通用模板](<uilib-settings-template-spec.md>)，编辑 `font.candidates`、`ui.theme` 及 MC 宿主的 `mc.replaceVanillaFont`，共同持有一份跨分类草稿。配置发布、校验和 YAML 注释归[配置规格](<2026-10-11-uilib-config-spec.md>)；字体、宿主资源和焦点沿所属能力，不另建状态、输入或资源权威。
 
 参照 [Shadcn Admin](https://shadcn-admin.netlify.app/settings) 的文档式工作台：左侧分类、居中限宽正文、宽屏非交互更改侧注；中屏隐藏侧注，窄屏以正式 SceneSelect 切分类。页头与底栏按真实内容测量，正文只占剩余空间并正式滚动；低窗可省辅助说明，不承诺固定可见行数。主题、字号、密度和视口动态生效。使用统一无衬线界面字体、中性灰、细分隔线及声明式弹性动效；字段不逐个套卡片。动效服从[正式策略](<../scene/2026-10-17-uilib-motion-spec.md>)，退场立即结束输入，快速重开沿当前呈现续接。
 
