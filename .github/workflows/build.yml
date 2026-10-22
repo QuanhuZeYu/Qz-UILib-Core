@@ -2,7 +2,9 @@ name: Core build
 on:
   push:
     branches: ["**"]
+    paths-ignore: ['**/*.md']
   pull_request:
+    paths-ignore: ['**/*.md']
   workflow_dispatch:
 concurrency:
   group: core-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
