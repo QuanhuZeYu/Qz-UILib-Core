@@ -169,7 +169,8 @@ final class SettingsLayout {
             int bodyHeight = Math.max(Math.round(em * 10), limits.availableHeight - bodyY);
             List<ChildPlacements.Entry> placed = new ArrayList<>();
             place(placed, toolbar, 0, 0, limits.availableWidth, toolbarHeight);
-            int navHeight = narrow ? navigationHeight : Math.max(0, limits.availableHeight - start);
+            // rail 与正文共享可滚动文档的内容预算，不能被短视口压成永久空裁剪区。
+            int navHeight = narrow ? navigationHeight : Math.max(0, bodyY + bodyHeight - start);
             int navWidth = narrow ? limits.availableWidth : rail;
             children.measureChild(navigation, new Constraints(navWidth, navHeight));
             place(placed, navigation, 0, start, navWidth, navHeight);

@@ -27,6 +27,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("重复字段移除释放局部外观且共享 helper 的兄弟仍可编辑", this::fieldOwnership);
         scenario("真实低窗页脚最大滚动后主操作在客户端内可点击", this::shortWindowActions);
         scenario("浅深主题的字段文字边框和开关轨道实际绘制对比", this::fieldPaintColors);
+        scenario("宽窄高低窗口导航沿实际滚动与输入切换分类", this::responsiveNavigation);
     }
 
     private final class Fixture implements AutoCloseable {
@@ -184,6 +185,52 @@ public final class SettingsTemplateScenario extends TestApplication {
             require(primary.box.x >= 0 && primary.box.x + primary.box.width <= f.host.width
                     && primary.box.y + primary.box.height <= f.host.height, "窄屏主操作超出可用视口");
             f.click(primary); f.domain.execute(() -> require(f.notice.get().equals("业务已接受"), "窄屏主操作不可点击"));
+        }
+    }
+
+    private void responsiveNavigation() {
+        for (SceneDensity density : new SceneDensity[] {SceneDensity.COMFORTABLE, SceneDensity.COMPACT}) {
+            for (int[] viewport : new int[][] {{1200, 180}, {1200, 900}, {480, 700}, {480, 180}}) {
+                try (Fixture f = new Fixture()) {
+                    f.host.width = viewport[0]; f.host.height = viewport[1];
+                    f.domain.execute(() -> { f.density.set(density); f.draft.set("导航草稿"); }); f.page.frame();
+                    boolean compact = viewport[0] == 480;
+                    SceneScrollViewport.Snapshot[] document = new SceneScrollViewport.Snapshot[1];
+                    f.domain.execute(() -> document[0] = new SceneScrollViewport(f.page.runtime(),
+                            f.root.children().get(0), SceneNode.Axis.COLUMN).snapshot(f.page.pipeline().current().geometry));
+                    SceneSemanticSnapshot.Entry navigation = null;
+                    for (SceneSemanticSnapshot.Entry entry : f.host.semantics.entries) {
+                        if (compact && entry.values.role == SceneSemantics.Role.SELECT
+                                && entry.values.description != null && entry.values.description.contains("业务分类")) navigation = entry;
+                        if (!compact && entry.values.role == SceneSemantics.Role.BUTTON && "选项".equals(entry.values.name)) navigation = entry;
+                    }
+                    System.out.println("RESPONSIVE_NAV " + viewport[0] + "x" + viewport[1] + " " + density
+                            + " mode=" + (compact ? "select" : "rail") + " found=" + (navigation != null)
+                            + " documentMaximum=" + document[0].maximum);
+                    require(navigation != null, "宽窄高低窗口缺少当前空间可用的分类导航");
+                    SceneSemanticSnapshot.Entry before = navigation;
+                    f.domain.execute(() -> {
+                        SceneScrollViewport port = new SceneScrollViewport(f.page.runtime(), f.root.children().get(0), SceneNode.Axis.COLUMN);
+                        port.moveToPixels(document[0].offset + before.box.y - document[0].box.y);
+                    });
+                    f.page.frame();
+                    SceneSemanticSnapshot.Entry visible = null;
+                    for (SceneSemanticSnapshot.Entry entry : f.host.semantics.entries) if (entry.id.equals(before.id)) visible = entry;
+                    require(visible != null, "文档滚动丢失原分类控件身份");
+                    LayoutBox client = new LayoutBox(0, 0, f.host.width, f.host.height);
+                    LayoutBox hit = visible.box.intersect(client);
+                    if (visible.clip != null) hit = hit.intersect(visible.clip);
+                    require(hit.width > 0 && hit.height > 0, "文档滚动后分类仍被空裁剪");
+                    int x = hit.x + hit.width / 2, y = hit.y + hit.height / 2;
+                    f.page.pointer(ScenePointerEvent.down(0, x, y)); f.page.pointer(ScenePointerEvent.up(0, x, y)); f.page.frame();
+                    if (compact) {
+                        f.page.key(new SceneKeyEvent(SceneKey.DOWN, false, false, false, false, false, null)); f.page.frame();
+                        f.page.key(new SceneKeyEvent(SceneKey.ENTER, false, false, false, false, false, null)); f.page.frame();
+                    }
+                    f.entry(SceneSemantics.Role.SWITCH, "启用提示");
+                    f.domain.execute(() -> require("导航草稿".equals(f.draft.get()), "导航切换改写了原字段草稿"));
+                }
+            }
         }
     }
 
