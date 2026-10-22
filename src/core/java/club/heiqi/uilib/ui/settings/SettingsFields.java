@@ -41,7 +41,8 @@ public final class SettingsFields {
         Owner owner = context.scope().child();
         SceneEditState state = new SceneEditState(context.domain(), value.get());
         context.domain().effect(owner, () -> {
-            String next = Objects.requireNonNull(value.get(), "字段草稿");
+            // 与 SceneEditState 单行入口使用相同规范化，避免 reset 的 Snapshot 反复使本 Effect 失效。
+            String next = Objects.requireNonNull(value.get(), "字段草稿").replace("\r", "").replace("\n", "");
             // 此 Signal 本身就是业务草稿；显式放弃/恢复须结束旧输入联系，同值输入保留选区与历史。
             if (!next.equals(state.text().get())) state.reset(next);
         });

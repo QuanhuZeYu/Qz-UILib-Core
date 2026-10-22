@@ -18,6 +18,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("跨分类保留同一草稿和错误且业务拒绝不发布", this::draftAndRejection);
         scenario("动态文案主题窄屏与禁用沿原控件输入", this::dynamicEnvironment);
         scenario("关闭重开释放旧输入并保留外部草稿", this::reopen);
+        scenario("外部单行换行初值与活跃恢复收敛且同值保留选区历史", this::singleLineExternalDraft);
     }
 
     private final class Fixture implements AutoCloseable {
@@ -31,11 +32,12 @@ public final class SettingsTemplateScenario extends TestApplication {
         ScenePageSession page;
         SceneNode root;
         int leaves;
-        Fixture() {
+        Fixture() { this("初始"); }
+        Fixture(String initial) {
             domain.execute(() -> {
                 owner = domain.owner(); config = new ConfigSession(domain, ConfigSchema.of(ThemeConfiguration.KEY));
                 host.themes = new ThemeConfiguration(domain, config, owner);
-                draft = domain.signal("初始"); live = domain.signal("初始");
+                draft = domain.signal(initial); live = domain.signal("初始");
                 error = domain.signal(""); notice = domain.signal(""); title = domain.signal("业务设置");
                 closeLabel = domain.signal("关闭设置"); categoryLabel = domain.signal("业务分类");
                 enabled = domain.signal(true); toggle = domain.signal(false);
@@ -130,6 +132,39 @@ public final class SettingsTemplateScenario extends TestApplication {
             f.host.width = 1200; f.host.height = 900; f.page.frame(); f.activate("基本");
             require(field.equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").id), "动态环境丢失字段身份");
             f.type("禁止输入"); f.domain.execute(() -> require("初始".equals(f.draft.get()), "禁用字段接受了输入"));
+        }
+    }
+
+    private void singleLineExternalDraft() {
+        for (String separator : new String[] {"\n", "\r", "\r\n"}) {
+            String initial = "left" + separator + "right";
+            try (Fixture f = new Fixture(initial)) {
+                SceneSemanticId field = f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").id;
+                require("leftright".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "含换行初值未按单行合同呈现");
+                f.domain.execute(() -> require(initial.equals(f.draft.get()), "呈现被动改写了外部草稿"));
+                f.type("active");
+                f.domain.execute(() -> f.draft.set("rest" + separator + "ored")); f.page.frame();
+                require(field.equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").id)
+                        && "restored".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "活跃字段恢复含换行草稿未收敛到同一节点");
+                f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.UNDO, false, null)); f.page.frame();
+                require("restored".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "显式恢复仍能撤销到旧草稿");
+                f.type("edited");
+                f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.SELECT_ALL, false, null)); f.page.frame();
+                f.domain.execute(() -> f.draft.set("edi" + separator + "ted")); f.page.frame();
+                require(field.equals(f.host.semantics.focused), "同规范化文本改变了字段焦点");
+                f.page.edit(SceneEditEvent.text("replacement")); f.page.frame();
+                require("replacement".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "同规范化文本重置了原选区");
+                f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.UNDO, false, null)); f.page.frame();
+                require("edited".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "替换输入的撤销历史丢失");
+                f.page.edit(SceneEditEvent.command(SceneEditEvent.Command.UNDO, false, null)); f.page.frame();
+                require("restored".equals(f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").values.value),
+                        "同规范化文本清除了已有历史");
+            }
         }
     }
 
