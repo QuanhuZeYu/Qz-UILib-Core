@@ -106,13 +106,15 @@ jobs:
         with:
           name: core-release
           path: release-assets
-      # 发布工具随工作流更新；生产资产与静态正文仍固定到上面的 tag commit。
+      # 生产资产固定到 tag；发布工具和同版本静态文案使用本次工作流提交。
       - name: 检出本次工作流的发布工具
         uses: actions/checkout@v4
         with:
           ref: ${{ github.workflow_sha }}
           path: .release-tools
-          sparse-checkout: tools/release.mjs
+          sparse-checkout: |
+            tools/release.mjs
+            .changelogs
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: 创建或更新同一 Release
@@ -121,8 +123,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
           VERSION: ${{ needs.build.outputs.version }}
-          COMMIT: ${{ needs.build.outputs.commit }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           node .release-tools/tools/release.mjs \
@@ -133,7 +133,4 @@ jobs:
             --asset "release-assets/qz-uilib-core-$VERSION-maven.zip" \
             --asset "release-assets/qz-uilib-core-$VERSION.jar" \
             --asset "release-assets/qz-uilib-core-$VERSION-java8.jar" \
-            --changelog ".changelogs/$TAG.md" \
-            --commit "$COMMIT" \
-            --run-url "$RUN_URL" \
-            --scope "Core 完整 build：Java21 与 Java8 正式 Jar、开发与源码产物、gallery 与 core-verification 测试消费者；Maven ZIP 根目录为 asia/quanhuzeyu/uilib。"
+            --changelog ".release-tools/.changelogs/$TAG.md"
