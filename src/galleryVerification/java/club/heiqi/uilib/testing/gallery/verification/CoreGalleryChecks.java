@@ -29,7 +29,8 @@ public final class CoreGalleryChecks implements GalleryChecks {
     }
     private final List<Module> modules = Arrays.asList(
         new Module("gallery", "广场与页面", "真实目录进入全部页面、三尺寸切换与编辑结果",
-                GalleryNavigationScenario::new, SettingsWorkspaceScenario::new, VectorPresentationScenario::new,
+                GalleryNavigationScenario::new, SettingsWorkspaceScenario::new, SettingsTemplateScenario::new,
+                SceneHudScenario::new, VectorPresentationScenario::new,
                 DensityPresentationScenario::new, InspectionPresentationScenario::new),
         new Module("state", "状态与生命周期", "派生读取、动态结构、资源归属与动效时序",
                 SceneCoreLoopTest::new, ReactiveLifecycleScenario::new, PageSessionScenario::new, DynamicStructureScenario::new, MotionScenario::new,

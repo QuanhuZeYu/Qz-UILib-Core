@@ -29,6 +29,7 @@
 | 四方向如何在二维内容和按需集合中移动焦点 | [方向焦点导航](<scene/2026-10-18-uilib-directional-navigation-spec.md>) | 同批几何、编辑优先、有限准备、边缘及必要显露 |
 | 按钮与快捷键如何共享动作和可执行状态 | [通用命令与范围快捷键](<scene/2026-10-18-uilib-command-spec.md>) | 共享命令、中性键意图、编辑优先、范围及物理按压生命周期 |
 | 草稿如何编辑、提交及隔离旧输入 | [编辑状态与输入法](<scene/2026-10-07-uilib-editing-spec.md>) | 单多行、历史、提交、编辑目标及组字联系 |
+| HUD 如何锚定与编辑位置 | [Scene HUD](<scene/uilib-scene-hud-spec.md>) | 逻辑偏移、缩放、视口约束与正式拖拽放下 |
 | 普通内容如何拾取、移动和回槽 | [Draggable](<scene/2026-10-15-uilib-draggable-spec.md>) | 激活、把手、位移约束、临时拖动与结束 |
 | 如何接收与排序条目 | [Droppable 与 Sortable](<scene/2026-10-15-uilib-drop-sort-spec.md>) | 接收候选、纵向列表、通用多容器排序与移动意图 |
 | 如何滚动与显示滚动条 | [滚动区与滚动条](<scene/2026-10-16-uilib-scroll-area-spec.md>) | 轴向视口、默认/独立条、连续滚轮及范围限制 |
@@ -64,6 +65,7 @@
 | 需要查清的责任 | 唯一归属 | 维护范围 |
 | --- | --- | --- |
 | 配置值如何声明、校验和持久化 | [无平台配置](<config/2026-10-11-uilib-config-spec.md>) | 类型绑定、YAML 文档/注释、发布、字体选项接入与旧来源迁移 |
+| 业务如何组合通用设置工作区 | [通用设置页模板](<config/uilib-settings-template-spec.md>) | 分类、外部草稿字段、业务操作与动态反馈 |
 | 用户如何编辑、应用与保存 | [配置页面](<config/2026-10-12-uilib-settings-page-design.md>) | Shadcn Admin 参考、字段草稿、字体来源管理及共同操作流程 |
 
 ## 验证设施

@@ -20,14 +20,18 @@ final class SettingsLayout {
             SceneNode body,
             SceneNode footer,
             SceneNode ledger) {
-        return ui.stack(0)
+        return workspace(ui.scale, ui.compact, ui.shortWindow, toolbar, navigation, body, footer, ledger);
+    }
+
+    static SceneNode workspace(
+            ReadableSignal<Float> scale, ReadableSignal<Boolean> compact,
+            ReadableSignal<Boolean> shortWindow, SceneNode toolbar, SceneNode navigation,
+            SceneNode body, SceneNode footer, SceneNode ledger) {
+        SceneNode node = new SceneNode()
                 .size(Size.fill(1), Size.fill(1))
-                .control(new Workspace(ui, toolbar, navigation, body, footer, ledger))
-                .add(toolbar)
-                .add(navigation)
-                .add(body)
-                .add(footer)
-                .add(ledger);
+                .control(new Workspace(scale, compact, shortWindow, toolbar, navigation, body, footer, ledger))
+                .add(toolbar).add(navigation).add(body).add(footer);
+        return ledger == null ? node : node.add(ledger);
     }
 
     static SceneNode split(SettingsUi ui, SceneNode info, SceneNode actions) {
@@ -90,17 +94,21 @@ final class SettingsLayout {
     }
 
     private static final class Workspace extends Arrangement {
-        final SettingsUi ui;
+        final ReadableSignal<Float> scale;
+        final ReadableSignal<Boolean> compact, shortWindow;
         final SceneNode toolbar, navigation, body, footer, ledger;
 
         Workspace(
-                SettingsUi ui,
+                ReadableSignal<Float> scale, ReadableSignal<Boolean> compact,
+                ReadableSignal<Boolean> shortWindow,
                 SceneNode toolbar,
                 SceneNode navigation,
                 SceneNode body,
                 SceneNode footer,
                 SceneNode ledger) {
-            this.ui = ui;
+            this.scale = scale;
+            this.compact = compact;
+            this.shortWindow = shortWindow;
             this.toolbar = toolbar;
             this.navigation = navigation;
             this.body = body;
@@ -109,23 +117,25 @@ final class SettingsLayout {
         }
 
         public List<ReadableSignal<?>> measureDependencies(SceneNode n) {
-            return Arrays.asList(ui.scale, ui.compact, ui.shortWindow);
+            return Arrays.asList(scale, compact, shortWindow);
         }
 
+        int px(int value) { return Math.max(0, Math.round(value * scale.get())); }
+
         Result layout(Constraints c, SceneChildMeasurer m) {
-            boolean compact = ui.compact.get();
-            int rail = compact ? 0 : ui.px(232), gutter = ui.px(compact ? 16 : 32);
+            boolean compact = this.compact.get();
+            int rail = compact ? 0 : px(232), gutter = px(compact ? 16 : 32);
             int main = Math.max(0, c.availableWidth - rail), width = Math.max(0, main - gutter * 2);
-            boolean side = c.availableWidth >= ui.px(1440) && !ui.shortWindow.get();
-            int ledgerWidth = side ? ui.px(260) : 0, gap = side ? ui.px(40) : 0;
-            int reading = Math.max(0, Math.min(ui.px(720), width - ledgerWidth - gap)),
+            boolean side = ledger != null && c.availableWidth >= px(1440) && !shortWindow.get();
+            int ledgerWidth = side ? px(260) : 0, gap = side ? px(40) : 0;
+            int reading = Math.max(0, Math.min(px(720), width - ledgerWidth - gap)),
                     group = reading + ledgerWidth + gap;
             int x = rail + gutter + Math.max(0, (width - group) / 2);
             int
                     toolbarHeight =
                             m.measureChild(toolbar, new Constraints(group, c.availableHeight))
                                     .height,
-                    top = toolbarHeight + ui.px(24);
+                    top = toolbarHeight + px(24);
             int nav =
                     compact
                             ? m.measureChild(navigation, new Constraints(width, c.availableHeight))
@@ -137,10 +147,10 @@ final class SettingsLayout {
                             m.measureChild(footer, new Constraints(group, Integer.MAX_VALUE))
                                     .height);
             int start =
-                    top + (compact ? nav + ui.px(12) : 0) + ui.px(ui.shortWindow.get() ? 8 : 24);
-            int bottom = Math.max(start, c.availableHeight - footerHeight - ui.px(12));
+                    top + (compact ? nav + px(12) : 0) + px(shortWindow.get() ? 8 : 24);
+            int bottom = Math.max(start, c.availableHeight - footerHeight - px(12));
             List<ChildPlacements.Entry> e = new ArrayList<>();
-            place(e, toolbar, x, ui.px(12), group, toolbarHeight);
+            place(e, toolbar, x, px(12), group, toolbarHeight);
             m.measureChild(
                     navigation,
                     new Constraints(compact ? width : rail, compact ? nav : c.availableHeight));
@@ -154,7 +164,7 @@ final class SettingsLayout {
             m.measureChild(body, new Constraints(reading, Math.max(0, bottom - start)));
             place(e, body, x, start, reading, bottom - start);
             m.measureChild(footer, new Constraints(group, footerHeight));
-            place(e, footer, x, c.availableHeight - footerHeight - ui.px(6), group, footerHeight);
+            place(e, footer, x, c.availableHeight - footerHeight - px(6), group, footerHeight);
             if (side) {
                 int lh =
                         m.measureChild(ledger, new Constraints(ledgerWidth, bottom - start)).height;
@@ -165,7 +175,7 @@ final class SettingsLayout {
                         start,
                         ledgerWidth,
                         Math.min(lh, bottom - start));
-            } else {
+            } else if (ledger != null) {
                 m.measureChild(ledger, new Constraints(0, 0));
                 place(e, ledger, 0, 0, 0, 0);
             }
