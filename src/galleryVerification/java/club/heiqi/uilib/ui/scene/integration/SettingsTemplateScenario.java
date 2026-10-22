@@ -25,6 +25,8 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("外部单行换行初值与活跃恢复收敛且同值保留选区历史", this::singleLineExternalDraft);
         scenario("现代分类整行命中与统一字段选择及窄屏操作可达", this::modernComposition);
         scenario("重复字段移除释放局部外观且共享 helper 的兄弟仍可编辑", this::fieldOwnership);
+        scenario("真实低窗页脚最大滚动后主操作在客户端内可点击", this::shortWindowActions);
+        scenario("浅深主题的字段文字边框和开关轨道实际绘制对比", this::fieldPaintColors);
     }
 
     private final class Fixture implements AutoCloseable {
@@ -182,6 +184,83 @@ public final class SettingsTemplateScenario extends TestApplication {
             require(primary.box.x >= 0 && primary.box.x + primary.box.width <= f.host.width
                     && primary.box.y + primary.box.height <= f.host.height, "窄屏主操作超出可用视口");
             f.click(primary); f.domain.execute(() -> require(f.notice.get().equals("业务已接受"), "窄屏主操作不可点击"));
+        }
+    }
+
+    private void fieldPaintColors() {
+        try (Fixture f = new Fixture()) {
+            for (ThemeMode mode : ThemeMode.values()) {
+                f.domain.execute(() -> f.config.set(ThemeConfiguration.KEY, mode)); f.page.frame(); f.activate("基本");
+                SceneAppearance.Palette palette = new SceneAppearance.Palette(mode.isDark());
+                boolean namePainted = false;
+                for (PaintCommand command : f.host.plan.commands())
+                    if (command.kind == PaintCommand.Kind.TEXT && "名称".equals(command.text.logicalText))
+                        namePainted = command.text.style.color == palette.text && command.box.width > 0 && command.box.height > 0;
+                require(namePainted, "字段名称真实 TEXT 颜色不符合当前主题");
+                LayoutBox editor = f.entry(SceneSemantics.Role.TEXT_FIELD, "名称").box;
+                int border = f.host.rectanglePixel(editor.x + editor.width / 2.0, editor.y + .5);
+                System.out.println("FIELD_PAINT " + mode + " text=" + Integer.toHexString(palette.text)
+                        + " border=" + Integer.toHexString(border));
+                require(border == palette.border, "无框编辑与现代外表面未输出可见边线");
+                f.activate("选项"); f.domain.execute(() -> f.toggle.set(false)); f.page.frame();
+                LayoutBox toggle = f.entry(SceneSemantics.Role.SWITCH, "启用提示").box;
+                double left = toggle.x + toggle.width / 3.0, right = toggle.x + toggle.width * 2.0 / 3;
+                double middle = toggle.y + toggle.height / 2.0;
+                int offThumb = f.host.rectanglePixel(left, middle), offTrack = f.host.rectanglePixel(right, middle);
+                require(offTrack == palette.border && offThumb != offTrack && (offTrack >>> 24) != 0,
+                        "关闭开关没有可见轨道或轨道拇指无对比");
+                f.click(f.entry(SceneSemantics.Role.SWITCH, "启用提示"));
+                int onTrack = f.host.rectanglePixel(left, middle), onThumb = f.host.rectanglePixel(right, middle);
+                System.out.println("SWITCH_PAINT " + mode + " off=" + Integer.toHexString(offTrack) + "/" + Integer.toHexString(offThumb)
+                        + " on=" + Integer.toHexString(onTrack) + "/" + Integer.toHexString(onThumb));
+                require(onTrack == palette.primary && onThumb == palette.onPrimary && onTrack != onThumb,
+                        "开启开关未绘制相互区分的轨道与拇指");
+            }
+        }
+    }
+
+    private void shortWindowActions() {
+        for (int[] viewport : new int[][] {{220, 240}, {600, 180}, {220, 300}}) {
+            try (Fixture f = new Fixture()) {
+                f.host.width = viewport[0]; f.host.height = viewport[1];
+                f.domain.execute(() -> {
+                    f.draft.set("低窗业务");
+                    f.notice.set("Pending changes, confirm before applying.");
+                });
+                f.page.frame();
+                SceneScrollViewport.Snapshot[] atMaximum = new SceneScrollViewport.Snapshot[1];
+                LayoutBox[] footerBox = new LayoutBox[1];
+                f.domain.execute(() -> {
+                    SceneNode footer = f.root.children().get(f.root.children().size() - 1);
+                    SceneScrollViewport port = new SceneScrollViewport(f.page.runtime(), footer, SceneNode.Axis.COLUMN);
+                    SceneGeometryView geometry = f.page.pipeline().current().geometry;
+                    SceneScrollViewport.Snapshot before = port.snapshot(geometry);
+                    require(before != null, "低窗页脚没有正式滚动端口");
+                    port.moveToPixels(before.maximum);
+                });
+                f.page.frame();
+                f.domain.execute(() -> {
+                    SceneNode footer = f.root.children().get(f.root.children().size() - 1);
+                    SceneGeometryView geometry = f.page.pipeline().current().geometry;
+                    footerBox[0] = geometry.get(footer).box;
+                    atMaximum[0] = new SceneScrollViewport(f.page.runtime(), footer, SceneNode.Axis.COLUMN).snapshot(geometry);
+                });
+                require(atMaximum[0].offset == atMaximum[0].maximum, "页脚未实际滚动到原端口最大位置");
+                LayoutBox footer = footerBox[0];
+                SceneSemanticSnapshot.Entry primary = f.entry(SceneSemantics.Role.BUTTON, "提交业务");
+                LayoutBox button = primary.box;
+                System.out.println("SHORT_WINDOW " + viewport[0] + "x" + viewport[1]
+                        + " footer=" + footer.x + "," + footer.y + "," + footer.width + "," + footer.height
+                        + " scroll=" + atMaximum[0].offset + "/" + atMaximum[0].maximum
+                        + " primary=" + button.x + "," + button.y + "," + button.width + "," + button.height);
+                require(footer.y >= 0 && footer.y + footer.height <= f.host.height,
+                        "低窗页脚仍越出宿主：" + viewport[0] + "x" + viewport[1]);
+                require(button.y >= footer.y && button.y + button.height <= footer.y + footer.height
+                        && button.x >= 0 && button.x + button.width <= f.host.width,
+                        "最大滚动后的主操作仍不完整位于客户端");
+                f.click(primary);
+                f.domain.execute(() -> require("低窗业务".equals(f.live.get()), "客户端内主操作真实点击没有应用业务"));
+            }
         }
     }
 

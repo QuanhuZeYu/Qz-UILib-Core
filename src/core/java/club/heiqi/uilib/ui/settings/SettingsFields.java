@@ -31,7 +31,7 @@ public final class SettingsFields {
 
     private SceneNode row(SceneAppearance style, ReadableSignal<String> label, ReadableSignal<String> description,
             SceneField.Content content, ReadableSignal<String> error, boolean inline) {
-        return SceneField.create(context, () -> style.colors.get().editorTheme(),
+        return SceneField.create(context, () -> style.colors.get().source,
                 () -> new SceneField.Labels(label.get(), description.get(), error.get(), inline), content)
                 .bind(NodeBinding.value(() -> style.colors.get().source.metrics(SceneControlMetrics.Kind.FIELD).gap,
                         SceneNode::gap))
@@ -56,7 +56,7 @@ public final class SettingsFields {
         SceneNode editor = SceneTextField.create(context, state, editorTheme, () -> false,
                 submission -> {
                     if (state.accept(submission, submission.text)) value.set(submission.text);
-                }, SceneTextField.SubmitPolicy.INPUT)
+                }, SceneTextField.SubmitPolicy.INPUT, () -> "", false)
                 .size(Size.fill(1), Size.natural())
                 .bind(NodeBinding.value(enabled, SceneNode::enabled));
         return row(style, label, description, new SceneField.Content(style.field(editor), editor, null), error, false)
@@ -68,9 +68,19 @@ public final class SettingsFields {
         Objects.requireNonNull(value, "value");
         Objects.requireNonNull(enabled, "enabled");
         SceneAppearance style = new SceneAppearance(context, context.theme());
-        SceneNode editor = SceneSwitch.create(context, value, label, () -> style.colors.get().editorTheme(), value::set, false)
+        SceneNode editor = SceneSwitch.create(context, value, label, () -> switchTheme(style.colors.get(), value.get()), value::set, false)
                 .bind(NodeBinding.value(enabled, SceneNode::enabled));
         return row(style, label, description, new SceneField.Content(editor), error, true);
+    }
+
+    private static SceneTheme switchTheme(SceneAppearance.Palette palette, boolean checked) {
+        // Switch 自己绘制轨道；不使用为外层 field 去框的透明编辑主题。
+        int thumb = checked ? palette.onPrimary : palette.dark ? palette.text : palette.background;
+        return new SceneTheme(palette.textStyle.withColor(thumb), palette.background, 0, 0, 0,
+                palette.primary, palette.border, palette.muted, palette.primary, palette.onPrimary,
+                palette.source.padding, palette.source.gap)
+                .withMotion(palette.source.feedbackMotion, palette.source.spatialMotion)
+                .withDensity(palette.source.density).withControlSize(palette.source.controlSize);
     }
 
     /** 标准选择器与文本共用现代编辑器主题和外表面，仍由正式 Select 发布选择意图。 */

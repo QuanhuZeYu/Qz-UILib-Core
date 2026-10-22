@@ -20,6 +20,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /** 页面共用的现代视觉词汇；颜色与文字单一派生，输入/编辑/布局仍归正式控件。 */
 public class SceneAppearance {
@@ -364,6 +365,15 @@ public class SceneAppearance {
         return node;
     }
 
+    /** 自定义背景直接进入同一标准动效及绘制依赖，不经普通节点属性二次同步。 */
+    public SceneNode card(SceneNode content, ReadableSignal<Integer> background) {
+        Surface surface = new Surface(colors, Role.CARD, null, () -> false, null,
+                Objects.requireNonNull(background, "卡片背景来源"));
+        SceneNode node = column(0).control(surface).add(content);
+        surface.install(node);
+        return node;
+    }
+
     /**
      * 字段外表面包含正文及底部滚动条。正式带框输入在声明期将装饰交给此表面，
      * 保留原主题、动效和编辑节点的显式 style/padding；无框输入继续由现代外表面装饰。
@@ -455,6 +465,7 @@ public class SceneAppearance {
     static class Surface extends Flow {
         private final ReadableSignal<Palette> colors;
         private final ReadableSignal<Boolean> selected;
+        private final ReadableSignal<Integer> background;
         private final SceneNode target;
         private final Role role;
         private final SceneControlMotion motion = new SceneControlMotion();
@@ -472,6 +483,12 @@ public class SceneAppearance {
 
         Surface(ReadableSignal<Palette> colors, Role role, SceneNode target,
                 ReadableSignal<Boolean> selected, SceneFieldPaint decoration) {
+            this(colors, role, target, selected, decoration, null);
+        }
+
+        Surface(ReadableSignal<Palette> colors, Role role, SceneNode target,
+                ReadableSignal<Boolean> selected, SceneFieldPaint decoration, ReadableSignal<Integer> background) {
+            this.background = background;
             this.colors = colors;
             this.role = role;
             this.target = target;
@@ -487,6 +504,7 @@ public class SceneAppearance {
         }
 
         public List<ReadableSignal<?>> paintDependencies(SceneNode n) {
+            if (background != null) return Arrays.asList(colors, selected, background);
             return decoration == null ? Arrays.asList(colors, selected) : Arrays.asList(colors, selected, decoration.theme());
         }
 
@@ -531,7 +549,10 @@ public class SceneAppearance {
                     role == Role.PRIMARY
                             ? p.primary
                             : role == Role.GHOST || role == Role.ENTRY ? 0 : p.background;
-            if (role == Role.CARD && (node.background() >>> 24) != 0) fill = node.background();
+            if (role == Role.CARD) {
+                if (background != null) fill = Objects.requireNonNull(background.get(), "卡片背景");
+                else if ((node.background() >>> 24) != 0) fill = node.background();
+            }
             if (role == Role.ENTRY && selected.get()) fill = p.hover;
             if ((hover || pressed) && active) fill = role == Role.PRIMARY ? p.muted : p.hover;
             return active ? fill : p.surface;
