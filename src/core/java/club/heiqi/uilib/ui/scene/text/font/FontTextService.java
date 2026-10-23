@@ -60,6 +60,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private UnicodeGraphemes.Source unicodeRules;
     private UnicodeGraphemes.Profile unicodeProfile;
     private final int faceLimit, layoutLimit, cachedTextLimit;
+    private final FontMatchCache matching;
     private final LinkedHashMap<FaceKey, FontFace> faces =
             new LinkedHashMap<FaceKey, FontFace>(16, .75f, true);
     private final LinkedHashMap<FaceKey, String> failures =
@@ -68,8 +69,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             new LinkedHashMap<ColorKey, Boolean>(16, .75f, true);
     private final LinkedHashMap<InkKey, InkBounds> ink =
             new LinkedHashMap<InkKey, InkBounds>(16, .75f, true);
-    private final LinkedHashMap<Object, TextLayout> layouts =
-            new LinkedHashMap<Object, TextLayout>(16, .75f, true);
+    private final LinkedHashMap<Object, FontLayoutEntry> layouts =
+            new LinkedHashMap<Object, FontLayoutEntry>(16, .75f, true);
     private final Map<String, List<FontSource>> named = new HashMap<String, List<FontSource>>();
     // 服务发布的数学正文尾链随默认资源换代；显式 register 后由调用方拥有该名称。
     private final Set<String> defaultMathTextNames = new TreeSet<>();
@@ -130,6 +131,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         this.faceLimit = faceLimit;
         this.layoutLimit = layoutLimit;
         this.cachedTextLimit = cachedTextLimit;
+        matching = new FontMatchCache(layoutLimit, cachedTextLimit);
         this.defaults = copy(defaults);
         unicodeRules = Objects.requireNonNull(rules, "rules");
         unicodeProfile = Objects.requireNonNull(rules.snapshot(), "profile");
@@ -375,6 +377,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private void invalidate() {
         generation++;
         layouts.clear();
+        matching.clear();
         colors.clear();
         ink.clear();
         failures.clear();
@@ -1079,11 +1082,11 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (!style.fontStyle.equals(club.heiqi.uilib.ui.scene.text.FontStyle.NORMAL))
             return layout(AttributedText.plain(TextInput.string(text), style), width, policy);
         LayoutKey key = new LayoutKey(text, sources, style.logicalEm, width, policy);
-        TextLayout cached = layouts.get(key);
-        if (cached != null) return rebindResolvedStyle(cached, style, key.sources);
+        FontLayoutEntry cached = layouts.get(key);
+        if (cached != null) return rebindResolvedStyle(cached.geometry, style, key.sources);
         TextLayout result = build(TextInput.string(text), text, style, width, policy, sources);
         if (layoutLimit > 0 && text.length() <= cachedTextLimit) {
-            layouts.put(key, result);
+            layouts.put(key, new FontLayoutEntry(result));
             trim(layouts, layoutLimit);
         }
         return result;
@@ -1269,7 +1272,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             Bidi bidi,
             int paragraphStart,
             TextPolicy policy) {
-        Map<MatchKey, FontSource> independent = new HashMap<MatchKey, FontSource>();
+        Map<FontMatchCache.MatchKey, FontSource> independent = new HashMap<FontMatchCache.MatchKey, FontSource>();
         for (int i = 0; i < units.size(); ) {
             if (units.get(i).inlineBox != null) {
                 i++;
@@ -1312,18 +1315,45 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             MatchingRange range,
             TextPolicy policy,
             List<FontSource> sources,
-            Map<MatchKey, FontSource> independent) {
+            Map<FontMatchCache.MatchKey, FontSource> independent) {
         Unit first = range.first;
         TextStyle style = first.shapeStyle;
         String matchText = range.contextual ? null : doc.display.substring(first.start, range.end);
-        MatchKey key = matchText == null ? null
-                : new MatchKey(sources, style.fontStyle, style.logicalEm, first.script,
-                        first.emoji, range.direction, matchText);
+        FontMatchCache.MatchKey key = matchText == null ? null
+                : new FontMatchCache.MatchKey(sources, style.fontStyle, style.logicalEm, first.script,
+                        first.emoji, range.direction, policy.language, matchText);
         FontSource cached = key == null ? null : independent.get(key);
-        if (cached != null) return new FontSelection(cached, false, 0);
+        boolean resourceFailure = false;
+        if (cached != null) {
+            // 本段落已核对过候选前缀；紧 face 预算下不能为重复字素重开全部来源。
+            if (face(cached, style.logicalEm, doc) != null) return new FontSelection(cached, false, 0);
+            resourceFailure = true;
+        }
+        cached = key == null ? null : matching.matched(key);
+        if (cached != null) {
+            // 同代 LRU 也会关闭 face；按原候选前缀取得活对象并保留资源诊断。
+            // 只复用实际匹配资格，不保存 face，最终行仍完整整形。
+            for (FontSource candidate : sources) {
+                FontFace available = face(candidate, style.logicalEm, doc);
+                if (available == null) resourceFailure = true;
+                if (candidate == cached) {
+                    if (available != null && !resourceFailure) {
+                        independent.put(key, cached);
+                        return new FontSelection(cached, false, 0);
+                    }
+                    break;
+                }
+            }
+        }
         for (FontSource candidate : sources) {
-            if (!candidateMatches(doc, range, policy, matchText, candidate)) continue;
-            if (key != null) independent.put(key, candidate);
+            FontFace available = face(candidate, style.logicalEm, doc);
+            if (available == null) { resourceFailure = true; continue; }
+            if (!candidateMatches(doc, range, policy, matchText, candidate, available)) continue;
+            if (key != null) {
+                independent.put(key, candidate);
+                // face() 会去重诊断；错误条数不代表资源成功，失败选择不能跨请求固化。
+                if (!resourceFailure) matching.remember(key, candidate);
+            }
             return new FontSelection(candidate, false, 0);
         }
         return stableReplacement(doc, range, sources);
@@ -1335,12 +1365,12 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             MatchingRange range,
             TextPolicy policy,
             String matchText,
-            FontSource candidate) {
+            FontSource candidate,
+            FontFace face) {
         Unit first = range.first;
         String script = UScript.getShortName(first.script);
         float em = first.shapeStyle.logicalEm;
-        FontFace face = face(candidate, em, doc);
-        if (face == null || range.contextual && !face.supportsScript(script)) return false;
+        if (range.contextual && !face.supportsScript(script)) return false;
         String context = range.contextual ? doc.display : matchText;
         int from = range.contextual ? first.start : 0;
         int limit = range.contextual ? range.end : matchText.length();
@@ -1441,10 +1471,16 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
 
     private List<FontSource> resolvedCandidates(TextStyle style, UnicodeText doc) {
+        List<FontSource> requested = candidates(style);
+        boolean variations = nativeService.supportsVariations();
+        FontMatchCache.CandidatesKey key = new FontMatchCache.CandidatesKey(requested, style.fontStyle, variations);
+        List<FontSource> known = matching.resolved(key);
+        if (known != null) return known;
+        int diagnostics = doc.diagnostics.size();
         List<FontSource> result = new ArrayList<FontSource>();
-        for (FontSource source : candidates(style))
+        for (FontSource source : requested)
             try {
-                result.addAll(source.resolve(style.fontStyle, nativeService.supportsVariations()));
+                result.addAll(source.resolve(style.fontStyle, variations));
             } catch (RuntimeException error) {
                 doc.diagnostics.add(
                         new Diagnostic(
@@ -1453,7 +1489,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 0,
                                 source + " (" + source.origin + "): SFNT元数据解析失败: " + error));
             }
-        return result;
+        List<FontSource> resolved = Collections.unmodifiableList(result);
+        // 失败仍沿原入口诊断，不把缺失来源固化为完整候选快照。
+        if (doc.diagnostics.size() == diagnostics) matching.remember(key, resolved);
+        return resolved;
     }
 
     private void styleDiagnostic(
@@ -1505,17 +1544,17 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         // 颜色属于绘制；属性范围、来源、内联度量与其余样式才决定定位身份。
         // 与纯文字共用容量、LRU及资源换代，不能按主题颜色积累第二套缓存。
         AttributedText resolved = supportedText(resolveScripts(text));
-        AttributedText positioned = positionStyles(resolved);
-        AttributedKey key = new AttributedKey(positioned, width, policy);
-        TextLayout cached = layouts.get(key);
+        AttributedKey key = new AttributedKey(resolved, width, policy);
+        FontLayoutEntry cached = layouts.get(key);
         if (cached == null) {
-            cached = build(positioned, positioned.originalText, width, policy);
+            AttributedText positioned = positionStyles(resolved);
+            cached = new FontLayoutEntry(build(positioned, positioned.originalText, width, policy));
             if (layoutLimit > 0 && positioned.input.text.length() <= cachedTextLimit) {
                 layouts.put(key, cached);
                 trim(layouts, layoutLimit);
             }
         }
-        return cached.withColors(resolved.baseStyle, offset -> resolved.styleAt(offset).color);
+        return cached.paint(resolved);
     }
 
     @Override
@@ -2924,6 +2963,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (closed) return;
         closed = true;
         layouts.clear();
+        matching.clear();
         colors.clear();
         ink.clear();
         failures.clear();
@@ -2933,51 +2973,6 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         invalidation.clear();
         defaults = Collections.emptyList();
         nativeService.close();
-    }
-
-    private static final class MatchKey {
-        final List<FontSource> sources;
-        final club.heiqi.uilib.ui.scene.text.FontStyle request;
-        final float em;
-        final int script;
-        final boolean emoji;
-        final ShapeDirection direction;
-        final String text;
-
-        MatchKey(
-                List<FontSource> sources,
-                club.heiqi.uilib.ui.scene.text.FontStyle request,
-                float em,
-                int script,
-                boolean emoji,
-                ShapeDirection direction,
-                String text) {
-            this.sources = sources;
-            this.request = request;
-            this.em = em;
-            this.script = script;
-            this.emoji = emoji;
-            this.direction = direction;
-            this.text = text;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof MatchKey)) return false;
-            MatchKey k = (MatchKey) o;
-            return request.equals(k.request)
-                    && em == k.em
-                    && script == k.script
-                    && emoji == k.emoji
-                    && direction == k.direction
-                    && text.equals(k.text)
-                    && sources.equals(k.sources);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(sources, request, em, script, emoji, direction, text);
-        }
     }
 
     private static class FaceKey {
