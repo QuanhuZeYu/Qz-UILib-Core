@@ -11,6 +11,7 @@ public final class GlyphKey {
     public final float size;
     public final int glyphId;
     public final GlyphRasterStyle rasterStyle;
+    private final int hash;
 
     public GlyphKey(FontSource source, float size, int glyphId) {
         this(source, size, glyphId, GlyphRasterStyle.NORMAL);
@@ -23,6 +24,9 @@ public final class GlyphKey {
             throw new IllegalArgumentException("无效字形身份");
         this.size = size;
         this.glyphId = glyphId;
+        // source以实例身份参与，size/style均不可变；请求、驻留和Frame重复查询共用此值。
+        hash = 31 * (31 * (31 * System.identityHashCode(source) + Float.floatToIntBits(size))
+                + glyphId) + rasterStyle.hashCode();
     }
 
     public static GlyphKey of(TextLayout.Glyph glyph) {
@@ -31,6 +35,7 @@ public final class GlyphKey {
 
     @Override
     public boolean equals(Object other) {
+        if (this == other) return true;
         if (!(other instanceof GlyphKey)) return false;
         GlyphKey k = (GlyphKey) other;
         return source == k.source
@@ -41,10 +46,7 @@ public final class GlyphKey {
 
     @Override
     public int hashCode() {
-        return 31
-                        * (31 * (31 * System.identityHashCode(source) + Float.floatToIntBits(size))
-                                + glyphId)
-                + rasterStyle.hashCode();
+        return hash;
     }
 
     @Override

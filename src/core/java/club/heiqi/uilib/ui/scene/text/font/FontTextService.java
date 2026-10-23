@@ -2999,7 +2999,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
         @Override
         public int hashCode() {
-            return Objects.hash(source, size);
+            // hash 保留 Float 的位语义；equals 仍使用原有浮点 ==。
+            int result = 31 + Objects.hashCode(source);
+            return 31 * result + Float.floatToIntBits(size);
         }
     }
 
@@ -3022,7 +3024,9 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
         @Override
         public int hashCode() {
-            return Objects.hash(super.hashCode(), glyph, style);
+            int result = 31 + super.hashCode();
+            result = 31 * result + glyph;
+            return 31 * result + Objects.hashCode(style);
         }
     }
 
