@@ -30,6 +30,11 @@ public final class SceneSelect {
     }
     public static <K> SceneNode create(ScenePageContext page, ReadableSignal<List<Option<K>>> options, ReadableSignal<K> selected,
             Consumer<K> change, ReadableSignal<String> placeholder, ReadableSignal<SceneTheme> theme) {
+        return create(page, options, selected, change, placeholder, theme, true);
+    }
+    /** framed 只控制触发框；弹层始终消费完整主题，不借透明编辑主题推断配色。 */
+    public static <K> SceneNode create(ScenePageContext page, ReadableSignal<List<Option<K>>> options, ReadableSignal<K> selected,
+            Consumer<K> change, ReadableSignal<String> placeholder, ReadableSignal<SceneTheme> theme, boolean framed) {
         Objects.requireNonNull(page, "page").domain().checkWrite(); Objects.requireNonNull(selected, "选中来源");
         Objects.requireNonNull(change, "选择意图"); Objects.requireNonNull(placeholder, "占位名称"); Objects.requireNonNull(theme, "主题");
         Owner owner = page.scope().child();
@@ -39,7 +44,7 @@ public final class SceneSelect {
             return placeholder.get();
         };
         return new ScenePopupList<>(page, owner, checked, option -> option.key, option -> option.name.get(), option -> option.enabled.get(),
-                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme, false).node()
+                selected, title, option -> { if (!Objects.equals(selected.get(), option.key)) change.accept(option.key); }, theme, false, framed).node()
                 .bind(NodeBinding.semantics(() -> SceneSemantics.builder().description(placeholder.get()).build()));
     }
 }

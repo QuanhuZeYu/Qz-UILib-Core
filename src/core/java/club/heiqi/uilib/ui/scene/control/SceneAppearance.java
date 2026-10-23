@@ -94,6 +94,12 @@ public class SceneAppearance {
                     true);
         }
 
+        /** 弹出列表沿完整来源派生独立表面，触发器去框不传播到所属层。 */
+        SceneTheme popupTheme() {
+            return source.appearance(typography.withColor(text), background, 0, hover, selected,
+                    muted, border, muted, primary, onPrimary, 11, 8, true);
+        }
+
         public SceneTheme theme(float scale, int color, int padding) {
             return mappedTheme(scale, color, padding, false);
         }
@@ -513,7 +519,10 @@ public class SceneAppearance {
             // 只读编辑仍可定位/选择；外表面读取同一个逻辑焦点，不改变路由器的输入方式语义。
             if (role == Role.FIELD && target.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
                 return target.runtime().focusRouter().focused().get() == target;
-            return target.runtime().focusRouter().focusVisible(target);
+            club.heiqi.uilib.ui.scene.semantics.SceneSemantics semantics = role != Role.FIELD || target.control() == null
+                    ? null : target.control().semantics(target);
+            SceneNode focus = semantics == null || semantics.focusTarget == null ? target : semantics.focusTarget;
+            return target.runtime().focusRouter().focusVisible(focus);
         }
 
         @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {

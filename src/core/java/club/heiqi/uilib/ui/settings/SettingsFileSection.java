@@ -5,12 +5,10 @@ import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
-import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 
 /** 文件信息只消费宿主路径与配置事实，不解析文件或创建监视器。 */
 final class SettingsFileSection {
     static SceneNode build(SettingsUi ui, Runnable reload) {
-        SceneNode pathLabel = ui.heading("文件路径", 15);
         SceneEditState path =
                 new SceneEditState(ui.context.domain(), ui.configuration.path().toString());
         SceneNode pathField =
@@ -28,17 +26,11 @@ final class SettingsFileSection {
                                 s -> {},
                                 SceneTextField.SubmitPolicy.CONFIRM,
                                 () -> "",
-                                false)
-                        .bind(
-                                NodeBinding.semantics(
-                                        () ->
-                                                SceneSemantics.builder()
-                                                        .labelledBy(pathLabel)
-                                                        .build()));
+                                false);
         SceneNode file =
                 ui.stack(12)
-                        .add(pathLabel)
-                        .add(ui.field(pathField))
+                        .add(ui.fields.row(() -> "文件路径", () -> "",
+                                new SceneField.Content(ui.field(pathField), pathField, null), () -> "", false))
                         .add(ui.text("文件格式：UTF-8 YAML", 12, true))
                         .add(
                                 ui.text(

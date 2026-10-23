@@ -34,6 +34,8 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         scenario("旧schema不显示性能分类和合批开关", this::performanceUnavailable);
         scenario("同窗字体子视图的初始焦点与逐级返回焦点", this::editorFocus);
         scenario("外观分类的全局保存与宿主重载失败持续可见", this::operationFailure);
+        scenario("共享模板外壳字段与正文同源预览且字体密度沿正式主题", this::previewTheme);
+        scenario("窄屏共享分类选择器键鼠关闭和重复选择保留样本编辑身份", this::narrowNavigation);
     }
 
     final class Fixture implements AutoCloseable {
@@ -50,6 +52,8 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         Owner pageOwner;
         int refreshes, leaves;
         Signal<MotionPolicy> motion;
+        Signal<SceneDensity> density;
+        ScenePageContext context;
 
         Fixture() throws Exception {
             this(false);
@@ -72,6 +76,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             domain.execute(
                     () -> {
                         motion = domain.signal(MotionPolicy.NORMAL);
+                        density = domain.signal(SceneDensity.COMFORTABLE);
                         List<ConfigKey<?>> keys = new ArrayList<>();
                         keys.add(fonts);
                         keys.add(ThemeConfiguration.KEY);
@@ -118,8 +123,10 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                             host,
                             host,
                             context -> {
+                                this.context = context;
                                 pageOwner = context.scope();
                                 context.motionPolicy(motion);
+                                context.density(density);
                                 page.build(context);
                             });
             session.frame();
@@ -503,6 +510,89 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             require(
                     Boolean.TRUE.equals(f.entry(SceneSemantics.Role.BUTTON, "管理字体来源").focused),
                     "字体编辑器关闭没有恢复外观触发点");
+        }
+    }
+
+    private void previewTheme() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            String disk = f.disk();
+            for (SceneDensity density : SceneDensity.values()) {
+                f.domain.execute(() -> f.density.set(density)); f.session.frame();
+                float[] em = new float[1];
+                f.domain.execute(() -> em[0] = f.context.theme().get().textStyle.logicalEm);
+                require(Float.compare(paintedText(f, "界面主题").text.style.logicalEm, em[0]) == 0,
+                        "共享字段仍相对正式主题缩小一档");
+                f.click(SceneSemantics.Role.BUTTON, "深色外观");
+                f.domain.execute(() -> require(f.configuration.current().theme() == ThemeMode.LIGHT,
+                        "本页主题预览提前发布全局配置"));
+                int dark = new SceneAppearance.Palette(true).text;
+                require(paintedText(f, "QZ UILib / 工作区设置").text.style.color == dark
+                                && paintedText(f, "界面主题").text.style.color == dark
+                                && paintedText(f, "有未应用的更改").text.style.color == dark,
+                        "模板外壳、共享字段与反馈没有跟随同一本页主题");
+                f.click(SceneSemantics.Role.BUTTON, "性能");
+                require(paintedText(f, "激进合批").text.style.color == dark
+                                && Float.compare(paintedText(f, "激进合批").text.style.logicalEm, em[0]) == 0,
+                        "共享布尔字段的主题或字号与模板分裂");
+                f.click(SceneSemantics.Role.BUTTON, "浅色模式");
+                require(paintedText(f, "激进合批").text.style.color == new SceneAppearance.Palette(false).text
+                                && f.disk().equals(disk), "页头快捷切换未回到同一草稿或隐式保存");
+                f.click(SceneSemantics.Role.BUTTON, "外观");
+                System.out.println("SETTINGS_SHARED_THEME density=" + density + " em=" + em[0]
+                        + " previewOnly=true shellFieldBodyUnified=true");
+            }
+        }
+    }
+
+    private PaintCommand paintedText(Fixture f, String text) {
+        PaintCommand[] result = new PaintCommand[1];
+        f.domain.execute(() -> {
+            for (PaintCommand command : f.session.pipeline().current().paint.commands())
+                if (command.kind == PaintCommand.Kind.TEXT && text.equals(command.text.logicalText)) { result[0] = command; break; }
+        });
+        require(result[0] != null, "缺少实际文字绘制：" + text);
+        return result[0];
+    }
+
+    private SceneSemanticSnapshot.Entry category(Fixture f) {
+        for (SceneSemanticSnapshot.Entry entry : f.host.semantics.entries)
+            if (entry.values.role == SceneSemantics.Role.SELECT && entry.values.description.contains("设置分类")) return entry;
+        throw new AssertionError("缺少窄屏公共分类选择器");
+    }
+
+    private void click(Fixture f, SceneSemanticSnapshot.Entry target) {
+        int x = target.box.x + target.box.width / 2, y = target.box.y + target.box.height / 2;
+        require(target.clip == null || target.clip.contains(x, y), "分类目标在实际裁剪外");
+        f.session.pointer(ScenePointerEvent.down(0, x, y));
+        f.session.pointer(ScenePointerEvent.up(0, x, y)); f.session.frame();
+    }
+
+    private void narrowNavigation() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            SceneSemanticSnapshot.Entry sample = f.entry(SceneSemantics.Role.TEXT_AREA, "文字样本");
+            require(f.request(SceneSemanticRequest.text(sample.id, "窄屏保留的样本编辑")) == SceneSemanticRequest.Result.APPLIED,
+                    "真实样本输入被拒绝");
+            f.host.width = 600; f.host.height = 800; f.session.frame();
+            click(f, category(f));
+            click(f, f.entry(SceneSemantics.Role.OPTION, "配置文件"));
+            f.entry(SceneSemantics.Role.BUTTON, "从文件重新加载");
+            click(f, category(f));
+            f.session.key(new SceneKeyEvent(SceneKey.HOME, false, false, false, false, false, null)); f.session.frame();
+            f.session.escape(() -> { throw new AssertionError("分类弹层未消费 ESC"); }); f.session.frame();
+            require("配置文件".equals(category(f).values.value), "ESC 提交了预览分类");
+            click(f, category(f));
+            f.session.key(new SceneKeyEvent(SceneKey.HOME, false, false, false, false, false, null));
+            f.session.key(new SceneKeyEvent(SceneKey.ENTER, false, false, false, false, false, null)); f.session.frame();
+            require(sample.id.equals(f.entry(SceneSemantics.Role.TEXT_AREA, "文字样本").id)
+                            && "窄屏保留的样本编辑".equals(f.entry(SceneSemantics.Role.TEXT_AREA, "文字样本").values.value),
+                    "重复分类选择重建样本或清空原编辑");
+            click(f, category(f));
+            f.session.key(new SceneKeyEvent(SceneKey.TAB, false, false, false, false, false, null)); f.session.frame();
+            require(f.host.semantics.currentModal == null && "外观".equals(category(f).values.value),
+                    "窄屏分类 Tab 关闭产生选择或遗留所属层");
+            require(f.leaves == 0, "内层 ESC 或 Tab 关闭了共享设置页");
         }
     }
 

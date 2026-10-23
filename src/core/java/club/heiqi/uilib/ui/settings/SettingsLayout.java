@@ -15,34 +15,14 @@ import java.util.*;
 final class SettingsLayout {
     private SettingsLayout() {}
 
-    static SceneNode workspace(
-            SettingsUi ui,
-            SceneNode toolbar,
-            SceneNode navigation,
-            SceneNode body,
-            SceneNode footer,
-            SceneNode ledger) {
-        return workspace(ui.scale, ui.compact, ui.shortWindow, toolbar, navigation, body, footer, ledger);
-    }
-
-    static SceneNode workspace(
-            ReadableSignal<Float> scale, ReadableSignal<Boolean> compact,
-            ReadableSignal<Boolean> shortWindow, SceneNode toolbar, SceneNode navigation,
-            SceneNode body, SceneNode footer, SceneNode ledger) {
-        SceneNode node = new SceneNode()
-                .size(Size.fill(1), Size.fill(1))
-                .control(new Workspace(scale, compact, shortWindow, toolbar, navigation, body, footer, ledger))
-                .add(toolbar).add(navigation).add(body).add(footer);
-        return ledger == null ? node : node.add(ledger);
-    }
-
     static SceneNode template(ReadableSignal<SceneAppearance.Palette> colors, ReadableSignal<Boolean> compact,
-            SceneNode toolbar, SceneNode navigation, SceneNode body, SceneNode footer) {
+            SceneNode toolbar, SceneNode navigation, SceneNode body, SceneNode footer, SceneNode aside) {
         SceneNode document = new SceneNode().size(Size.fill(1), Size.fill(1)).clip(true).scrollable(true)
-                .control(new TemplateDocument(colors, compact, toolbar, navigation, body))
+                .control(new TemplateDocument(colors, compact, toolbar, navigation, body, aside))
                 .add(toolbar).add(navigation).add(body);
+        if (aside != null) document.add(aside);
         return new SceneNode().size(Size.fill(1), Size.fill(1))
-                .control(new TemplateWorkspace(colors, compact, document, footer))
+                .control(new TemplateWorkspace(colors, compact, document, footer, aside))
                 .add(document).add(footer);
     }
 
@@ -109,11 +89,11 @@ final class SettingsLayout {
     private static final class TemplateWorkspace extends Arrangement {
         final ReadableSignal<SceneAppearance.Palette> colors;
         final ReadableSignal<Boolean> compact;
-        final SceneNode document, footer;
+        final SceneNode document, footer, aside;
 
         TemplateWorkspace(ReadableSignal<SceneAppearance.Palette> colors, ReadableSignal<Boolean> compact,
-                SceneNode document, SceneNode footer) {
-            this.colors = colors; this.compact = compact; this.document = document; this.footer = footer;
+                SceneNode document, SceneNode footer, SceneNode aside) {
+            this.colors = colors; this.compact = compact; this.document = document; this.footer = footer; this.aside = aside;
         }
         public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(colors, compact); }
 
@@ -123,8 +103,9 @@ final class SettingsLayout {
             int gap = palette.source.metrics(SceneControlMetrics.Kind.PANEL).gap;
             int margin = Math.max(gap * 2, Math.round(em * 1.25f));
             int rail = compact.get() ? 0 : Math.round(em * 12), columns = compact.get() ? 0 : gap * 5;
-            int width = Math.max(0, Math.min(limits.availableWidth - margin * 2, rail + columns + Math.round(em * 40)));
-            int reading = Math.max(0, width - rail - columns);
+            int side = aside != null && aside.visible() ? Math.round(em * 16) : 0, sideGap = side == 0 ? 0 : gap * 5;
+            int width = Math.max(0, Math.min(limits.availableWidth - margin * 2, rail + columns + Math.round(em * 40) + side + sideGap));
+            int reading = Math.max(0, width - rail - columns - side - sideGap);
             int x = Math.max(0, (limits.availableWidth - width) / 2);
             int footerHeight = Math.min(limits.availableHeight / 2,
                     children.measureChild(footer, new Constraints(reading, Integer.MAX_VALUE)).height);
@@ -147,11 +128,11 @@ final class SettingsLayout {
     private static final class TemplateDocument extends Arrangement {
         final ReadableSignal<SceneAppearance.Palette> colors;
         final ReadableSignal<Boolean> compact;
-        final SceneNode toolbar, navigation, body;
+        final SceneNode toolbar, navigation, body, aside;
         TemplateDocument(ReadableSignal<SceneAppearance.Palette> colors, ReadableSignal<Boolean> compact,
-                SceneNode toolbar, SceneNode navigation, SceneNode body) {
+                SceneNode toolbar, SceneNode navigation, SceneNode body, SceneNode aside) {
             this.colors = colors; this.compact = compact;
-            this.toolbar = toolbar; this.navigation = navigation; this.body = body;
+            this.toolbar = toolbar; this.navigation = navigation; this.body = body; this.aside = aside;
         }
         public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Arrays.asList(colors, compact); }
         Result layout(Constraints limits, SceneChildMeasurer children) {
@@ -160,7 +141,8 @@ final class SettingsLayout {
             int gap = palette.source.metrics(SceneControlMetrics.Kind.PANEL).gap;
             boolean narrow = compact.get();
             int rail = narrow ? 0 : Math.round(em * 12), columns = narrow ? 0 : gap * 5;
-            int reading = Math.max(0, limits.availableWidth - rail - columns);
+            int side = aside != null && aside.visible() ? Math.round(em * 16) : 0, sideGap = side == 0 ? 0 : gap * 5;
+            int reading = Math.max(0, limits.availableWidth - rail - columns - side - sideGap);
             int toolbarHeight = children.measureChild(toolbar, new Constraints(limits.availableWidth, Integer.MAX_VALUE)).height;
             int start = toolbarHeight + gap * 3;
             int navigationHeight = narrow
@@ -176,97 +158,12 @@ final class SettingsLayout {
             place(placed, navigation, 0, start, navWidth, navHeight);
             children.measureChild(body, new Constraints(reading, bodyHeight));
             place(placed, body, rail + columns, bodyY, reading, bodyHeight);
+            if (side > 0) {
+                int height = children.measureChild(aside, new Constraints(side, bodyHeight)).height;
+                place(placed, aside, rail + columns + reading + sideGap, bodyY, side, Math.min(height, bodyHeight));
+            }
             return new Result(limits.availableWidth, Math.max(limits.availableHeight, bodyY + bodyHeight), placed);
         }
     }
 
-    private static final class Workspace extends Arrangement {
-        final ReadableSignal<Float> scale;
-        final ReadableSignal<Boolean> compact, shortWindow;
-        final SceneNode toolbar, navigation, body, footer, ledger;
-
-        Workspace(
-                ReadableSignal<Float> scale, ReadableSignal<Boolean> compact,
-                ReadableSignal<Boolean> shortWindow,
-                SceneNode toolbar,
-                SceneNode navigation,
-                SceneNode body,
-                SceneNode footer,
-                SceneNode ledger) {
-            this.scale = scale;
-            this.compact = compact;
-            this.shortWindow = shortWindow;
-            this.toolbar = toolbar;
-            this.navigation = navigation;
-            this.body = body;
-            this.footer = footer;
-            this.ledger = ledger;
-        }
-
-        public List<ReadableSignal<?>> measureDependencies(SceneNode n) {
-            return Arrays.asList(scale, compact, shortWindow);
-        }
-
-        int px(int value) { return Math.max(0, Math.round(value * scale.get())); }
-
-        Result layout(Constraints c, SceneChildMeasurer m) {
-            boolean compact = this.compact.get();
-            int rail = compact ? 0 : px(232), gutter = px(compact ? 16 : 32);
-            int main = Math.max(0, c.availableWidth - rail), width = Math.max(0, main - gutter * 2);
-            boolean side = ledger != null && c.availableWidth >= px(1440) && !shortWindow.get();
-            int ledgerWidth = side ? px(260) : 0, gap = side ? px(40) : 0;
-            int reading = Math.max(0, Math.min(px(720), width - ledgerWidth - gap)),
-                    group = reading + ledgerWidth + gap;
-            int x = rail + gutter + Math.max(0, (width - group) / 2);
-            int
-                    toolbarHeight =
-                            m.measureChild(toolbar, new Constraints(group, c.availableHeight))
-                                    .height,
-                    top = toolbarHeight + px(24);
-            int nav =
-                    compact
-                            ? m.measureChild(navigation, new Constraints(width, c.availableHeight))
-                                    .height
-                            : 0;
-            int footerHeight =
-                    Math.min(
-                            c.availableHeight / 2,
-                            m.measureChild(footer, new Constraints(group, Integer.MAX_VALUE))
-                                    .height);
-            int start =
-                    top + (compact ? nav + px(12) : 0) + px(shortWindow.get() ? 8 : 24);
-            int bottom = Math.max(start, c.availableHeight - footerHeight - px(12));
-            List<ChildPlacements.Entry> e = new ArrayList<>();
-            place(e, toolbar, x, px(12), group, toolbarHeight);
-            m.measureChild(
-                    navigation,
-                    new Constraints(compact ? width : rail, compact ? nav : c.availableHeight));
-            place(
-                    e,
-                    navigation,
-                    compact ? rail + gutter : 0,
-                    compact ? top : 0,
-                    compact ? width : rail,
-                    compact ? nav : c.availableHeight);
-            m.measureChild(body, new Constraints(reading, Math.max(0, bottom - start)));
-            place(e, body, x, start, reading, bottom - start);
-            m.measureChild(footer, new Constraints(group, footerHeight));
-            place(e, footer, x, c.availableHeight - footerHeight - px(6), group, footerHeight);
-            if (side) {
-                int lh =
-                        m.measureChild(ledger, new Constraints(ledgerWidth, bottom - start)).height;
-                place(
-                        e,
-                        ledger,
-                        x + reading + gap,
-                        start,
-                        ledgerWidth,
-                        Math.min(lh, bottom - start));
-            } else if (ledger != null) {
-                m.measureChild(ledger, new Constraints(0, 0));
-                place(e, ledger, 0, 0, 0, 0);
-            }
-            return new Result(c.availableWidth, c.availableHeight, e);
-        }
-    }
 }

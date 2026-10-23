@@ -11,26 +11,38 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /** 通用字段组合；值与校验属于业务，语义、编辑及主题沿正式控件。 */
 public final class SettingsFields {
     private final ScenePageContext context;
+    private final ReadableSignal<SceneTheme> theme;
 
     public SettingsFields(ScenePageContext context) {
+        this(context, Objects.requireNonNull(context, "context").theme());
+    }
+
+    /** 局部预览传完整主题，不改变页面或宿主的主题权威。 */
+    public SettingsFields(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         this.context = Objects.requireNonNull(context, "context");
+        this.theme = Objects.requireNonNull(theme, "theme");
     }
 
     public SceneNode row(ReadableSignal<String> label, ReadableSignal<String> description,
             SceneNode editor, ReadableSignal<String> error) {
-        Objects.requireNonNull(label, "label");
-        Objects.requireNonNull(description, "description");
-        Objects.requireNonNull(error, "error");
-        return row(new SceneAppearance(context, context.theme()),
-                label, description, new SceneField.Content(editor), error, false);
+        return row(label, description, new SceneField.Content(editor), error, false);
+    }
+
+    /** 复杂编辑保留正式控件、主焦点及尾部动作，标签和错误仍沿同一字段组合。 */
+    public SceneNode row(ReadableSignal<String> label, ReadableSignal<String> description,
+            SceneField.Content content, ReadableSignal<String> error, boolean inline) {
+        return row(new SceneAppearance(context, theme), label, description, content, error, inline);
     }
 
     private SceneNode row(SceneAppearance style, ReadableSignal<String> label, ReadableSignal<String> description,
             SceneField.Content content, ReadableSignal<String> error, boolean inline) {
+        Objects.requireNonNull(label, "label"); Objects.requireNonNull(description, "description");
+        Objects.requireNonNull(content, "content"); Objects.requireNonNull(error, "error");
         return SceneField.create(context, () -> style.colors.get().source,
                 () -> new SceneField.Labels(label.get(), description.get(), error.get(), inline), content)
                 .bind(NodeBinding.value(() -> style.colors.get().source.metrics(SceneControlMetrics.Kind.FIELD).gap,
@@ -41,9 +53,8 @@ public final class SettingsFields {
     /** 每次输入写入调用者的草稿 Signal；业务命令自行决定是否应用或保存。 */
     public SceneNode text(ReadableSignal<String> label, ReadableSignal<String> description,
             Signal<String> value, ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
-        Objects.requireNonNull(value, "value");
-        Objects.requireNonNull(enabled, "enabled");
-        SceneAppearance style = new SceneAppearance(context, context.theme());
+        Objects.requireNonNull(value, "value"); Objects.requireNonNull(enabled, "enabled");
+        SceneAppearance style = new SceneAppearance(context, theme);
         Owner owner = style.scope.child();
         ReadableSignal<SceneTheme> editorTheme = () -> style.colors.get().editorTheme();
         SceneEditState state = new SceneEditState(context.domain(), value.get());
@@ -66,9 +77,17 @@ public final class SettingsFields {
     public SceneNode toggle(ReadableSignal<String> label, ReadableSignal<String> description,
             Signal<Boolean> value, ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
         Objects.requireNonNull(value, "value");
+        return toggle(label, description, value, value::set, enabled, error);
+    }
+
+    /** 业务可拒绝意图；显示值始终重读原来源，不在字段内部另存草稿。 */
+    public SceneNode toggle(ReadableSignal<String> label, ReadableSignal<String> description,
+            ReadableSignal<Boolean> value, Consumer<Boolean> change,
+            ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
+        Objects.requireNonNull(value, "value"); Objects.requireNonNull(change, "change");
         Objects.requireNonNull(enabled, "enabled");
-        SceneAppearance style = new SceneAppearance(context, context.theme());
-        SceneNode editor = SceneSwitch.create(context, value, label, () -> switchTheme(style.colors.get(), value.get()), value::set, false)
+        SceneAppearance style = new SceneAppearance(context, theme);
+        SceneNode editor = SceneSwitch.create(context, value, label, () -> switchTheme(style.colors.get(), value.get()), change, false)
                 .bind(NodeBinding.value(enabled, SceneNode::enabled));
         return row(style, label, description, new SceneField.Content(editor), error, true);
     }
@@ -83,15 +102,22 @@ public final class SettingsFields {
                 .withDensity(palette.source.density).withControlSize(palette.source.controlSize);
     }
 
-    /** 标准选择器与文本共用现代编辑器主题和外表面，仍由正式 Select 发布选择意图。 */
     public <K> SceneNode choice(ReadableSignal<String> label, ReadableSignal<String> description,
             ReadableSignal<List<SceneSelect.Option<K>>> options, Signal<K> value,
             ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
         Objects.requireNonNull(value, "value");
+        return choice(label, description, options, value, value::set, enabled, error);
+    }
+
+    /** 标准选择器传完整主题；内部触发去框不改变所属弹层表面。 */
+    public <K> SceneNode choice(ReadableSignal<String> label, ReadableSignal<String> description,
+            ReadableSignal<List<SceneSelect.Option<K>>> options, ReadableSignal<K> value, Consumer<K> change,
+            ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
+        Objects.requireNonNull(value, "value"); Objects.requireNonNull(change, "change");
         Objects.requireNonNull(enabled, "enabled");
-        SceneAppearance style = new SceneAppearance(context, context.theme());
-        SceneNode editor = SceneSelect.create(context, options, value, value::set, label,
-                () -> style.colors.get().editorTheme())
+        SceneAppearance style = new SceneAppearance(context, theme);
+        SceneNode editor = SceneSelect.create(context, options, value, change, label,
+                () -> style.colors.get().source, false)
                 .size(Size.fill(1), Size.natural())
                 .bind(NodeBinding.value(enabled, SceneNode::enabled));
         return row(style, label, description, new SceneField.Content(style.field(editor), editor, null), error, false);

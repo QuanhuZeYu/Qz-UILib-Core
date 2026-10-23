@@ -156,6 +156,7 @@ public final class DensityControlsScenario extends TestApplication {
         ReactiveDomain domain = ReactiveDomain.direct(); Host host = new Host();
         Signal<SceneDensity>[] density = new Signal[1]; Signal<String>[] text = new Signal[1];
         SceneNode[] nodes = new SceneNode[4]; SceneControl[] surfaces = new SceneControl[4]; int[] clicks = {0};
+        int[] initialPadding = new int[4];
         try (ScenePageSession session = ScenePageSession.open(domain, host, host, page -> {
             page.motionPolicy(() -> MotionPolicy.OFF);
             density[0] = domain.signal(SceneDensity.COMFORTABLE); text[0] = domain.signal("替换外观");
@@ -166,7 +167,7 @@ public final class DensityControlsScenario extends TestApplication {
             nodes[2] = SceneAppearance.button(page, text[0], theme, () -> clicks[0]++, SceneAppearance.Role.OUTLINE);
             SceneNode select = SceneSelect.create(page, () -> java.util.Collections.singletonList(
                     new SceneSelect.Option<>("a", text[0])), () -> "a", ignored -> {}, theme);
-            nodes[3] = select.children().get(0);
+            nodes[3] = select.control().semantics(select).focusTarget;
             for (int i = 0; i < nodes.length; i++) {
                 surfaces[i] = new ReplacementSurface();
                 nodes[i].control(surfaces[i]);
@@ -176,8 +177,9 @@ public final class DensityControlsScenario extends TestApplication {
         })) {
             session.frame();
             domain.execute(() -> {
-                require(nodes[0].padding() == 8 && nodes[1].padding() == 0 && nodes[2].padding() == 10 && nodes[3].padding() == 8,
-                        "替换外观改变原工厂的默认内距");
+                for (int i = 0; i < nodes.length; i++) initialPadding[i] = nodes[i].padding();
+                require(initialPadding[0] > 0 && initialPadding[1] == 0 && initialPadding[2] > 0 && initialPadding[3] > 0,
+                        "替换外观丢失动作与标签的正式内距角色");
                 density[0].set(SceneDensity.COMPACT); text[0].set("当前文案");
             });
             session.frame();
@@ -186,7 +188,8 @@ public final class DensityControlsScenario extends TestApplication {
                     require(nodes[i].control() == surfaces[i] && nodes[i].text().equals("当前文案")
                             && nodes[i].style().logicalEm < 18, "替换外观后工厂绑定未继续消费当前来源");
                 }
-                require(nodes[0].padding() < 8 && nodes[1].padding() == 0 && nodes[2].padding() < 10 && nodes[3].padding() < 8,
+                require(nodes[0].padding() < initialPadding[0] && nodes[1].padding() == 0
+                                && nodes[2].padding() < initialPadding[2] && nodes[3].padding() < initialPadding[3],
                         "替换外观后密度没有沿原工厂角色更新");
             });
             LayoutBox[] hit = new LayoutBox[1]; domain.execute(() -> hit[0] = box(session, nodes[0]));

@@ -22,6 +22,9 @@ public final class SettingsTemplate implements ScenePage {
     private Runnable close = () -> {};
     private final List<Section> sections = new ArrayList<>();
     private final List<Action> actions = new ArrayList<>();
+    private final List<HeaderAction> headerActions = new ArrayList<>();
+    private ReadableSignal<SceneTheme> theme;
+    private Function<ScenePageContext, SceneNode> feedback, aside;
 
     public SettingsTemplate(ReadableSignal<String> title) {
         this.title = Objects.requireNonNull(title, "title");
@@ -36,16 +39,28 @@ public final class SettingsTemplate implements ScenePage {
         return section(id, title, () -> "", SceneIconButton.Symbol.SLIDERS, content);
     }
 
+    /** 完整主题同时服务外壳、导航与弹层；页面仍持有预览或发布策略。 */
+    public SettingsTemplate theme(ReadableSignal<SceneTheme> value) {
+        theme = Objects.requireNonNull(value, "theme"); return this;
+    }
+
     /** 分类元数据只表达当前内容层级，不改变业务草稿或提交策略。 */
     public SettingsTemplate section(String id, ReadableSignal<String> title,
             ReadableSignal<String> description, SceneIconButton.Symbol icon,
+            Function<ScenePageContext, SceneNode> content) {
+        return section(id, title, description, icon, () -> "", content);
+    }
+
+    /** 导航附注来自业务；动作名称和分类标题仍保留原可读身份。 */
+    public SettingsTemplate section(String id, ReadableSignal<String> title,
+            ReadableSignal<String> description, SceneIconButton.Symbol icon, ReadableSignal<String> annotation,
             Function<ScenePageContext, SceneNode> content) {
         Objects.requireNonNull(id, "id");
         for (Section section : sections)
             if (section.id.equals(id)) throw new IllegalArgumentException("重复设置分类：" + id);
         sections.add(new Section(id, Objects.requireNonNull(title, "title"),
                 Objects.requireNonNull(description, "description"), Objects.requireNonNull(icon, "icon"),
-                Objects.requireNonNull(content, "content")));
+                Objects.requireNonNull(annotation, "annotation"), Objects.requireNonNull(content, "content")));
         return this;
     }
 
@@ -53,6 +68,23 @@ public final class SettingsTemplate implements ScenePage {
         actions.add(new Action(Objects.requireNonNull(label, "label"),
                 Objects.requireNonNull(command, "command"), primary));
         return this;
+    }
+
+    /** 页头附加动作与底部操作使用相同命令，不增加页面状态权威。 */
+    public SettingsTemplate headerAction(ReadableSignal<String> label, SceneIconButton.Symbol icon, SceneCommand command) {
+        headerActions.add(new HeaderAction(Objects.requireNonNull(label, "label"),
+                Objects.requireNonNull(icon, "icon"), Objects.requireNonNull(command, "command")));
+        return this;
+    }
+
+    /** 业务状态和可交互反馈进入模板操作区，低窗沿同一正式端口滚动。 */
+    public SettingsTemplate feedback(Function<ScenePageContext, SceneNode> content) {
+        feedback = Objects.requireNonNull(content, "feedback"); return this;
+    }
+
+    /** 宽屏辅助说明沿模板正文排列；可见性仍由调用方声明。 */
+    public SettingsTemplate aside(Function<ScenePageContext, SceneNode> content) {
+        aside = Objects.requireNonNull(content, "aside"); return this;
     }
 
     public SettingsTemplate notice(ReadableSignal<String> value) {
@@ -74,7 +106,7 @@ public final class SettingsTemplate implements ScenePage {
 
     public SceneNode create(ScenePageContext context) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
-        SceneAppearance ui = new SceneAppearance(context, context.theme());
+        SceneAppearance ui = new SceneAppearance(context, theme == null ? context.theme() : theme);
         SettingsMotion motion = new SettingsMotion(ui.colors);
         ReadableSignal<SceneTheme> editorTheme = () -> ui.colors.get().editorTheme();
         ReadableSignal<Integer> gap = () -> ui.colors.get().source.metrics(SceneControlMetrics.Kind.PANEL).gap;
@@ -100,14 +132,14 @@ public final class SettingsTemplate implements ScenePage {
             SceneNode entry = SceneAppearance.row(0)
                     .bind(NodeBinding.value(gap, SceneNode::gap))
                     .add(ui.icon(section.icon))
-                    .add(ui.label(section.title, .95f, false).size(Size.fill(1), Size.natural()));
+                    .add(ui.label(section::navigationTitle, .95f, false).size(Size.fill(1), Size.natural()));
             rail.add(ui.action(section.title, entry, () -> navigate.accept(section.id), SceneAppearance.Role.ENTRY, active)
                     .size(Size.fill(1), Size.natural()));
-            options.add(new SceneSelect.Option<>(section.id, section.title));
+            options.add(new SceneSelect.Option<>(section.id, section::navigationTitle));
             content.add(motion.reveal(column(gap, 3)
                     .add(Objects.requireNonNull(section.content.apply(context), "分类内容")), active));
         }
-        SceneNode selector = SceneSelect.create(context, () -> options, selected, navigate, sectionLabel, editorTheme)
+        SceneNode selector = SceneSelect.create(context, () -> options, selected, navigate, sectionLabel, () -> ui.colors.get().source, false)
                 .size(Size.fill(1), Size.natural());
         SceneNode compactNavigation = ui.field(selector).bind(NodeBinding.value(compact, SceneNode::visible));
         SceneNode navigation = column(gap, 0).add(rail).add(compactNavigation)
@@ -116,10 +148,12 @@ public final class SettingsTemplate implements ScenePage {
         SceneNode brand = SceneAppearance.row(0).bind(NodeBinding.value(gap, SceneNode::gap))
                 .add(ui.icon(SceneIconButton.Symbol.SLIDERS))
                 .add(heading(ui, title, 1, 600).size(Size.fill(1), Size.natural()));
+        SceneNode header = SceneAppearance.row(0).bind(NodeBinding.value(gap, SceneNode::gap)).add(brand);
+        for (HeaderAction action : headerActions)
+            header.add(ui.action(action.label, action.icon, action.command, SceneAppearance.Role.GHOST));
+        header.add(ui.action(closeLabel, SceneIconButton.Symbol.CLOSE, () -> close.run(), SceneAppearance.Role.GHOST));
         SceneNode toolbar = column(gap, 2)
-                .add(SceneAppearance.row(0).bind(NodeBinding.value(gap, SceneNode::gap))
-                        .add(brand)
-                        .add(ui.action(closeLabel, SceneIconButton.Symbol.CLOSE, () -> close.run(), SceneAppearance.Role.GHOST)))
+                .add(header)
                 .add(ui.line());
         ReadableSignal<String> currentTitle = () -> current(selected.get()) == null ? "" : current(selected.get()).title.get();
         ReadableSignal<String> currentDescription = () -> {
@@ -140,11 +174,14 @@ public final class SettingsTemplate implements ScenePage {
             for (Action action : actions) if (action.primary == primary)
                 buttons.add(ui.action(action.label, null, action.command,
                         primary ? SceneAppearance.Role.PRIMARY : SceneAppearance.Role.OUTLINE));
-        SceneNode feedback = motion.reveal(ui.label(notice, .9f, true), () -> !notice.get().isEmpty());
-        SceneNode operations = SceneLayouts.split(feedback, buttons,
+        SceneNode status = column(gap, 1);
+        if (feedback != null) status.add(Objects.requireNonNull(feedback.apply(context), "操作反馈"));
+        status.add(motion.reveal(ui.label(notice, .9f, true), () -> !notice.get().isEmpty()));
+        SceneNode operations = SceneLayouts.split(status, buttons,
                 () -> new SceneLayouts.SplitOptions(Math.round(ui.colors.get().textStyle.logicalEm * 10), gap.get() * 2));
         SceneNode footer = column(gap, 2).add(ui.line()).add(operations).clip(true).scrollable(true);
-        return SettingsLayout.template(ui.colors, compact, toolbar, navigation, body, footer)
+        SceneNode supplement = aside == null ? null : Objects.requireNonNull(aside.apply(context), "辅助说明");
+        return SettingsLayout.template(ui.colors, compact, toolbar, navigation, body, footer, supplement)
                 .bind(NodeBinding.value(ui.colors, (n, palette) -> n.background(palette.canvas)))
                 .onEscape(() -> { close.run(); return true; })
                 .own(ui.scope);
@@ -167,12 +204,26 @@ public final class SettingsTemplate implements ScenePage {
 
     private static final class Section {
         final String id;
-        final ReadableSignal<String> title, description;
+        final ReadableSignal<String> title, description, annotation;
         final SceneIconButton.Symbol icon;
         final Function<ScenePageContext, SceneNode> content;
         Section(String id, ReadableSignal<String> title, ReadableSignal<String> description,
-                SceneIconButton.Symbol icon, Function<ScenePageContext, SceneNode> content) {
-            this.id = id; this.title = title; this.description = description; this.icon = icon; this.content = content;
+                SceneIconButton.Symbol icon, ReadableSignal<String> annotation, Function<ScenePageContext, SceneNode> content) {
+            this.id = id; this.title = title; this.description = description; this.icon = icon;
+            this.annotation = annotation; this.content = content;
+        }
+        String navigationTitle() {
+            String note = annotation.get();
+            return title.get() + (note.isEmpty() ? "" : " · " + note);
+        }
+    }
+
+    private static final class HeaderAction {
+        final ReadableSignal<String> label;
+        final SceneIconButton.Symbol icon;
+        final SceneCommand command;
+        HeaderAction(ReadableSignal<String> label, SceneIconButton.Symbol icon, SceneCommand command) {
+            this.label = label; this.icon = icon; this.command = command;
         }
     }
 

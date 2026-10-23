@@ -16,38 +16,30 @@ final class SettingsUi extends SceneAppearance {
     final SettingsConfiguration configuration;
     final SettingsModel model;
     final ReadableSignal<Float> scale;
-    final ReadableSignal<Boolean> compact, shortWindow;
+    final ReadableSignal<Boolean> shortWindow;
     final SettingsMotion motion;
+    final SettingsFields fields;
 
     SettingsUi(ScenePageContext context, SettingsConfiguration configuration, SettingsModel model) {
         super(
                 context,
-                () ->
-                        model.theme()
-                                .get()
-                                .sceneTheme()
-                                .withDensity(context.density().get())
-                                .withTextStyle(
-                                        SettingsTypography.style(
-                                                Math.round(
-                                                        context.theme().get().textStyle.logicalEm
-                                                                * 14
-                                                                / 18),
-                                                model.theme().get().sceneTheme().textStyle.color,
-                                                400))
-                                .withMotion(
-                                        context.theme().get().feedbackMotion,
-                                        context.theme().get().spatialMotion));
+                () -> {
+                    SceneTheme source = context.theme().get(), preview = model.theme().get().sceneTheme();
+                    // 只预览配色；字体、密度、尺寸与动效沿同一正式主题，不再缩小共享设置页。
+                    return source.withColors(preview.panel, preview.button, preview.hover, preview.pressed,
+                            preview.focus, preview.disabled, preview.disabledText, preview.tooltip, preview.tooltipText)
+                            .withTextStyle(source.textStyle.withColor(preview.textStyle.color));
+                });
         this.context = context;
         this.configuration = configuration;
         this.model = model;
         scale =
                 context.domain()
                         .computed(scope, () -> context.theme().get().textStyle.logicalEm / 18f);
-        compact = context.domain().computed(scope, () -> context.viewportWidth().get() < px(760));
         shortWindow =
                 context.domain().computed(scope, () -> context.viewportHeight().get() < px(560));
         motion = new SettingsMotion(colors);
+        fields = new SettingsFields(context, () -> colors.get().source);
     }
 
     int px(int value) {
@@ -84,14 +76,10 @@ final class SettingsUi extends SceneAppearance {
     }
 
     SceneNode heading(String value, int em) {
-        return SceneLabel.create(
-                context,
-                () -> value,
-                () ->
-                        colors.get()
-                                .source
-                                .withTextStyle(
-                                        SettingsTypography.style(px(em), colors.get().text, 600)));
+        return label(() -> value, em / 14f, false).bind(NodeBinding.value(colors,
+                (node, palette) -> node.style(palette.textStyle.withEm(palette.textStyle.logicalEm * em / 14f)
+                        .withColor(palette.text).withFontStyle(new club.heiqi.uilib.ui.scene.text.FontStyle(
+                                600, club.heiqi.uilib.ui.scene.text.FontStyle.Posture.NORMAL)))));
     }
 
     SceneNode path(ReadableSignal<String> value, int em) {

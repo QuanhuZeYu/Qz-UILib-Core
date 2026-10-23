@@ -68,16 +68,25 @@ final class ScenePopupList<T, K> {
     }
     ScenePopupList(ScenePageContext page, Owner owner, ReadableSignal<List<T>> source, Function<T, K> key, Function<T, String> label,
             Predicate<T> enabled, ReadableSignal<K> initial, ReadableSignal<String> title, Consumer<T> confirm, ReadableSignal<SceneTheme> theme, boolean menu) {
+        this(page, owner, source, key, label, enabled, initial, title, confirm, theme, menu, true);
+    }
+    ScenePopupList(ScenePageContext page, Owner owner, ReadableSignal<List<T>> source, Function<T, K> key, Function<T, String> label,
+            Predicate<T> enabled, ReadableSignal<K> initial, ReadableSignal<String> title, Consumer<T> confirm, ReadableSignal<SceneTheme> theme,
+            boolean menu, boolean framed) {
         this.page = page; this.source = source; this.key = key; this.label = label; this.enabled = enabled;
-        this.initial = initial; this.confirm = confirm; this.theme = theme; this.menu = menu; opening = page.domain().signal(null);
-        metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.POPUP));
+        SceneAppearance appearance = menu ? null : new SceneAppearance(page, theme);
+        this.initial = initial; this.confirm = confirm;
+        this.theme = menu ? theme : page.domain().computed(owner, () -> appearance.colors.get().popupTheme());
+        this.menu = menu; opening = page.domain().signal(null);
+        metrics = page.domain().computed(owner, () -> this.theme.get().metrics(SceneControlMetrics.Kind.POPUP));
         layout = page.domain().computed(owner, () -> metrics.get().layoutKey());
         available = page.domain().computed(owner, () -> {
             List<T> choices = new ArrayList<>(); for (T item : source.get()) if (enabled.test(item)) choices.add(item);
             return Collections.unmodifiableList(choices);
         });
-        button = SceneButton.createWithTrailingIcon(page, title, theme, this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
-                () -> SceneIconButton.Symbol.CHEVRON_DOWN);
+        button = SceneButton.createWithTrailingIcon(page, title, menu ? theme : () -> appearance.colors.get().editorTheme(),
+                this::open, SceneTextPolicy.ELLIPSIS_SINGLE_LINE,
+                () -> SceneIconButton.Symbol.CHEVRON_DOWN, menu);
         button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
                 .defaultPadding(value.padding).defaultGap(value.iconGap)));
         // SELECT的名称归外层字段标签，内部按钮只表达打开动作，不把选中显示当成字段名称。
@@ -85,7 +94,9 @@ final class ScenePopupList<T, K> {
                 .name(menu ? title.get() : "打开选项").expanded(opening.get() != null).build()));
         button.bind(NodeBinding.repeat(() -> opening.get() == null ? Collections.emptyList() : Collections.singletonList(opening.get()),
                 token -> token, token -> new Popup(token.get()).root));
-        node = new SceneNode().size(Size.fill(1), Size.natural()).control(new Trigger()).own(owner).add(button);
+        node = new SceneNode().size(Size.fill(1), Size.natural()).control(new Trigger()).own(owner)
+                .add(!menu && framed ? appearance.field(button) : button);
+        if (appearance != null) node.own(appearance.scope);
         node.bind((runtime, self, scope) -> new BindingActivation() {
             public void refresh() { }
             public void close() { opening.set(null); }

@@ -28,6 +28,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("真实低窗页脚最大滚动后主操作在客户端内可点击", this::shortWindowActions);
         scenario("浅深主题的字段文字边框和开关轨道实际绘制对比", this::fieldPaintColors);
         scenario("宽窄高低窗口导航沿实际滚动与输入切换分类", this::responsiveNavigation);
+        scenario("设置字段与窄屏分类弹层在明暗切换中保持不透明表面", this::selectorPopupSurface);
     }
 
     private final class Fixture implements AutoCloseable {
@@ -232,6 +233,45 @@ public final class SettingsTemplateScenario extends TestApplication {
                 }
             }
         }
+    }
+
+    private void selectorPopupSurface() {
+        try (Fixture f = new Fixture()) {
+            f.activate("选项");
+            SceneSemanticSnapshot.Entry select = f.entry(SceneSemantics.Role.SELECT, "处理策略");
+            f.semantic(SceneSemanticRequest.of(select.id, SceneSemantics.Action.FOCUS));
+            f.page.navigation(SceneNavigationEvent.NEXT); f.page.navigation(SceneNavigationEvent.PREVIOUS); f.page.frame();
+            int edge = f.host.rectanglePixel(select.box.x + select.box.width / 2.0, select.box.y + .5);
+            require(edge == new SceneAppearance.Palette(false).muted, "去框选择器外表面未跟随真实键盘焦点");
+            f.click(f.entry(SceneSemantics.Role.SELECT, "处理策略"));
+            popupSurface(f, "字段", ThemeMode.LIGHT);
+            f.domain.execute(() -> f.config.set(ThemeConfiguration.KEY, ThemeMode.DARK)); f.page.frame();
+            popupSurface(f, "字段打开后切换", ThemeMode.DARK);
+            f.page.escape(() -> { throw new AssertionError("选择器未消费 ESC"); }); f.page.frame();
+            f.host.width = 480; f.page.frame();
+            SceneSemanticSnapshot.Entry navigation = null;
+            for (SceneSemanticSnapshot.Entry entry : f.host.semantics.entries)
+                if (entry.values.role == SceneSemantics.Role.SELECT && entry.values.description.contains("业务分类")) navigation = entry;
+            require(navigation != null, "窄屏分类选择器不存在");
+            f.click(navigation); popupSurface(f, "窄屏分类", ThemeMode.DARK);
+            f.domain.execute(() -> f.config.set(ThemeConfiguration.KEY, ThemeMode.LIGHT)); f.page.frame();
+            popupSurface(f, "窄屏分类打开后切换", ThemeMode.LIGHT);
+            f.page.key(new SceneKeyEvent(SceneKey.TAB, false, false, false, false, false, null)); f.page.frame();
+            require(f.host.semantics.currentModal == null, "分类选择器 Tab 未结束所属弹层");
+        }
+    }
+
+    private void popupSurface(Fixture f, String source, ThemeMode mode) {
+        SceneSemanticSnapshot.Entry popup = null;
+        for (SceneSemanticSnapshot.Entry entry : f.host.semantics.entries)
+            if (entry.values.role == SceneSemantics.Role.LISTBOX) popup = entry;
+        require(popup != null && popup.id.equals(f.host.semantics.currentModal), "实际选择器未建立所属模态");
+        LayoutBox box = popup.box;
+        int color = f.host.rectanglePixel(box.x + box.width / 2.0, box.y + 2.5);
+        int expected = new SceneAppearance.Palette(mode.isDark()).background;
+        System.out.println("SELECT_POPUP_SURFACE source=" + source + " theme=" + mode
+                + " color=" + Integer.toHexString(color) + " expected=" + Integer.toHexString(expected));
+        require(color == expected && (color >>> 24) == 255, "设置选择器弹层没有独立不透明主题表面：" + source);
     }
 
     private void fieldPaintColors() {

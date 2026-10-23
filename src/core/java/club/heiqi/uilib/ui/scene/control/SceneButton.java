@@ -54,7 +54,13 @@ public final class SceneButton {
     static SceneNode createWithTrailingIcon(ScenePageContext context, ReadableSignal<String> text,
             ReadableSignal<SceneTheme> theme, Runnable action, SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
-        return action(SceneTextControl.createTrailing(text, theme, policy, icon)
+        return createWithTrailingIcon(context, text, theme, action, policy, icon, true);
+    }
+    /** 复合字段只交接装饰；文字、图标、省略提示和动作仍属于同一按钮。 */
+    static SceneNode createWithTrailingIcon(ScenePageContext context, ReadableSignal<String> text,
+            ReadableSignal<SceneTheme> theme, Runnable action, SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon, boolean framed) {
+        Objects.requireNonNull(context, "context").domain().checkWrite();
+        return action(SceneTextControl.createTrailing(text, theme, policy, icon, framed)
                 .size(Size.fill(1), Size.natural()), action);
     }
     /** 包内组合仍使用同一文字、省略与提示控制器；图标只占用声明的文字前缀区域。 */

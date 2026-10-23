@@ -35,11 +35,9 @@ final class SettingsWorkspace {
 
     private final SettingsUi ui;
     private final Runnable leave;
-    private final Signal<Section> section;
     private final Signal<Confirmation> confirmation;
     private final SceneCommand save, apply, discard;
     private final SettingsFontDialog fonts;
-    private SceneNode body;
     private Runnable confirmedLeave;
 
     SettingsWorkspace(
@@ -47,7 +45,6 @@ final class SettingsWorkspace {
         this.leave = leave;
         SettingsModel model = new SettingsModel(configuration, context.scope());
         ui = new SettingsUi(context, configuration, model);
-        section = context.domain().signal(Section.APPEARANCE);
         confirmation = context.domain().signal(Confirmation.NONE);
         fonts = new SettingsFontDialog(ui);
         save = SceneCommand.of(() -> !configuration.persisting().get() && !model.dirty().get() && model.unsaved().get(), model::save);
@@ -56,124 +53,39 @@ final class SettingsWorkspace {
     }
 
     SceneNode build() {
-        SceneNode content =
-                ui.stack(16, 8)
-                        .add(ui.heading("设置", 28))
-                        .add(
-                                ui.text("管理界面外观、字体来源、绘制性能与当前宿主的本地配置。", 14, true)
-                                        .bind(
-                                                NodeBinding.value(
-                                                        ui.shortWindow, (n, v) -> n.visible(!v))))
-                        .add(ui.line())
-                        .add(notices());
-        content.add(
-                panel(Section.APPEARANCE, new SettingsAppearanceSection(ui, fonts::open).build()));
-        if (ui.configuration.hasBatching())
-            content.add(panel(Section.PERFORMANCE, SettingsPerformanceSection.build(ui)));
-        if (ui.configuration.hasMinecraft())
-            content.add(panel(Section.MINECRAFT, SettingsMinecraftSection.build(ui)));
-        content.add(panel(Section.FILE, SettingsFileSection.build(ui, this::reloadRequested)));
-        SceneScrollArea.Area scrolling = ui.scrollArea(content);
-        body = scrolling.viewport(SceneNode.Axis.COLUMN);
-        SceneNode shell =
-                SettingsLayout.workspace(
-                                ui, toolbar(), navigation(), scrolling.node(), footer(), ledger())
-                        .bind(NodeBinding.value(ui.colors, (n, p) -> n.background(p.background)));
+        SettingsTemplate template = new SettingsTemplate(() -> "QZ UILib / 工作区设置")
+                .description(() -> "管理界面外观、字体来源、绘制性能与当前宿主的本地配置。")
+                .theme(() -> ui.colors.get().source)
+                .labels(() -> "返回", () -> "设置分类")
+                .onClose(() -> closeRequested(leave))
+                .headerAction(() -> ui.model.theme().get().isDark() ? "浅色模式" : "深色模式",
+                        SceneIconButton.Symbol.THEME, SceneCommand.of(() -> true,
+                                () -> ui.model.setTheme(ui.model.theme().get().isDark() ? ThemeMode.LIGHT : ThemeMode.DARK)))
+                .feedback(context -> status())
+                .aside(context -> ledger())
+                .action(() -> "放弃编辑", discard, false)
+                .action(() -> "保存到文件", save, false)
+                .action(() -> "应用全部更改", apply, true);
+        for (Section target : sections())
+            template.section(target.name(), () -> target.title, () -> target.description, target.icon,
+                    () -> changed(target) ? "未应用" : "", context -> fields(target));
         return club.heiqi.uilib.ui.scene.layout.SceneLayouts.overlay()
-                .add(shell)
+                .add(template.create(ui.context))
                 .add(fonts.build())
                 .add(confirmDialog(Confirmation.CLOSE))
                 .add(confirmDialog(Confirmation.RELOAD))
-                .onEscape(
-                        () -> {
-                            closeRequested(leave);
-                            return true;
-                        })
-                .bind(
-                        NodeBinding.shortcuts(
-                                SceneShortcut.Scope.PAGE, SceneShortcut.primary(SceneKey.S, save)));
+                .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE, SceneShortcut.primary(SceneKey.S, save)))
+                .own(ui.scope);
     }
 
-    private SceneNode toolbar() {
-        SceneNode brand = ui.text("QZ UILib / 工作区设置", 12, true).size(Size.fill(1), Size.natural());
-        return ui.row(8)
-                .add(brand)
-                .add(
-                        ui.action(
-                                () -> ui.model.theme().get().isDark() ? "浅色模式" : "深色模式",
-                                SceneIconButton.Symbol.THEME,
-                                () ->
-                                        ui.model.setTheme(
-                                                ui.model.theme().get().isDark()
-                                                        ? ThemeMode.LIGHT
-                                                        : ThemeMode.DARK),
-                                SceneAppearance.Role.GHOST))
-                .add(ui.button("返回", () -> closeRequested(leave), SceneAppearance.Role.GHOST));
-    }
-
-    private SceneNode navigation() {
-        SceneNode rail =
-                ui.inset(
-                                ui.stack(24)
-                                        .size(Size.fill(1), Size.fill(1))
-                                        .clip(true)
-                                        .scrollable(true),
-                                20)
-                        .bind(NodeBinding.value(ui.colors, (n, p) -> n.background(p.surface)));
-        rail.add(ui.stack(4).add(ui.heading("QZ UILib", 20)).add(ui.text("工作区设置", 12, true)));
-        SceneNode categories = ui.stack(6).add(ui.text("偏好设置", 12, true));
-        for (Section target : sections()) {
-            ReadableSignal<Boolean> selected = () -> section.get() == target;
-            SceneNode entry =
-                    ui.row(10)
-                            .add(ui.icon(target.icon))
-                            .add(
-                                    ui.text(
-                                            () -> target.title + (changed(target) ? " · 未应用" : ""),
-                                            14,
-                                            false));
-            categories.add(
-                    ui.action(
-                            () -> target.title,
-                            entry,
-                            () -> navigate(target),
-                            SceneAppearance.Role.ENTRY,
-                            selected));
+    private SceneNode fields(Section target) {
+        switch (target) {
+            case APPEARANCE: return new SettingsAppearanceSection(ui, fonts::open).build();
+            case PERFORMANCE: return SettingsPerformanceSection.build(ui);
+            case MINECRAFT: return SettingsMinecraftSection.build(ui);
+            case FILE: return SettingsFileSection.build(ui, this::reloadRequested);
+            default: throw new IllegalArgumentException("未知设置分类：" + target);
         }
-        rail.add(categories)
-                .add(ui.line())
-                .add(ui.text("本地工作区", 13, false))
-                .add(ui.text("本地配置 · 显式保存", 12, true));
-        rail.bind(NodeBinding.value(ui.compact, (n, v) -> n.visible(!v)));
-        SceneNode selector =
-                SceneSelect.create(
-                                ui.context,
-                                () -> {
-                                    List<SceneSelect.Option<Section>> options = new ArrayList<>();
-                                    for (Section target : sections())
-                                        options.add(
-                                                new SceneSelect.Option<>(
-                                                        target,
-                                                        () ->
-                                                                target.title
-                                                                        + (changed(target)
-                                                                                ? " · 未应用"
-                                                                                : "")));
-                                    return options;
-                                },
-                                section,
-                                this::navigate,
-                                () -> "设置分类",
-                                () -> ui.colors.get().source)
-                        .size(Size.fill(1), Size.natural())
-                        .bind(NodeBinding.value(ui.compact, SceneNode::visible));
-        return ui.stack(0)
-                .bind(
-                        NodeBinding.value(
-                                ui.compact,
-                                (n, v) -> n.size(Size.fill(1), v ? Size.natural() : Size.fill(1))))
-                .add(rail)
-                .add(selector);
     }
 
     private List<Section> sections() {
@@ -194,24 +106,6 @@ final class SettingsWorkspace {
             return ui.model.theme().get() != live.theme()
                     || !ui.declarations().equals(live.candidates());
         return false;
-    }
-
-    private void navigate(Section target) {
-        section.set(target);
-        SceneScrollViewport.of(ui.context, body).moveToPixels(0);
-    }
-
-    private SceneNode panel(Section target, SceneNode fields) {
-        return ui.motion.reveal(
-                ui.stack(12, 8)
-                        .add(ui.heading(target.title, 21))
-                        .add(
-                                ui.text(target.description, 13, true)
-                                        .bind(
-                                                NodeBinding.value(
-                                                        ui.shortWindow, (n, v) -> n.visible(!v))))
-                        .add(fields),
-                () -> section.get() == target);
     }
 
     private SceneNode notices() {
@@ -240,22 +134,12 @@ final class SettingsWorkspace {
                                 resource, () -> !ui.configuration.resourceError().get().isEmpty()));
     }
 
-    private SceneNode footer() {
-        SceneNode status =
-                ui.stack(5)
-                        .add(ui.text(this::stage, 14, false))
-                        .add(ui.text(this::stageDescription, 12, true))
-                        .add(operationFeedback());
-        SceneNode controls =
-                ui.actions(
-                        ui.button("放弃编辑", discard, SceneAppearance.Role.GHOST),
-                        ui.button("保存到文件", save, SceneAppearance.Role.OUTLINE),
-                        ui.button("应用全部更改", apply, SceneAppearance.Role.PRIMARY));
-        return ui.stack(10)
-                .add(ui.line())
-                .add(SettingsLayout.split(ui, status, controls))
-                .clip(true)
-                .scrollable(true);
+    private SceneNode status() {
+        return ui.stack(5)
+                .add(ui.text(this::stage, 14, false))
+                .add(ui.text(this::stageDescription, 12, true))
+                .add(notices())
+                .add(operationFeedback());
     }
 
     private String stage() {

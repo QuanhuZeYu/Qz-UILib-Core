@@ -269,7 +269,6 @@ final class SettingsFontDialog {
                                 .add(ui.line()),
                         16,
                         8);
-        SceneNode typeLabel = ui.heading("来源类型", 14);
         SceneRadioGroup<Boolean> types =
                 SceneRadioGroup.create(
                         ui.context,
@@ -286,10 +285,6 @@ final class SettingsFontDialog {
                         fileSource,
                         fileSource::set,
                         () -> ui.colors.get().source);
-        types.node()
-                .bind(
-                        NodeBinding.semantics(
-                                () -> SceneSemantics.builder().labelledBy(typeLabel).build()));
         selector =
                 SceneSelect.create(
                         ui.context,
@@ -304,16 +299,10 @@ final class SettingsFontDialog {
                         selected::set,
                         () -> "选择内置字体",
                         () -> ui.colors.get().source);
-        SceneNode builtinLabel = ui.heading("内置字体", 14);
-        selector.bind(
-                NodeBinding.semantics(
-                        () -> SceneSemantics.builder().labelledBy(builtinLabel).build()));
-        SceneNode builtin =
-                ui.stack(10)
-                        .add(builtinLabel)
-                        .add(selector)
-                        .add(ui.path(selected, 12))
-                        .bind(NodeBinding.value(fileSource, (n, value) -> n.visible(!value)));
+        SceneNode builtin = ui.fields.row(() -> "内置字体", () -> "",
+                        new SceneField.Content(ui.stack(10).add(selector).add(ui.path(selected, 12)), selector, null),
+                        () -> "", false)
+                .bind(NodeBinding.value(fileSource, (n, value) -> n.visible(!value)));
         pathField =
                 SceneTextField.create(
                         ui.context,
@@ -333,24 +322,15 @@ final class SettingsFontDialog {
         SceneNode browse =
                 ui.button("浏览字体文件", () -> picking.set(true), SceneAppearance.Role.OUTLINE);
         SceneNode file =
-                SceneField.create(
-                                ui.context,
-                                () -> ui.colors.get().source,
-                                () ->
-                                        new SceneField.Labels(
-                                                "字体文件路径",
-                                                "支持 ttf、otf、ttc、woff、woff2；应用前会检查字体来源。",
-                                                path.snapshot().get().error == null
-                                                        ? ""
-                                                        : path.snapshot().get().error),
-                                new SceneField.Content(
-                                        ui.field(pathField), pathField, ui.actions(browse)))
+                ui.fields.row(() -> "字体文件路径",
+                                () -> "支持 ttf、otf、ttc、woff、woff2；应用前会检查字体来源。",
+                                new SceneField.Content(ui.field(pathField), pathField, ui.actions(browse)),
+                                () -> path.snapshot().get().error == null ? "" : path.snapshot().get().error, false)
                         .bind(NodeBinding.value(fileSource, SceneNode::visible));
         SceneNode content =
                 ui.inset(
                         ui.stack(16, 8)
-                                .add(typeLabel)
-                                .add(types.node())
+                                .add(ui.fields.row(() -> "来源类型", () -> "", types.node(), () -> ""))
                                 .add(builtin)
                                 .add(file)
                                 .add(ui.errorText(() -> ui.model.fontError().get())),

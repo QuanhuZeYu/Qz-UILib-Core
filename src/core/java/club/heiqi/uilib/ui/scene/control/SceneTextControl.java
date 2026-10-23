@@ -29,6 +29,7 @@ final class SceneTextControl implements SceneControl {
     private final boolean button;
     private final ReadableSignal<SceneIconButton.Symbol> leadingIcon;
     private boolean trailingIcon, composed;
+    private boolean framed = true;
     private ReadableSignal<Boolean> selected;
     private SceneAppearance.Surface modernSurface;
     private final SceneControlMotion motion = new SceneControlMotion();
@@ -88,7 +89,7 @@ final class SceneTextControl implements SceneControl {
                             target.defaultStyle(metrics.textStyle);
                             if (control.button) target.defaultPadding(metrics.padding).defaultGap(metrics.iconGap);
                         }));
-        if (control.button) {
+        if (control.button && control.framed) {
             if (control.modernSurface != null) control.modernSurface.install(node);
             else control.motion.install(node, () -> theme.get().feedbackMotion,
                     self -> SceneControlMotion.target(self, theme.get()));
@@ -97,9 +98,9 @@ final class SceneTextControl implements SceneControl {
     }
 
     static SceneNode createTrailing(ReadableSignal<String> text, ReadableSignal<SceneTheme> theme,
-            SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon) {
+            SceneTextPolicy policy, ReadableSignal<SceneIconButton.Symbol> icon, boolean framed) {
         SceneTextControl control = new SceneTextControl(theme, policy, true, Objects.requireNonNull(icon, "尾部图标"));
-        control.trailingIcon = true;
+        control.trailingIcon = true; control.framed = framed;
         return create(text, control);
     }
 
@@ -201,7 +202,7 @@ final class SceneTextControl implements SceneControl {
         boolean focused =
                 enabled && runtime != null && runtime.focusRouter().focusVisible(node);
         if(modernSurface!=null)modernSurface.paint(node,geometry,target);
-        else if (button) {
+        else if (button && framed) {
             boolean hovered =
                     enabled && runtime != null && runtime.pointerRouter().hovered(geometry) == node;
             boolean pressed = enabled && runtime != null && runtime.pressed(node);

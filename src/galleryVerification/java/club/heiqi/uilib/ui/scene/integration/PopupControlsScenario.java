@@ -364,14 +364,14 @@ public final class PopupControlsScenario extends TestApplication {
             SceneNode anchor = SceneButton.create(page, () -> "层来源", page.theme(), () -> {}).add(layer);
             page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(anchor).add(cover[0]));
         }); onClose(session::close); session.frame();
-        domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(select[0].children().get(0))));
+        domain.execute(() -> context[0].runtime().focusRouter().request(context[0].runtime().captureMount(select[0].control().semantics(select[0]).focusTarget)));
         session.key(key(SceneKey.ENTER, false)); session.frame(); SceneNode[] captured = new SceneNode[1];
         domain.execute(() -> captured[0] = session.pipeline().current().geometry.activeModal());
         SceneNode popup = captured[0];
         domain.execute(() -> require(popup != null && context[0].runtime().focusRouter().focused().get().text().equals("层内乙"), "层内选择器未打开"));
         domain.execute(() -> covering[0].set(true)); session.frame();
         domain.execute(() -> require(session.pipeline().current().geometry.activeModal() == cover[0]
-                && session.pipeline().current().geometry.get(select[0].children().get(0)) == null && !popup.destroyed(),
+                && session.pipeline().current().geometry.get(select[0].control().semantics(select[0]).focusTarget) == null && !popup.destroyed(),
                 "合法模态覆盖过滤了来源Entry后错误结束原弹层"));
         domain.execute(() -> covering[0].set(false)); session.frame();
         domain.execute(() -> require(session.pipeline().current().geometry.activeModal() == popup
@@ -469,7 +469,7 @@ public final class PopupControlsScenario extends TestApplication {
                 page.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).add(behind).add(clipped).add(after));
             });
         }
-        SceneNode trigger() { return select.children().get(0); }
+        SceneNode trigger() { return select.control().semantics(select).focusTarget; }
         SceneNode focused() { return context.runtime().focusRouter().focused().get(); }
         SceneNode modal() { return session.pipeline().current().geometry.activeModal(); }
         void open() {
