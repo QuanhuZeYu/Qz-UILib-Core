@@ -519,10 +519,8 @@ public class SceneAppearance {
             // 只读编辑仍可定位/选择；外表面读取同一个逻辑焦点，不改变路由器的输入方式语义。
             if (role == Role.FIELD && target.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
                 return target.runtime().focusRouter().focused().get() == target;
-            club.heiqi.uilib.ui.scene.semantics.SceneSemantics semantics = role != Role.FIELD || target.control() == null
-                    ? null : target.control().semantics(target);
-            SceneNode focus = semantics == null || semantics.focusTarget == null ? target : semantics.focusTarget;
-            return target.runtime().focusRouter().focusVisible(focus);
+            SceneNode focus = role == Role.FIELD ? target.runtime().semanticFocusTarget(target) : target;
+            return focus != null && target.runtime().focusRouter().focusVisible(focus);
         }
 
         @Override public void preparePaint(SceneNode node, SceneGeometryView geometry, SceneTextMeasurer text, long revision) {

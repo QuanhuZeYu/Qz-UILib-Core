@@ -74,6 +74,8 @@ final class SettingsWorkspace {
                 .add(fonts.build())
                 .add(confirmDialog(Confirmation.CLOSE))
                 .add(confirmDialog(Confirmation.RELOAD))
+                // 模板嵌在工作区根内；页面 ESC 沿首个非模态根进入同一业务关闭意图。
+                .onEscape(() -> { closeRequested(leave); return true; })
                 .bind(NodeBinding.shortcuts(SceneShortcut.Scope.PAGE, SceneShortcut.primary(SceneKey.S, save)))
                 .own(ui.scope);
     }

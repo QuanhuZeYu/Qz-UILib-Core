@@ -504,6 +504,10 @@ public final class SceneRuntime implements AutoCloseable {
     public BindingActivation bindDefaultSemantics(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.semantics.SceneSemantics> source) {
         domain.checkWrite(); return semantics.bind(node, source, true);
     }
+    /** 绘制只读正式语义准备的焦点目标；不会刷新语义或创建额外输入权威。 */
+    public SceneNode semanticFocusTarget(SceneNode node) {
+        domain.checkAccess(); return semantics.preparedFocusTarget(node);
+    }
     public club.heiqi.uilib.ui.scene.semantics.SceneSemanticSnapshot semanticSnapshot(SceneGeometryView geometry) {
         domain.checkWrite(); return semantics.publish(geometry);
     }

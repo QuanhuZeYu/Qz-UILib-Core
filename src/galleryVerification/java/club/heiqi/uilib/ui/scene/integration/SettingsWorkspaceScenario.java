@@ -36,6 +36,10 @@ public final class SettingsWorkspaceScenario extends TestApplication {
         scenario("外观分类的全局保存与宿主重载失败持续可见", this::operationFailure);
         scenario("共享模板外壳字段与正文同源预览且字体密度沿正式主题", this::previewTheme);
         scenario("窄屏共享分类选择器键鼠关闭和重复选择保留样本编辑身份", this::narrowNavigation);
+        scenario("主题草稿背景清焦后ESC仍进入原关闭确认", this::escapeDirty);
+        scenario("未改工作区无焦点与普通按钮焦点ESC直接关闭", this::escapeClean);
+        scenario("已应用未保存工作区ESC确认且取消保留生效值", this::escapeUnsaved);
+        scenario("ESC优先结束字体选择器与字体子视图再进入工作区确认", this::escapeNested);
     }
 
     final class Fixture implements AutoCloseable {
@@ -593,6 +597,117 @@ public final class SettingsWorkspaceScenario extends TestApplication {
             require(f.host.semantics.currentModal == null && "外观".equals(category(f).values.value),
                     "窄屏分类 Tab 关闭产生选择或遗留所属层");
             require(f.leaves == 0, "内层 ESC 或 Tab 关闭了共享设置页");
+        }
+    }
+
+    private void clearFocusOnBackground(Fixture f) {
+        f.session.pointer(ScenePointerEvent.down(0, 1, 1));
+        f.session.pointer(ScenePointerEvent.up(0, 1, 1)); f.session.frame();
+        require(f.host.semantics.focused == null, "真实背景点击没有清除焦点");
+    }
+
+    private void escapeKey(Fixture f, int[] fallback) {
+        SceneKeyEvent escape = new SceneKeyEvent(SceneKey.ESCAPE, false, false, false, false, false, null);
+        f.session.key(escape, () -> fallback[0]++);
+        f.session.key(escape.withPhase(SceneKeyEvent.Phase.UP)); f.session.frame();
+    }
+
+    private void escapeDirty() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            String disk = f.disk();
+            f.click(SceneSemantics.Role.BUTTON, "深色外观");
+            clearFocusOnBackground(f);
+            int[] fallback = {0};
+            escapeKey(f, fallback);
+            System.out.println("SETTINGS_ROOT_ESCAPE state=dirty focus=none fallback=" + fallback[0]
+                    + " leaves=" + f.leaves + " confirmation=" + (f.host.semantics.currentModal != null));
+            require(fallback[0] == 0 && f.leaves == 0 && f.host.semantics.currentModal != null,
+                    "背景清焦后的工作区ESC绕过草稿关闭确认");
+            require(f.entry(SceneSemantics.Role.BUTTON, "继续编辑").rangeInteractive, "关闭确认没有提供继续编辑");
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.host.semantics.currentModal == null,
+                    "确认中的ESC没有只取消当前关闭意图");
+            require(visibleError(f, "有未应用的更改") && f.disk().equals(disk), "取消确认改写了草稿或文件");
+            f.action(SceneSemantics.Role.BUTTON, "深色外观", SceneSemantics.Action.FOCUS);
+            escapeKey(f, fallback);
+            require(f.entry(SceneSemantics.Role.BUTTON, "不保存并离开").rangeInteractive,
+                    "普通按钮焦点的ESC没有进入同一草稿确认");
+            f.click(SceneSemantics.Role.BUTTON, "不保存并离开");
+            f.domain.execute(() -> require(f.configuration.current().theme() == ThemeMode.LIGHT,
+                    "离开时把未应用主题草稿发布了"));
+            require(f.leaves == 1 && fallback[0] == 0 && f.disk().equals(disk), "原关闭意图没有恰好一次退出或隐式保存");
+        }
+    }
+
+    private void escapeClean() throws Exception {
+        for (boolean clear : new boolean[] {true, false}) {
+            try (Fixture f = new Fixture()) {
+                f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+                String disk = f.disk();
+                f.action(SceneSemantics.Role.BUTTON, "返回", SceneSemantics.Action.FOCUS);
+                if (clear) clearFocusOnBackground(f);
+                int[] fallback = {0};
+                escapeKey(f, fallback);
+                require(f.leaves == 1 && fallback[0] == 0 && f.host.semantics.currentModal == null
+                                && f.disk().equals(disk), "未修改工作区ESC没有直接执行原关闭意图：clear=" + clear);
+                System.out.println("SETTINGS_ROOT_ESCAPE state=clean focus=" + (clear ? "none" : "button")
+                        + " fallback=" + fallback[0] + " leaves=" + f.leaves);
+            }
+        }
+    }
+
+    private void escapeUnsaved() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            String disk = f.disk();
+            f.click(SceneSemantics.Role.BUTTON, "深色外观");
+            f.click(SceneSemantics.Role.BUTTON, "应用全部更改");
+            require(visibleError(f, "已应用，未保存") && f.disk().equals(disk), "未构造真实已应用未保存状态");
+            clearFocusOnBackground(f);
+            int[] fallback = {0};
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.entry(SceneSemantics.Role.BUTTON, "继续编辑").rangeInteractive,
+                    "已应用未保存状态ESC没有进入关闭确认");
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.host.semantics.currentModal == null
+                            && visibleError(f, "已应用，未保存"), "取消关闭确认丢失原未保存状态");
+            f.action(SceneSemantics.Role.BUTTON, "浅色模式", SceneSemantics.Action.FOCUS);
+            escapeKey(f, fallback);
+            f.click(SceneSemantics.Role.BUTTON, "不保存并离开");
+            f.domain.execute(() -> require(f.configuration.current().theme() == ThemeMode.DARK,
+                    "关闭确认回滚了已应用主题"));
+            require(f.leaves == 1 && fallback[0] == 0 && f.disk().equals(disk), "不保存离开没有保持生效值和原文件");
+            System.out.println("SETTINGS_ROOT_ESCAPE state=unsaved fallback=" + fallback[0]
+                    + " leaves=" + f.leaves + " appliedValueRetained=true");
+        }
+    }
+
+    private void escapeNested() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.domain.execute(() -> f.motion.set(MotionPolicy.OFF));
+            f.click(SceneSemantics.Role.BUTTON, "深色外观");
+            f.openAdd();
+            f.action(SceneSemantics.Role.SELECT, "内置字体", SceneSemantics.Action.EXPAND);
+            require(f.host.semantics.get(f.host.semantics.currentModal).values.role == SceneSemantics.Role.LISTBOX,
+                    "没有打开字体内层公共选择器");
+            int[] fallback = {0};
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.entry(SceneSemantics.Role.BUTTON, "添加到末尾").rangeInteractive,
+                    "内层选择器ESC跳过添加视图或关闭工作区");
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.entry(SceneSemantics.Role.BUTTON, "+ 添加来源").rangeInteractive,
+                    "字体添加ESC没有只返回字体列表");
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.host.semantics.currentModal == null
+                            && f.entry(SceneSemantics.Role.BUTTON, "管理字体来源").rangeInteractive,
+                    "字体列表ESC没有只结束字体管理模态");
+            clearFocusOnBackground(f);
+            escapeKey(f, fallback);
+            require(fallback[0] == 0 && f.leaves == 0 && f.entry(SceneSemantics.Role.BUTTON, "继续编辑").rangeInteractive,
+                    "内层全部结束后的ESC没有进入工作区草稿确认");
+            System.out.println("SETTINGS_ROOT_ESCAPE nested=select/add/list/workspace fallback=" + fallback[0]
+                    + " leaves=" + f.leaves + " currentConfirmation=true");
         }
     }
 

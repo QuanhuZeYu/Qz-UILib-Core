@@ -32,6 +32,7 @@ final class SceneSemanticCoordinator {
         final club.heiqi.uilib.ui.reactive.Signal<Long> clock;
         long revision;
         SceneSemantics value;
+        Mounted preparedFocus;
         Observation observation;
         Mounted(SceneNode node,SceneRuntime runtime){this.node=node;clock=runtime.domain().signal(0L);}
     }
@@ -46,12 +47,26 @@ final class SceneSemanticCoordinator {
     private boolean changed;
     SceneSemanticCoordinator(SceneRuntime runtime){this.runtime=runtime;}
     SceneSemanticId id(SceneNode node) { Mounted m = mounted.get(node); return m == null ? null : m.id; }
+    /** 消费同批声明已核验的目标；挂载身份不同即失效，读取不重新描述或遍历控件。 */
+    SceneNode preparedFocusTarget(SceneNode node) {
+        Mounted source = mounted.get(node);
+        if (source == null) return null;
+        if (source.value == null || source.value.focusTarget == null) return node;
+        Mounted target = source.preparedFocus;
+        return target != null && mounted.get(target.node) == target ? target.node : null;
+    }
     void mount(SceneNode node){Mounted m=new Mounted(node,runtime);mounted.put(node,m);byId.put(m.id,m);changed=true;}
     BindingActivation observe(SceneNode node,Owner owner){
         Mounted m=mounted.get(node);
         m.observation=runtime.domain().observe(owner,()->{
             m.clock.get(); SceneSemantics next=runtime.domain().readOnly(()->describe(m));
-            if(!Objects.equals(m.value,next)){m.value=next;changed=true;}
+            if(!Objects.equals(m.value,next)){
+                // 描述变化立即释放旧目标，包括当前隐藏、不会进入本批可见投影的来源。
+                if(m.preparedFocus!=null&&(next==null||m.value==null||m.value.focusTarget!=next.focusTarget)){
+                    m.preparedFocus=null;runtime.invalidatePaint(m.node);
+                }
+                m.value=next;changed=true;
+            }
         },()->{dirty.add(m);changed=true;});
         dirty.add(m);
         return new BindingActivation(){public void refresh(){SceneSemanticCoordinator.this.refresh(m);}public void close(){m.observation.close();dirty.remove(m);}};
@@ -88,6 +103,8 @@ final class SceneSemanticCoordinator {
         for(SceneNode n:order)resolveName(n,visible,relationTargets,names,Collections.newSetFromMap(new IdentityHashMap<>()));
         Map<SceneNode,SceneNode> focusRepresentatives=new IdentityHashMap<>();
         for(SceneNode n:order){SceneSemantics s=visible.get(n);SceneNode target=focusTarget(n,s);
+            Mounted m=mounted.get(n),prepared=s.focusTarget==null||target==null?null:mounted.get(target);
+            if(m.preparedFocus!=prepared){m.preparedFocus=prepared;runtime.invalidatePaint(n);}
             if(s.focusTarget!=null&&target!=null)focusRepresentatives.putIfAbsent(target,n);}
         List<SceneSemanticSnapshot.Entry> entries=new ArrayList<>();SceneSemanticId focusId=null,modalId=null;
         for(SceneNode node:order){

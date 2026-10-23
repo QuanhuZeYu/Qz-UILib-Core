@@ -29,6 +29,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("浅深主题的字段文字边框和开关轨道实际绘制对比", this::fieldPaintColors);
         scenario("宽窄高低窗口导航沿实际滚动与输入切换分类", this::responsiveNavigation);
         scenario("设置字段与窄屏分类弹层在明暗切换中保持不透明表面", this::selectorPopupSurface);
+        scenario("通用确认面板按主题度量留出内距与分区间距且外限位独立", this::dialogSpacing);
     }
 
     private final class Fixture implements AutoCloseable {
@@ -232,6 +233,58 @@ public final class SettingsTemplateScenario extends TestApplication {
                     f.domain.execute(() -> require("导航草稿".equals(f.draft.get()), "导航切换改写了原字段草稿"));
                 }
             }
+        }
+    }
+
+    private void dialogSpacing() {
+        ReactiveDomain domain = ReactiveDomain.direct(); SettingsHudHost host = new SettingsHudHost();
+        Signal<SceneTheme>[] theme = new Signal[1]; Signal<SceneDialog.Options>[] options = new Signal[1];
+        Signal<Boolean>[] open = new Signal[1]; SceneNode[] regions = new SceneNode[3];
+        try (ScenePageSession page = ScenePageSession.open(domain, host, host, context -> {
+            context.motionPolicy(() -> MotionPolicy.OFF);
+            theme[0] = domain.signal(SceneTheme.light()); open[0] = domain.signal(true);
+            options[0] = domain.signal(new SceneDialog.Options("未保存确认", 520, 240, 24));
+            SceneAppearance style = new SceneAppearance(context, theme[0]);
+            regions[0] = style.label(() -> "未保存的更改", 1, false);
+            regions[1] = style.label(() -> "保存后离开，或继续编辑当前草稿。", 1, true).size(Size.fill(1), Size.fill(1));
+            regions[2] = style.action("继续编辑", null, () -> open[0].set(false), SceneAppearance.Role.OUTLINE);
+            context.mountOwned(SceneDialog.create(context, theme[0], open[0], options[0],
+                    new SceneDialog.Content(regions[0], regions[1], regions[2], regions[2], () -> open[0].set(false)))
+                    .own(style.scope));
+        })) {
+            for (SceneDensity density : SceneDensity.values()) {
+                for (int[] viewport : new int[][] {{800, 600, 24}, {360, 320, 12}}) {
+                    host.width = viewport[0]; host.height = viewport[1];
+                    domain.execute(() -> {
+                        theme[0].set(SceneTheme.light().withDensity(density));
+                        options[0].set(new SceneDialog.Options("未保存确认", 520, 240, viewport[2]));
+                    }); page.frame();
+                    domain.execute(() -> {
+                        SceneDialog.Options value = options[0].get();
+                        SceneControlMetrics metrics = theme[0].get().metrics(SceneControlMetrics.Kind.PANEL);
+                        int width = Math.min(value.width, host.width - value.inset * 2),
+                                height = Math.min(value.height, host.height - value.inset * 2);
+                        LayoutBox panel = new LayoutBox((host.width - width) / 2, (host.height - height) / 2, width, height);
+                        SceneGeometryView geometry = page.pipeline().current().geometry;
+                        LayoutBox header = geometry.get(regions[0]).box, body = geometry.get(regions[1]).box,
+                                footer = geometry.get(regions[2]).box;
+                        System.out.println("DIALOG_SPACING density=" + density + " viewport=" + host.width + "x" + host.height
+                                + " inset=" + value.inset + " padding=" + metrics.padding + " gap=" + metrics.gap
+                                + " headerOffset=" + (header.x - panel.x) + "," + (header.y - panel.y)
+                                + " sectionGaps=" + (body.y - header.y - header.height) + "," + (footer.y - body.y - body.height));
+                        require(header.x >= panel.x + metrics.padding && header.y >= panel.y + metrics.padding,
+                                "通用确认标题仍贴在面板左上边");
+                        require(body.x >= panel.x + metrics.padding && footer.x >= panel.x + metrics.padding
+                                        && footer.y + footer.height <= panel.y + panel.height - metrics.padding,
+                                "通用确认正文或操作缺少共同内距");
+                        require(body.y - header.y - header.height >= metrics.gap
+                                        && footer.y - body.y - body.height >= metrics.gap,
+                                "通用确认分区没有消费主题间距");
+                    });
+                }
+            }
+            page.escape(() -> { throw new AssertionError("通用确认没有消费 ESC"); }); page.frame();
+            domain.execute(() -> require(!open[0].get(), "关闭意图没有沿原模态执行"));
         }
     }
 

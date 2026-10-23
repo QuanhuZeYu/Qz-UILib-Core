@@ -67,7 +67,11 @@ public final class SceneDialog {
         Objects.requireNonNull(options);
         Objects.requireNonNull(content);
         SceneAppearance style = new SceneAppearance(context, theme);
-        SceneNode frame = SceneLayouts.frame(content.header, content.body, content.footer);
+        ReadableSignal<SceneControlMetrics> metrics = () -> style.colors.get().source.metrics(SceneControlMetrics.Kind.PANEL);
+        // 公共面板持有内容内距和分区留白；Options.inset 仍只限制面板与宿主边缘的距离。
+        SceneNode header = SceneAppearance.column(0).add(content.header).add(sectionGap(metrics));
+        SceneNode footer = SceneAppearance.column(0).add(sectionGap(metrics)).add(content.footer);
+        SceneNode frame = SceneLayouts.frame(header, content.body, footer);
         SceneAppearance.Surface surface =
                 new SceneAppearance.Surface(
                         style.colors, SceneAppearance.Role.PANEL, null, () -> false);
@@ -75,6 +79,7 @@ public final class SceneDialog {
                 SceneAppearance.column(0)
                         .control(surface)
                         .add(frame)
+                        .bind(NodeBinding.value(metrics, (node, value) -> node.defaultPadding(value.padding)))
                         .bind(
                                 NodeBinding.value(
                                         options,
@@ -132,5 +137,10 @@ public final class SceneDialog {
                         () -> open.get() ? 0f : 16f, () -> theme.get().spatialMotion))
                 .add(window);
         return SceneLayouts.overlay().add(backdrop).add(moving).own(style.scope);
+    }
+
+    private static SceneNode sectionGap(ReadableSignal<SceneControlMetrics> metrics) {
+        return new SceneNode().bind(NodeBinding.value(metrics,
+                (node, value) -> node.size(Size.fill(1), Size.fixed(value.gap))));
     }
 }
