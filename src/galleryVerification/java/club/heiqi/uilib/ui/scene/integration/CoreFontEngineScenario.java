@@ -32,6 +32,7 @@ public final class CoreFontEngineScenario extends TestApplication {
 
     static final class ContractEngine implements FontEngine {
         int opened, closed, facesOpened, facesClosed;
+        int failingSourceBytes = -1, missingSourceBytes = -1;
         final List<Throwable> faceCloseFailures = new ArrayList<>();
 
         @Override
@@ -45,7 +46,10 @@ public final class CoreFontEngineScenario extends TestApplication {
                 @Override
                 public FontFace openFace(ByteBuffer source, long index, float em) {
                     require(Thread.currentThread() == thread && !done, "session线程/关闭合同");
+                    if (source.remaining() == failingSourceBytes)
+                        throw new IllegalStateException("资源重开暂时失败");
                     final int ordinal = facesOpened++;
+                    final boolean missing = source.remaining() == missingSourceBytes;
                     FontFace face =
                             new FontFace() {
                                 boolean released;
@@ -82,7 +86,7 @@ public final class CoreFontEngineScenario extends TestApplication {
                                     List<ShapedGlyph> glyphs = new ArrayList<ShapedGlyph>();
                                     for (int i = start; i < end; ) {
                                         int cp = text.codePointAt(i);
-                                        glyphs.add(new ShapedGlyph(cp, i, em * .5f, 0, 0, 0));
+                                        glyphs.add(new ShapedGlyph(missing ? 0 : cp, i, em * .5f, 0, 0, 0));
                                         i += Character.charCount(cp);
                                     }
                                     if (direction == ShapeDirection.RTL)
@@ -293,6 +297,53 @@ public final class CoreFontEngineScenario extends TestApplication {
                 "换代后正常关闭未释放所属face或重复关闭session");
     }
 
+    private void matchingTightFaceBudget() {
+        ContractEngine engine = new ContractEngine();
+        FontSource primary = FontSource.fromResource("primary", 1,
+                "assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf", false);
+        FontSource secondary = FontSource.fromResource("secondary", 1,
+                "assets/qz_uilib/fonts/noto/NotoSansArabic.ttf", false);
+        engine.missingSourceBytes = primary.byteSize();
+        TextStyle requested = new TextStyle("probe", 12, -1, Arrays.asList(primary, secondary));
+        try (FontTextService fonts = new FontTextService(Arrays.asList(primary, secondary), engine, 1, 8, 128)) {
+            TextLayout first = fonts.layout("BBBBBBBB", requested, 1000, TextPolicy.NO_WRAP);
+            require(first.lines().get(0).glyphs().stream().allMatch(g -> g.source == secondary),
+                    "反例没有选择后继候选");
+            require(engine.facesOpened == 2, "段内重复字素反复重开候选前缀");
+            int opened = engine.facesOpened;
+            fonts.layout("BBBBBBBB", requested, 999, TextPolicy.NO_WRAP);
+            require(engine.facesOpened - opened == 2, "跨布局仅应核对一次候选前缀");
+        }
+    }
+
+    private void matchingFailureRecovery() {
+        ContractEngine engine = new ContractEngine();
+        FontSource primary = FontSource.fromResource("primary", 1,
+                "assets/qz_uilib/fonts/unifont/unifont-16.0.04.otf", false);
+        FontSource secondary = FontSource.fromResource("secondary", 1,
+                "assets/qz_uilib/fonts/noto/NotoSansArabic.ttf", false);
+        TextStyle requested = new TextStyle("probe", 12, -1, Arrays.asList(primary, secondary));
+        try (FontTextService fonts = new FontTextService(Arrays.asList(primary, secondary), engine, 1, 8, 128)) {
+            require(fonts.layout("A", requested, 1000, TextPolicy.NO_WRAP).lines().get(0).glyphs().get(0).source == primary,
+                    "反例没有建立首选匹配缓存");
+            fonts.layout("X", new TextStyle("other", 16, -1, Collections.singletonList(secondary)), 1000, TextPolicy.NO_WRAP);
+            engine.failingSourceBytes = primary.byteSize();
+            TextLayout fallback = fonts.layout("AB", requested, 999, TextPolicy.NO_WRAP);
+            require(fallback.lines().get(0).glyphs().get(0).source == secondary
+                    && fallback.diagnostics().stream().anyMatch(d -> d.kind == TextLayout.Diagnostic.Kind.FONT_RESOURCE),
+                    "重开失败没有使用后续候选或丢失资源诊断");
+            // failures 也有 LRU；另一资源错误逐出 primary 后允许沿原入口再次打开。
+            engine.failingSourceBytes = secondary.byteSize();
+            try {
+                fonts.layout("Y", new TextStyle("other", 20, -1, Collections.singletonList(secondary)), 1000, TextPolicy.NO_WRAP);
+            } catch (IllegalStateException expected) { }
+            engine.failingSourceBytes = -1;
+            TextLayout recovered = fonts.layout("BA", requested, 998, TextPolicy.NO_WRAP);
+            require(recovered.lines().get(0).glyphs().stream().allMatch(g -> g.source == primary),
+                    "资源恢复后仍命中由去重错误污染的备用字体资格");
+        }
+    }
+
     @Override
     protected void runTests() throws Exception {
         scenario(
@@ -354,6 +405,8 @@ public final class CoreFontEngineScenario extends TestApplication {
                     evictionFailure(new IllegalStateException("retired face close failure"));
                     evictionFailure(new IllegalArgumentException("retired face argument failure"));
                 });
+        scenario("紧face预算段内匹配不重开候选前缀", this::matchingTightFaceBudget);
+        scenario("资源失败去重不固化备用字体匹配", this::matchingFailureRecovery);
         scenario("reload关闭失败仍释放全部face并通知", () -> invalidationFailure(false, true));
         scenario("register关闭Error仍释放全部face并通知", () -> invalidationFailure(true, true));
         scenario("失效监听失败不中断其余监听", () -> invalidationFailure(false, false));

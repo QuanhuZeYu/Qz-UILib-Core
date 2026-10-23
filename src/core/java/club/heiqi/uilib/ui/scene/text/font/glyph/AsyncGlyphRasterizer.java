@@ -182,6 +182,8 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
 
     /** 当前宿主可见集合更新，移除尚未执行的过期需求；不打断正在进行的单次原生调用。 */
     public synchronized void retainPending(Collection<GlyphKey> visible) {
+        java.util.Objects.requireNonNull(visible, "visible");
+        if (pending.isEmpty()) return;
         Set<GlyphKey> keys = new HashSet<GlyphKey>(visible);
         Iterator<Map.Entry<GlyphKey, Boolean>> it = pending.entrySet().iterator();
         while (it.hasNext()) {
@@ -197,7 +199,9 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         if (limit < 0) throw new IllegalArgumentException("无效通知预算");
         List<GlyphKey> result = new ArrayList<GlyphKey>();
         while (result.size() < limit && !ready.isEmpty()) result.add(ready.removeFirst());
-        notifyAll();
+        // #81 只有移出通知才释放ready背压；热态空drain不唤醒无任务的worker。
+        // 新任务和close各自通知，空列表仍独立且可修改，零预算不改变队列。
+        if (!result.isEmpty()) notifyAll();
         return result;
     }
 

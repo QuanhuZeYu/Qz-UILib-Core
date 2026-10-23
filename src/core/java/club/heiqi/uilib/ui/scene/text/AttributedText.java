@@ -14,6 +14,7 @@ public final class AttributedText {
     private final List<StyleSpan> spans;
     private final List<TextLayout.Diagnostic> diagnostics;
     private final List<InlineBox> inlineBoxes;
+    private volatile PositionKey positionKey;
 
     public AttributedText(
             TextInput input, String originalText, TextStyle base, List<StyleSpan> spans) {
@@ -114,7 +115,11 @@ public final class AttributedText {
     }
 
     /** 完整定位身份排除前景色；供已有请求缓存复用，不改变本声明的身份相等语义。 */
-    public PositionKey positionKey() { return new PositionKey(this); }
+    public PositionKey positionKey() {
+        PositionKey known = positionKey;
+        if (known == null) positionKey = known = new PositionKey(this);
+        return known;
+    }
 
     /** 值键包含所有来源事实；颜色归当前声明，不能靠旧颜色数值猜测继承。 */
     public static final class PositionKey {
@@ -153,6 +158,7 @@ public final class AttributedText {
     private static final class InputKey {
         final TextInput input;
         final int[] offsets, segments, invalid;
+        private final int hash;
 
         InputKey(TextInput input) {
             this.input = input;
@@ -176,6 +182,8 @@ public final class AttributedText {
             for (TextInput.InvalidRange s : input.invalidRanges()) {
                 invalid[i++] = s.start; invalid[i++] = s.end;
             }
+            hash = Objects.hash(input.text, input.sourceUnit, Arrays.hashCode(offsets),
+                    Arrays.hashCode(segments), Arrays.hashCode(invalid));
         }
         @Override public boolean equals(Object other) {
             if (!(other instanceof InputKey)) return false;
@@ -184,10 +192,7 @@ public final class AttributedText {
                     && Arrays.equals(offsets, k.offsets) && Arrays.equals(segments, k.segments)
                     && Arrays.equals(invalid, k.invalid);
         }
-        @Override public int hashCode() {
-            return Objects.hash(input.text, input.sourceUnit, Arrays.hashCode(offsets),
-                    Arrays.hashCode(segments), Arrays.hashCode(invalid));
-        }
+        @Override public int hashCode() { return hash; }
     }
 
     public TextStyle styleAt(int offset) {

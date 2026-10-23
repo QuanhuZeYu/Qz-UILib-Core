@@ -68,6 +68,10 @@ public final class PaintPlan {
      * 同一片段引用只在最早可达层处理一次；资源owner仍按GlyphKey/内容identity去重。
      */
     public List<List<PaintCommand>> resourceLayers() {
+        // branchSource只参与回放选择，不引入额外资源。
+        if (!hasResourceBranches())
+            return commands.isEmpty() ? Collections.emptyList() : Collections.singletonList(commands);
+
         List<List<PaintCommand>> layers = new ArrayList<>();
         java.util.Set<PaintPlan> visited =
                 Collections.newSetFromMap(new java.util.IdentityHashMap<PaintPlan, Boolean>());
@@ -94,14 +98,25 @@ public final class PaintPlan {
         return Collections.unmodifiableList(layers);
     }
 
+    private boolean hasResourceBranches() {
+        for (int i = 0; i < commands.size(); i++) {
+            PaintCommand command = commands.get(i);
+            if (command.readyOverlay != null || command.pendingPaint != null || command.failedPaint != null) return true;
+        }
+        return false;
+    }
+
     public void visitResources(java.util.function.Consumer<PaintCommand> visitor) {
         for (List<PaintCommand> layer : resourceLayers())
             for (PaintCommand command : layer) visitor.accept(command);
     }
 
     public List<PaintCommand> resourceCommands() {
+        List<List<PaintCommand>> layers = resourceLayers();
+        if (layers.isEmpty()) return Collections.emptyList();
+        if (layers.size() == 1) return layers.get(0);
         List<PaintCommand> resources = new ArrayList<>();
-        visitResources(resources::add);
+        for (List<PaintCommand> layer : layers) resources.addAll(layer);
         return Collections.unmodifiableList(resources);
     }
 }

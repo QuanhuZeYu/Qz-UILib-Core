@@ -14,6 +14,7 @@ import java.util.*;
 final class SettingsWorkspace {
     private enum Section {
         APPEARANCE("外观", "设置工作区主题、字体回退顺序与文字样本。", SceneIconButton.Symbol.SLIDERS),
+        PERFORMANCE("性能", "管理当前运行的绘制性能选项。", SceneIconButton.Symbol.SLIDERS),
         MINECRAFT("Minecraft 接入", "管理原版文字与 UILib 字体服务的接入。", SceneIconButton.Symbol.MONITOR),
         FILE("配置文件", "查看当前配置来源，显式保存或重新加载。", SceneIconButton.Symbol.FILE);
         final String title, description;
@@ -59,7 +60,7 @@ final class SettingsWorkspace {
                 ui.stack(16, 8)
                         .add(ui.heading("设置", 28))
                         .add(
-                                ui.text("管理界面外观、字体来源与当前宿主的本地配置。", 14, true)
+                                ui.text("管理界面外观、字体来源、绘制性能与当前宿主的本地配置。", 14, true)
                                         .bind(
                                                 NodeBinding.value(
                                                         ui.shortWindow, (n, v) -> n.visible(!v))))
@@ -67,6 +68,8 @@ final class SettingsWorkspace {
                         .add(notices());
         content.add(
                 panel(Section.APPEARANCE, new SettingsAppearanceSection(ui, fonts::open).build()));
+        if (ui.configuration.hasBatching())
+            content.add(panel(Section.PERFORMANCE, SettingsPerformanceSection.build(ui)));
         if (ui.configuration.hasMinecraft())
             content.add(panel(Section.MINECRAFT, SettingsMinecraftSection.build(ui)));
         content.add(panel(Section.FILE, SettingsFileSection.build(ui, this::reloadRequested)));
@@ -174,14 +177,19 @@ final class SettingsWorkspace {
     }
 
     private List<Section> sections() {
-        return ui.configuration.hasMinecraft()
-                ? Arrays.asList(Section.values())
-                : Arrays.asList(Section.APPEARANCE, Section.FILE);
+        List<Section> available = new ArrayList<>();
+        available.add(Section.APPEARANCE);
+        if (ui.configuration.hasBatching()) available.add(Section.PERFORMANCE);
+        if (ui.configuration.hasMinecraft()) available.add(Section.MINECRAFT);
+        available.add(Section.FILE);
+        return available;
     }
 
     private boolean changed(Section target) {
         SettingsConfiguration.Snapshot live = ui.configuration.current();
         if (target == Section.MINECRAFT) return ui.model.replace().get() != live.replace();
+        if (target == Section.PERFORMANCE)
+            return ui.model.aggressiveBatching().get() != live.aggressiveBatching();
         if (target == Section.APPEARANCE)
             return ui.model.theme().get() != live.theme()
                     || !ui.declarations().equals(live.candidates());

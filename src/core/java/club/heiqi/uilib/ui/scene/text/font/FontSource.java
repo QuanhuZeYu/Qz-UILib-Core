@@ -357,6 +357,7 @@ public final class FontSource {
 
     @Override
     public boolean equals(Object other) {
+        if (this == other) return true;
         if (!(other instanceof FontSource)) return false;
         FontSource s = (FontSource) other;
         return id.equals(s.id)
@@ -372,8 +373,16 @@ public final class FontSource {
 
     @Override
     public int hashCode() {
-        return Objects.hash(
-                id, revision, faceIndex, fingerprint, color, scripts, loader, axes, members);
+        // ClassLoader 可自定义 hashCode；保留实时取值及原 Objects.hash 的字段顺序。
+        int result = 31 + id.hashCode();
+        result = 31 * result + Long.hashCode(revision);
+        result = 31 * result + Long.hashCode(faceIndex);
+        result = 31 * result + fingerprint.hashCode();
+        result = 31 * result + Boolean.hashCode(color);
+        result = 31 * result + scripts.hashCode();
+        result = 31 * result + Objects.hashCode(loader);
+        result = 31 * result + axes.hashCode();
+        return 31 * result + Objects.hashCode(members);
     }
 
     @Override
