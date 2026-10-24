@@ -46,13 +46,13 @@ final class ScenePaintCollector {
         Set<SceneNode> captured = identitySet();
         for (SceneGeometryView.Group group : fragments.groups) {
             PaintLayers layers = collectEntries(group.entries, geometry, metricsRevision, captured);
-            append(content, layers.content);
-            append(overlay, layers.overlay);
+            appendGroup(content, layers.content);
+            appendGroup(overlay, layers.overlay);
         }
         capturePreparedPresence(geometry, metricsRevision);
-        append(content, runtime.retainedPresencePaint(geometry));
+        appendGroup(content, runtime.retainedPresencePaint(geometry));
         // 控件内容保持树序；overlay在全页内容之后保持原overlay树序。
-        append(content, overlay.build());
+        appendGroup(content, overlay.build());
         PaintPlan plan = content.build();
         fragments.mainPlanCollected = true;
         return plan;
@@ -84,8 +84,8 @@ final class ScenePaintCollector {
                 for (Map.Entry<SceneGeometryView.Group, List<SceneGeometryView.Entry>> group : capture.groups.entrySet()) {
                     PaintLayers layer = collectEntries(group.getValue(), intrinsic, metricsRevision, capturedPresence, node.parent());
                     boolean escaped = group.getKey().layer != null && inSubtree(group.getKey().layer, node);
-                    parts.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(layer.content, escaped));
-                    overlays.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(layer.overlay, escaped));
+                    parts.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(separated(layer.content), escaped));
+                    overlays.add(new club.heiqi.uilib.ui.scene.runtime.PresencePaint.Part(separated(layer.overlay), escaped));
                 }
                 parts.addAll(overlays);
                 presenceSnapshots.put(node, new club.heiqi.uilib.ui.scene.runtime.PresencePaint(parts));
@@ -319,6 +319,20 @@ final class ScenePaintCollector {
         for (SceneNode at = node; at != stop && at != null; at = at.parent())
             opacity *= at.opacity() * (at == capturePresenceRoot ? 1 : runtime.presenceOpacity(at));
         return PaintPlan.presentation(0, 0, opacity, null);
+    }
+
+    /** 组内可按宿主策略合批，组间必须保序；否则底层文字会越过弹层的不透明背景。 */
+    private static void appendGroup(PaintPlanBuilder target, PaintPlan plan) {
+        if (plan.commands().isEmpty()) return;
+        target.add(PaintCommand.orderBarrier());
+        append(target, plan);
+    }
+
+    private static PaintPlan separated(PaintPlan plan) {
+        if (plan.commands().isEmpty()) return plan;
+        PaintPlanBuilder result = new PaintPlanBuilder();
+        appendGroup(result, plan);
+        return result.build();
     }
 
     private static void append(PaintPlanBuilder target, PaintPlan plan) {

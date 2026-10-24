@@ -30,7 +30,7 @@ SceneChildMeasurer.flowChildren 提供当批不可修改的可见普通流直属
 
 ## 4. 同批共同几何与呈现序
 
-每个有效节点在唯一 SceneGeometry 中恰一次。来源可用性、层边界、逻辑 modal 范围及有序呈现子树组与外盒/clip 同批发布；PaintPlan 按相同组序绘制，组内保留 engine placements 的内容顺序，并在每组末尾闭合 paintAfterChildren。图像捕获复用同管线，不以全局节点数组排序破坏内容栈。
+每个有效节点在唯一 SceneGeometry 中恰一次。来源可用性、层边界、逻辑 modal 范围及有序呈现子树组与外盒/clip 同批发布；PaintPlan 按相同组序绘制，组内保留 engine placements 的内容顺序，并在每组末尾闭合 paintAfterChildren。呈现组之间形成封闭提交边界，显式激进合批也不得跨组改变所属层与下层内容的覆盖顺序。图像捕获复用同管线，不以全局节点数组排序破坏内容栈。
 
 同一范围的普通内容先于所属层；同范围多个层沿逻辑声明顺序，后声明绘制在前声明之上；嵌套层在所属外层之上。modal 范围维持逻辑归属，绘制位置不改变范围。当前 modal 层以下的非模态层停止有效呈现；当前 modal 的来源祖先层链保留，来源链绘制在当前 modal 以下，其他后台层不压到 modal 上方。范围的有效性依据当前声明及来源事实，禁用 modal 不使有效背景层被错误过滤。PASSIVE 层子树内 modal 声明不合法。
 

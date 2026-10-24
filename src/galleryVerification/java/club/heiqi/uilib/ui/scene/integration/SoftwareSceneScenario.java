@@ -698,8 +698,11 @@ final class SoftwareSceneScenario extends TestApplication {
                                     && current.geometry.get(child[0]).box.y == 2,
                             "声明测量依赖通知后自动重排并保存子区域");
                     require(
-                            current.paint.commands().get(0).box
-                                    == current.geometry.get(control[0]).box,
+                            current.paint.commands().stream().anyMatch(command -> command.kind == PaintCommand.Kind.RECT
+                                    && command.box.x == current.geometry.get(control[0]).box.x
+                                    && command.box.y == current.geometry.get(control[0]).box.y
+                                    && command.box.width == current.geometry.get(control[0]).box.width
+                                    && command.box.height == current.geometry.get(control[0]).box.height),
                             "扩展绘制消费共同几何");
                 });
     }

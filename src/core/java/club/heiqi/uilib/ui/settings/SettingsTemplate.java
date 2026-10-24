@@ -113,8 +113,10 @@ public final class SettingsTemplate implements ScenePage {
         ReadableSignal<Boolean> compact = () -> context.viewportWidth().get()
                 < Math.round(ui.colors.get().textStyle.logicalEm * 48) + gap.get() * 6;
         Signal<String> selected = context.domain().signal(sections.isEmpty() ? "" : sections.get(0).id);
+        ReadableSignal<Integer> gutter = () -> gap.get() + ui.colors.get().source
+                .metrics(SceneControlMetrics.Kind.SCROLLBAR).scrollbarThickness;
         SceneNode content = column(gap, 3);
-        SceneScrollArea.Area scrolling = SceneScrollArea.create(context, content,
+        SceneScrollArea.Area scrolling = SceneScrollArea.create(context, inset(content, gutter),
                 () -> new SceneScrollArea.Options().autoHide(false)
                         .motion(new ScrollMotionOptions(motion.spatial.get()).maximumDisplacement(24))
                         .colors(0, ui.colors.get().border, ui.colors.get().muted), editorTheme);
@@ -167,7 +169,7 @@ public final class SettingsTemplate implements ScenePage {
                 .add(ui.line())
                 .add(new SceneNode().bind(NodeBinding.value(gap,
                         (node, value) -> node.size(Size.fill(1), Size.fixed(value)))));
-        SceneNode body = SceneLayouts.frame(sectionHeader, scrolling.node(), new SceneNode().size(Size.fill(1), Size.fixed(0)));
+        SceneNode body = SceneLayouts.frame(inset(sectionHeader, gutter), scrolling.node(), new SceneNode().size(Size.fill(1), Size.fixed(0)));
         SceneNode buttons = SceneLayouts.wrap(gap).size(Size.natural(), Size.natural());
         // 只安排视觉主次；各按钮仍执行业务提供的同一 SceneCommand。
         for (boolean primary : new boolean[] {false, true})
@@ -179,7 +181,8 @@ public final class SettingsTemplate implements ScenePage {
         status.add(motion.reveal(ui.label(notice, .9f, true), () -> !notice.get().isEmpty()));
         SceneNode operations = SceneLayouts.split(status, buttons,
                 () -> new SceneLayouts.SplitOptions(Math.round(ui.colors.get().textStyle.logicalEm * 10), gap.get() * 2));
-        SceneNode footer = column(gap, 2).add(ui.line()).add(operations).clip(true).scrollable(true);
+        SceneNode footer = column(gap, 0).add(inset(column(gap, 2).add(ui.line()).add(operations), gutter))
+                .clip(true).scrollable(true);
         SceneNode supplement = aside == null ? null : Objects.requireNonNull(aside.apply(context), "辅助说明");
         return SettingsLayout.template(ui.colors, compact, toolbar, navigation, body, footer, supplement)
                 .bind(NodeBinding.value(ui.colors, (n, palette) -> n.background(palette.canvas)))
@@ -190,6 +193,15 @@ public final class SettingsTemplate implements ScenePage {
     private Section current(String id) {
         for (Section section : sections) if (section.id.equals(id)) return section;
         return null;
+    }
+
+    /** 两侧共用留白，尾侧包含覆盖式滚动条的宽度；标题、字段和操作仍沿普通布局对齐。 */
+    private static SceneNode inset(SceneNode content, ReadableSignal<Integer> gutter) {
+        SceneNode leading = new SceneNode().bind(NodeBinding.value(gutter,
+                (node, value) -> node.size(Size.fixed(value), Size.fixed(0))));
+        SceneNode trailing = new SceneNode().bind(NodeBinding.value(gutter,
+                (node, value) -> node.size(Size.fixed(value), Size.fixed(0))));
+        return SceneAppearance.row(0).add(leading).add(content).add(trailing);
     }
 
     private static SceneNode column(ReadableSignal<Integer> gap, int units) {

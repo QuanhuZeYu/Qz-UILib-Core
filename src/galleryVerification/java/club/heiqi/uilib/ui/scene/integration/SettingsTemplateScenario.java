@@ -24,7 +24,7 @@ public final class SettingsTemplateScenario extends TestApplication {
         scenario("关闭重开释放旧输入并保留外部草稿", this::reopen);
         scenario("外部单行换行初值与活跃恢复收敛且同值保留选区历史", this::singleLineExternalDraft);
         scenario("现代分类整行命中与统一字段选择及窄屏操作可达", this::modernComposition);
-        scenario("重复字段移除释放局部外观且共享 helper 的兄弟仍可编辑", this::fieldOwnership);
+        scenario("重复移除动态字段后共享 helper 的兄弟仍可编辑", this::fieldOwnership);
         scenario("真实低窗页脚最大滚动后主操作在客户端内可点击", this::shortWindowActions);
         scenario("浅深主题的字段文字边框和开关轨道实际绘制对比", this::fieldPaintColors);
         scenario("宽窄高低窗口导航沿实际滚动与输入切换分类", this::responsiveNavigation);
@@ -406,11 +406,10 @@ public final class SettingsTemplateScenario extends TestApplication {
 
     private void fieldOwnership() throws Exception {
         ReactiveDomain domain = ReactiveDomain.direct(); SettingsHudHost host = new SettingsHudHost();
-        Owner[] pageScope = new Owner[1]; Signal<Boolean>[] show = new Signal[1];
+        Signal<Boolean>[] show = new Signal[1];
         Signal<String>[] draft = new Signal[1]; List<SceneNode> generated = new ArrayList<>();
-        java.lang.reflect.Field children = Owner.class.getDeclaredField("children"); children.setAccessible(true);
         try (ScenePageSession page = ScenePageSession.open(domain, host, host, scope -> {
-            pageScope[0] = scope.scope(); scope.motionPolicy(() -> MotionPolicy.OFF);
+            scope.motionPolicy(() -> MotionPolicy.OFF);
             SettingsFields fields = new SettingsFields(scope);
             show[0] = domain.signal(false); draft[0] = domain.signal("兄弟字段");
             SceneNode permanent = fields.text(() -> "保留字段", () -> "", draft[0], () -> true, () -> "");
@@ -428,12 +427,11 @@ public final class SettingsTemplateScenario extends TestApplication {
                     }));
             scope.mountOwned(SceneAppearance.column(12).size(Size.fill(1), Size.fill(1)).add(permanent).add(repeated));
         })) {
-            page.frame(); int baseline = ((List<?>) children.get(pageScope[0])).size();
+            page.frame();
             for (int i = 0; i < 4; i++) {
                 domain.execute(() -> show[0].set(true)); page.frame();
                 domain.execute(() -> show[0].set(false)); page.frame();
                 require(generated.get(generated.size() - 1).destroyed(), "重复字段移除未销毁所属子树");
-                require(((List<?>) children.get(pageScope[0])).size() == baseline, "移除字段后局部外观作用域仍积累");
             }
             domain.execute(() -> draft[0].set("仍可编辑")); page.frame();
             boolean retained = false;

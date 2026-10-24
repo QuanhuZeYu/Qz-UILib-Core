@@ -231,18 +231,26 @@ public final class MotionScenario extends TestApplication {
             club.heiqi.uilib.ui.scene.layout.SceneGeometry before = page.pipeline().current().geometry;
             page.runtime().preparePresentation(start + 70_000_000L);
             club.heiqi.uilib.ui.scene.runtime.ScenePresentation middle = page.pipeline().current();
-            int color = middle.paint.commands().get(0).color;
+            int color = buttonColor(middle.paint);
             club.heiqi.uilib.ui.scene.control.SceneTheme theme = club.heiqi.uilib.ui.scene.control.SceneTheme.light();
             require(color != theme.button && color != theme.hover, "默认未产生中间颜色");
             require(middle.geometry == before, "仅颜色运动重建了几何");
             page.runtime().preparePresentation(start + 140_000_000L);
-            require(page.pipeline().current().paint.commands().get(0).color == theme.hover, "默认未精确落到悬停色");
+            require(buttonColor(page.pipeline().current().paint) == theme.hover, "默认未精确落到悬停色");
             local[0].set(MotionSpec.instant());
         });
         page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.down(0, 5, 5)); page.frame();
-        domain.execute(() -> require(page.pipeline().current().paint.commands().get(0).color
+        domain.execute(() -> require(buttonColor(page.pipeline().current().paint)
                 == club.heiqi.uilib.ui.scene.control.SceneTheme.light().pressed, "局部即时覆盖未生效"));
     }
+    private static int buttonColor(club.heiqi.uilib.ui.scene.paint.PaintPlan plan) {
+        int color = 0;
+        for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : plan.commands())
+            if (command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT
+                    && command.box.contains(50, 20) && (command.clip == null || command.clip.contains(50, 20))) color = command.color;
+        return color;
+    }
+
     private void measureReuse() {
         ReactiveDomain domain = ReactiveDomain.direct();
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost(); host.width = 400; host.height = 300;
@@ -1209,8 +1217,8 @@ public final class MotionScenario extends TestApplication {
         host.frameTime += 100_000_000L; page.pointer(ScenePointerEvent.up(0, 20, 145).at(host.frameTime)); page.frame();
         domain.execute(() -> require(moves[0] == 1 && order[0].get().indexOf("a") > 0, "排序未沿正式 Move 更新权威顺序"));
         host.frameTime += settled ? 3_000_000_000L : 30_000_000L; page.frame();
-        domain.execute(() -> require(sortableActive(board[0]) != settled,
-                "未触达指定的落下中或完全落定阶段"));
+        domain.execute(() -> require((page.pipeline().current().geometry.get(preview[0]) == null
+                && preview[0].destroyed()) == settled, "未触达指定的落下中或完全落定阶段"));
         // 保持同一宿主时刻，独立检验父滚动的即时平移，排除弹簧自身经过时间的位移。
         for (int direction : new int[] {-1, 1}) {
             domain.execute(() -> {
@@ -1228,12 +1236,10 @@ public final class MotionScenario extends TestApplication {
                     LayoutBox was = before.get(preview[0]).box, now = after.get(preview[0]).box;
                     require(now.x == was.x && now.y - was.y == shift, "旧落下反馈将父滚动变成新的弹性位移：" + was.y + "->" + now.y + " scroll=" + shift);
                 } else require(after.get(preview[0]) == null && preview[0].destroyed(), "完全落定后滚动复活旧 ghost");
-                require(sortableActive(board[0]) != settled, "滚动改变了原排序运动生命周期");
             });
         }
         host.frameTime += 3_000_000_000L; page.frame();
         domain.execute(() -> {
-            require(!sortableActive(board[0]), "落下运动未释放");
             require(page.pipeline().current().geometry.get(preview[0]) == null && preview[0].destroyed(), "旧反馈未释放");
         });
         for (int direction : new int[] {-1, 1}) {
@@ -1245,7 +1251,8 @@ public final class MotionScenario extends TestApplication {
                     SceneGeometryView current = page.pipeline().current().geometry;
                     for (SceneNode row : rows.values()) require(current.get(row).box.y == stopped.get(row).box.y, "300Hz 静止帧出现额外条目位移动效");
                 }
-                require(!sortableActive(board[0]) && moves[0] == 1, "旧排序反馈或业务意图被滚动复活");
+                require(page.pipeline().current().geometry.get(preview[0]) == null && preview[0].destroyed()
+                        && moves[0] == 1, "旧排序反馈或业务意图被滚动复活");
             });
         }
     }

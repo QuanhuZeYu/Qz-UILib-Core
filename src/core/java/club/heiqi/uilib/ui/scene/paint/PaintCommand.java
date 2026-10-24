@@ -18,7 +18,8 @@ public final class PaintCommand {
         IMAGE,
         VIDEO,
         IMAGE_BRANCH_OVERLAY,
-        PATH
+        PATH,
+        ORDER_BARRIER
     }
 
     /** 新路径或正式几何的caller裁剪事实；矩阵归为单位值也保留，旧工厂的world调用条件保持。 */
@@ -164,13 +165,19 @@ public final class PaintCommand {
         this.branchSource = branchSource;
     }
 
+    private static final PaintCommand ORDER_BARRIER = new PaintCommand(Kind.ORDER_BARRIER,
+            new LayoutBox(0, 0, 0, 0), null, 0, null, null, null, null, null);
+
+    /** 呈现组的封闭提交边界；无几何或资源，不受裁剪、透明度及变换影响。 */
+    public static PaintCommand orderBarrier() { return ORDER_BARRIER; }
+
     /** 当前命令的页面裁剪，包含原局部矩形clip经过实际矩阵后的精确区域。 */
     public SceneClipRegion effectiveClip(){return effectiveClip;}
     public PaintCommand withGeometry(SceneTransform outer,SceneClipRegion externalClip){
         return withGeometry(outer,externalClip,new java.util.IdentityHashMap<>());
     }
     PaintCommand withGeometry(SceneTransform outer,SceneClipRegion externalClip,java.util.Map<PaintCommand,PaintCommand> mapped){
-        if(outer.identity()&&externalClip.unbounded()&&sceneGeometry)return this;
+        if(kind==Kind.ORDER_BARRIER || outer.identity()&&externalClip.unbounded()&&sceneGeometry)return this;
         PaintCommand existing=mapped.get(this);if(existing!=null)return existing;
         PaintPlan pending=pendingPaint==null?null:pendingPaint.transformed(outer,externalClip,mapped);
         PaintPlan failed=failedPaint==pendingPaint?pending:failedPaint==null?null:failedPaint.transformed(outer,externalClip,mapped);
@@ -265,6 +272,7 @@ public final class PaintCommand {
 
     PaintCommand presented(int dx, int dy, float opacity, LayoutBox limit,
             java.util.Map<PaintCommand, PaintCommand> mapped) {
+        if (kind == Kind.ORDER_BARRIER) return this;
         PaintCommand existing = mapped.get(this);
         if (existing != null) return existing;
         boolean geometric=!transform.identity()||!shapeClip.unbounded();
