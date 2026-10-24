@@ -3,31 +3,41 @@ package club.heiqi.uilib.ui.scene.hud;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneDraggable;
-import club.heiqi.uilib.ui.scene.geometry.SceneTransform;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
-import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.Objects;
 
 /** 通用 HUD 声明；输入、缩放与裁剪共用正式几何，不持久化位置。 */
 public final class SceneHud {
+    public enum Fit { CLIP, CONTAIN }
     private SceneHud() {}
 
     public static SceneNode create(ScenePageContext context, SceneNode content,
             ReadableSignal<SceneHudPlacement> placement) {
-        return create(context, content, placement, null, null);
+        return create(context, content, placement, Fit.CLIP);
+    }
+
+    public static SceneNode create(ScenePageContext context, SceneNode content,
+            ReadableSignal<SceneHudPlacement> placement, Fit fit) {
+        return create(context, content, placement, null, null, fit);
     }
 
     public static SceneNode edit(ScenePageContext context, SceneNode content,
             Signal<SceneHudPlacement> placement, ReadableSignal<Integer> snap) {
+        return edit(context, content, placement, snap, Fit.CLIP);
+    }
+
+    public static SceneNode edit(ScenePageContext context, SceneNode content,
+            Signal<SceneHudPlacement> placement, ReadableSignal<Integer> snap, Fit fit) {
         Objects.requireNonNull(snap, "snap");
-        return create(context, content, placement, placement, snap);
+        return create(context, content, placement, placement, snap, fit);
     }
 
     private static SceneNode create(ScenePageContext context, SceneNode content,
             ReadableSignal<SceneHudPlacement> placement, Signal<SceneHudPlacement> writable,
-            ReadableSignal<Integer> snap) {
+            ReadableSignal<Integer> snap, Fit fitPolicy) {
+        Objects.requireNonNull(fitPolicy, "HUD 适配");
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(content, "content");
         Objects.requireNonNull(placement, "placement");
@@ -36,9 +46,9 @@ public final class SceneHud {
             if (!Float.isFinite(value) || value <= 0) throw new IllegalArgumentException("HUD 缩放须为有限正数");
             return value;
         };
-        SceneNode transformed = new SceneNode().size(Size.natural(), Size.natural()).add(content)
-                .bind(NodeBinding.value(scale, (n, s) -> n.transform(SceneTransform.scale(s, s))));
-        SceneNode scaled = new SceneNode().control(new SceneHudLayout.Scaled(transformed, scale)).add(transformed);
+        SceneHudLayout.Content fit = new SceneHudLayout.Content(scale, context.viewportWidth(), context.viewportHeight(), fitPolicy);
+        SceneNode transformed = new SceneNode().size(Size.natural(), Size.natural()).control(fit).add(content);
+        SceneNode scaled = new SceneNode().control(new SceneHudLayout.Scaled(transformed, fit)).add(transformed);
         SceneHudLayout.Anchored layout = new SceneHudLayout.Anchored(placement);
         SceneNode target = scaled;
         if (writable != null) {

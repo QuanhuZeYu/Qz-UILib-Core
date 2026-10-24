@@ -36,6 +36,12 @@ public final class SceneLayouts {
         return wrap(() -> gap);
     }
 
+    /** 按真实子内容求自然宽，再居中各行；不会用 FILL 子项把自然宽反馈成父宽。 */
+    public static SceneNode centeredColumn(ReadableSignal<Integer> gap) {
+        return new SceneNode().size(Size.natural(), Size.natural())
+                .control(new CenteredColumn(Objects.requireNonNull(gap, "列间距")));
+    }
+
     public static SceneNode overlay() {
         return new SceneNode().size(Size.fill(1), Size.fill(1)).control(new Overlay());
     }
@@ -173,6 +179,58 @@ public final class SceneLayouts {
                 line = Math.max(line, size.height);
             }
             return new Result(width, y + line, placed);
+        }
+    }
+
+    private static final class CenteredColumn extends Arrangement {
+        private final ReadableSignal<Integer> gap;
+        CenteredColumn(ReadableSignal<Integer> gap) { this.gap = gap; }
+        public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(gap); }
+        @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
+            int padding = node.padding(), width = Math.max(0, box.width - padding * 2);
+            int height = Math.max(0, box.height - padding * 2), spacing = gap.get();
+            if (spacing < 0) throw new IllegalArgumentException("列间距不能为负");
+            List<SceneNode> nodes = children.flowChildren();
+            List<int[]> measured = new ArrayList<>();
+            for (SceneNode child : nodes) {
+                MeasuredSize size = children.measureChild(child, new Constraints(width, Integer.MAX_VALUE));
+                measured.add(new int[] {size.width, size.height});
+            }
+            int[] heights = SceneFlowLayout.allocate(children, nodes, measured,
+                    Math.max(0, height - Math.max(0, nodes.size() - 1) * spacing), false);
+            List<ChildPlacements.Entry> placed = new ArrayList<>();
+            int y = padding;
+            for (int i = 0; i < nodes.size(); i++) {
+                SceneNode child = nodes.get(i);
+                MeasuredSize size = children.measureChild(child, new Constraints(width, heights[i]));
+                int w = SceneFlowLayout.cross(children.sizeIntent(child, SceneNode.Axis.ROW), size.width, width);
+                place(placed, child, padding + (width - w) / 2, y, w, heights[i]);
+                y += heights[i] + spacing;
+            }
+            return new ChildPlacements(placed);
+        }
+        Result layout(Constraints limits, SceneChildMeasurer children) {
+            int spacing = gap.get();
+            if (spacing < 0) throw new IllegalArgumentException("列间距不能为负");
+            List<SceneNode> nodes = children.flowChildren();
+            List<int[]> measured = new ArrayList<>();
+            for (SceneNode child : nodes) {
+                MeasuredSize size = children.measureChild(child, new Constraints(limits.availableWidth, Integer.MAX_VALUE));
+                measured.add(new int[] {size.width, size.height});
+            }
+            int gaps = Math.max(0, nodes.size() - 1) * spacing;
+            // 有限高度必须先分配FILL再测自然宽，图像等比例内容不能沿用无界高度的宽度。
+            int[] heights = limits.availableHeight == Integer.MAX_VALUE ? null
+                    : SceneFlowLayout.allocate(children, nodes, measured, Math.max(0, limits.availableHeight - gaps), false);
+            int width = 0, height = gaps;
+            for (int i = 0; i < nodes.size(); i++) {
+                SceneNode child = nodes.get(i);
+                MeasuredSize size = children.measureChild(child, new Constraints(limits.availableWidth,
+                        heights == null ? Integer.MAX_VALUE : heights[i]));
+                width = Math.max(width, size.width);
+                height += heights == null ? size.height : heights[i];
+            }
+            return new Result(width, height, Collections.emptyList());
         }
     }
 

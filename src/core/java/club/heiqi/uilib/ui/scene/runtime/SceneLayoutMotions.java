@@ -107,8 +107,9 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
             SceneNode node = entry.getKey(); SceneGeometryView.Entry box = target.get(node);
             if (box == null) { dimensions.remove(node); continue; }
             Dimensions state = dimensions.computeIfAbsent(node, ignored -> new Dimensions());
-            state.retarget(node, box.box, entry.getValue(), now);
-            overrides |= state.differs(node, box.box);
+            // 排版轨迹只跟随分配尺寸；world包络已含仿射变换，不能再次反灌自然测量。
+            state.retarget(node, box.layoutBox, entry.getValue(), now);
+            overrides |= state.differs(node, box.layoutBox);
         }
         schedule(); return overrides;
     }
@@ -143,8 +144,8 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
         if (parentBox == null) return;
         seen.add(node);
         int scroll = parentBox.scrollOffset - runtime.scrollPresentationOffset(parent);
-        int x = entry.box.x - parentBox.box.x - Math.round(node.translationX());
-        int y = entry.box.y - parentBox.box.y - Math.round(node.translationY());
+        int x = entry.layoutBox.x - parentBox.layoutBox.x - Math.round(node.translationX());
+        int y = entry.layoutBox.y - parentBox.layoutBox.y - Math.round(node.translationY());
         if (parent.scrollable()) {
             if (parent.axis() == SceneNode.Axis.ROW) x += scroll; else y += scroll;
         }
@@ -152,12 +153,12 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
         if (state == null) {
             state = new Position(parent, x, y, now); offsets.put(node, state);
         }
-        state.retarget(parent, entry.box, x, y, scope.reordered || !scope.resizing, scope.spec, now);
+        state.retarget(parent, entry.layoutBox, x, y, scope.reordered || !scope.resizing, scope.spec, now);
     }
     void published(SceneGeometryView geometry) {
         for (Map.Entry<SceneNode, Position> entry : offsets.entrySet()) {
             SceneGeometryView.Entry box = geometry.get(entry.getKey());
-            entry.getValue().published = box == null ? null : box.box;
+            entry.getValue().published = box == null ? null : box.layoutBox;
         }
     }
     SceneLayoutPresentation presentation(boolean place) {

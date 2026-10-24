@@ -142,6 +142,12 @@ public interface SceneControl {
     default ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children,
             LayoutBox parentAllocation, LayoutBox viewport) { return arrange(node, allocated, children); }
 
+    /** 本批分配盒原点处的只读呈现变换，与作者变换同序组合并进入共同几何。
+     * 不回写节点、尺寸或业务状态；动态来源沿 measure/arrangementDependencies 失效。 */
+    default club.heiqi.uilib.ui.scene.geometry.SceneTransform presentationTransform(SceneNode node, LayoutBox allocated) {
+        return club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
+    }
+
     /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
             SceneNode node,

@@ -103,6 +103,13 @@ public interface NodeBinding {
         return new MotionBinding(source, strategy, spatial, channel, apply);
     }
 
+    /** 明确声明初挂/重挂入场；initial 只在本次挂载开始采样，后续目标与策略沿普通运动续接。 */
+    static NodeBinding motionFrom(ReadableSignal<Float> initial, ReadableSignal<Float> source,
+            ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionSpec> strategy,
+            boolean spatial, Object channel, BiConsumer<SceneNode, Float> apply) {
+        return new MotionBinding(java.util.Objects.requireNonNull(initial, "入场来源"), source, strategy, spatial, channel, apply);
+    }
+
     /** 短暂离散呈现：非null来源的新对象身份重新起期，到期发布null但不改来源。
      * 同一来源身份到期后保持结束；初挂/重挂消费当前来源，null即时撤销。
      * apply只更新呈现声明或所属呈现Signal；卸载结束观察与有限推进。 */

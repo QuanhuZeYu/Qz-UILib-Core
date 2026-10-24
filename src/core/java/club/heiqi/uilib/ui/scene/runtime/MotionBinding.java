@@ -12,12 +12,18 @@ import java.util.function.BiConsumer;
 /** 来源收集不执行呈现映射；映射与推进只在框架准备阶段，卸载结束轨迹。 */
 final class MotionBinding implements NodeBinding {
     private final ReadableSignal<Float> source;
+    private final ReadableSignal<Float> initial;
     private final ReadableSignal<MotionSpec> strategy;
     private final BiConsumer<SceneNode, Float> apply;
     private final Object channel;
     private final boolean spatial;
     MotionBinding(ReadableSignal<Float> source, ReadableSignal<MotionSpec> strategy,
             boolean spatial, Object channel, BiConsumer<SceneNode, Float> apply) {
+        this(null, source, strategy, spatial, channel, apply);
+    }
+    MotionBinding(ReadableSignal<Float> initial, ReadableSignal<Float> source, ReadableSignal<MotionSpec> strategy,
+            boolean spatial, Object channel, BiConsumer<SceneNode, Float> apply) {
+        this.initial = initial;
         this.source = Objects.requireNonNull(source, "运动目标");
         this.strategy = Objects.requireNonNull(strategy, "运动策略来源");
         this.apply = Objects.requireNonNull(apply, "呈现映射");
@@ -57,8 +63,11 @@ final class MotionBinding implements NodeBinding {
             desiredStrategy = runtime.motionPolicy().get().resolve(Objects.requireNonNull(strategy.get(), "运动策略"), spatial);
             long now = runtime.transitions().now();
             if (!initialized) {
-                initialized = true; value.snap(desired, now); published = desired;
-                apply.accept(node, desired);
+                Float start = initial == null ? desired : initial.get();
+                if (start == null || !Float.isFinite(start))
+                    throw new IllegalArgumentException("运动入场值必须有限: node=" + node.id());
+                initialized = true; value.snap(start, now); published = start;
+                apply.accept(node, start);
             }
             if (desiredStrategy.kind == MotionSpec.Kind.DECAY) throw new IllegalArgumentException("属性目标不能使用自由惯性: node=" + node.id());
             value.retarget(desired, desiredStrategy, now);

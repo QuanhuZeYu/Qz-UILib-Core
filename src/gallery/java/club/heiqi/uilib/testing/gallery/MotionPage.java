@@ -55,6 +55,7 @@ public final class MotionPage {
             draggable,
             dragContent;
     private SceneScrollArea.Area scrollArea;
+    private ContentMotionCard contentMotion;
 
     public MotionPage(
             ScenePageContext context, ReadableSignal<SceneTheme> theme, Runnable previewTheme) {
@@ -131,6 +132,8 @@ public final class MotionPage {
                 .add(panelCard())
                 .add(collectionCard())
                 .add(gestureCard());
+        contentMotion = new ContentMotionCard(context, theme);
+        grid.add(contentMotion.create());
         root.add(grid);
         return root;
     }
@@ -617,6 +620,8 @@ public final class MotionPage {
     public SceneNode sortHandle(String key) {
         return sortHandles.get(key);
     }
+
+    public ContentMotionCard contentMotion() { return contentMotion; }
 
     public SceneNode sortable() {
         return sortable;

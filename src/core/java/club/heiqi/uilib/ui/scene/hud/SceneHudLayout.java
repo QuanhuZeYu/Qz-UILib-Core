@@ -29,20 +29,53 @@ final class SceneHudLayout {
         public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {}
     }
 
-    /** 外盒表达缩放后尺寸；内部保留原内容尺寸和正式子树变换，供 Draggable 正确约束。 */
+    /** 用户缩放只作上限；适配只改变当前呈现，不覆盖位置草稿或内容自然尺寸。 */
+    static final class Content extends Layout {
+        final ReadableSignal<Float> scale;
+        final ReadableSignal<Integer> width, height;
+        final SceneHud.Fit fit;
+        Content(ReadableSignal<Float> scale, ReadableSignal<Integer> width, ReadableSignal<Integer> height, SceneHud.Fit fit) {
+            this.scale = scale; this.width = width; this.height = height; this.fit = fit;
+        }
+        public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Arrays.asList(scale, width, height); }
+        Constraints natural() {
+            return new Constraints(dimension(Math.floor(width.get() / (double) scale.get())), Integer.MAX_VALUE);
+        }
+        double factor(int w, int h) {
+            double value = scale.get();
+            if (fit == SceneHud.Fit.CLIP) return value;
+            if (w > 0) value = Math.min(value, width.get() / (double) w);
+            if (h > 0) value = Math.min(value, height.get() / (double) h);
+            return Math.max(0, value);
+        }
+        public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text, SceneChildMeasurer children) {
+            return SceneFlowLayout.measure(n, c, children);
+        }
+        public ChildPlacements arrange(SceneNode n, LayoutBox box, SceneChildMeasurer children) {
+            return SceneFlowLayout.arrange(n, box, children);
+        }
+        public club.heiqi.uilib.ui.scene.geometry.SceneTransform presentationTransform(SceneNode n, LayoutBox box) {
+            double value = factor(box.width, box.height);
+            return club.heiqi.uilib.ui.scene.geometry.SceneTransform.scale(value, value);
+        }
+    }
+
+    /** 外盒表达实际适配后尺寸；内部原尺寸和正式变换同时供绘制、Draggable 与命中消费。 */
     static final class Scaled extends Layout {
         final SceneNode content;
-        final ReadableSignal<Float> scale;
-        Scaled(SceneNode content, ReadableSignal<Float> scale) { this.content = content; this.scale = scale; }
-        public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Collections.singletonList(scale); }
+        final Content fit;
+        Scaled(SceneNode content, Content fit) { this.content = content; this.fit = fit; }
+        public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return fit.measureDependencies(n); }
         private MeasuredSize natural(Constraints c, SceneChildMeasurer children) {
-            double factor = scale.get();
-            return children.measureChild(content, new Constraints(
-                    dimension(Math.floor(c.availableWidth / factor)), dimension(Math.floor(c.availableHeight / factor))));
+            double scale = fit.scale.get();
+            Constraints limits = fit.fit == SceneHud.Fit.CONTAIN ? fit.natural() : new Constraints(
+                    dimension(Math.floor(c.availableWidth / scale)), dimension(Math.floor(c.availableHeight / scale)));
+            return children.measureChild(content, limits);
         }
         public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text, SceneChildMeasurer children) {
             MeasuredSize raw = natural(c, children);
-            return new MeasuredSize(dimension(raw.width * (double) scale.get()), dimension(raw.height * (double) scale.get()));
+            double factor = fit.factor(raw.width, raw.height);
+            return new MeasuredSize(dimension(raw.width * factor), dimension(raw.height * factor));
         }
         public ChildPlacements arrange(SceneNode n, LayoutBox box, SceneChildMeasurer children) {
             MeasuredSize raw = natural(new Constraints(box.width, box.height), children);

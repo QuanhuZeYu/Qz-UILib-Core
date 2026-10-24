@@ -17,28 +17,35 @@ final class SceneGeometryProjection {
     static List<SceneGeometryView.Entry> project(List<SceneGeometryView.Entry> entries, LayoutBox viewport,
             SceneTransform inherited, SceneClipRegion external) {
         boolean unchanged = inherited.identity() && external.unbounded();
-        for (SceneGeometryView.Entry entry : entries)
-            unchanged &= entry.node.transform().identity() && entry.node.shapeClip() == null
-                    && (entry.node.control() == null || entry.node.control().hitShape(entry.node) == null);
+        Map<SceneNode, SceneTransform> local = new IdentityHashMap<>();
+        for (SceneGeometryView.Entry entry : entries) {
+            SceneNode node = entry.node;
+            SceneTransform own = node.control() == null ? SceneTransform.IDENTITY
+                    : java.util.Objects.requireNonNull(node.control().presentationTransform(node, entry.layoutBox), "控件呈现变换");
+            SceneTransform transform = node.transform().multiply(own);
+            if (!transform.identity()) local.put(node, transform);
+            unchanged &= transform.identity() && node.shapeClip() == null
+                    && (node.control() == null || node.control().hitShape(node) == null);
+        }
         if (unchanged) return entries;
         Map<SceneNode, SceneGeometryView.Entry> raw = new IdentityHashMap<>(), resolved = new IdentityHashMap<>();
         for (SceneGeometryView.Entry entry : entries) raw.put(entry.node, entry);
         Map<SceneNode, SceneClipRegion> childrenClip = new IdentityHashMap<>();
         List<SceneGeometryView.Entry> result = new ArrayList<>();
-        for (SceneGeometryView.Entry entry : entries) result.add(resolve(entry.node, raw, resolved, childrenClip, viewport, inherited, external));
+        for (SceneGeometryView.Entry entry : entries) result.add(resolve(entry.node, raw, resolved, childrenClip, local, viewport, inherited, external));
         return result;
     }
     private static SceneGeometryView.Entry resolve(SceneNode node, Map<SceneNode, SceneGeometryView.Entry> raw,
             Map<SceneNode, SceneGeometryView.Entry> resolved, Map<SceneNode, SceneClipRegion> childrenClip,
-            LayoutBox viewport, SceneTransform inherited, SceneClipRegion external) {
+            Map<SceneNode, SceneTransform> local, LayoutBox viewport, SceneTransform inherited, SceneClipRegion external) {
         SceneGeometryView.Entry known = resolved.get(node); if (known != null) return known;
         SceneGeometryView.Entry entry = raw.get(node); LayoutBox box = entry.layoutBox;
         boolean layer = node.control() != null && node.control().layerPolicy(node) != null;
         SceneGeometryView.Entry parent = !layer && raw.containsKey(node.parent())
-                ? resolve(node.parent(), raw, resolved, childrenClip, viewport, inherited, external) : null;
+                ? resolve(node.parent(), raw, resolved, childrenClip, local, viewport, inherited, external) : null;
         SceneTransform base = layer ? SceneTransform.IDENTITY : parent == null ? inherited : parent.transform;
         SceneClipRegion clip = layer ? SceneClipRegion.rectangle(viewport) : parent == null ? external : childrenClip.get(parent.node);
-        SceneTransform matrix = base.multiply(SceneTransform.around(box.x, box.y, node.transform()));
+        SceneTransform matrix = base.multiply(SceneTransform.around(box.x, box.y, local.getOrDefault(node, SceneTransform.IDENTITY)));
         SceneClipRegion own = node.clip() ? SceneClipRegion.rectangle(box).transformed(matrix) : SceneClipRegion.UNBOUNDED;
         if (node.shapeClip() != null) {
             double scale = matrix.maximumScale();

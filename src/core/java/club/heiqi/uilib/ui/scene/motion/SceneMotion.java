@@ -12,6 +12,35 @@ import java.util.function.BiConsumer;
 /** 页面只声明目标与策略；常见属性负责自己的失效归属，业务不维护进度。 */
 public final class SceneMotion {
     private SceneMotion() {}
+    /** 显式入场只在挂载时起步；保持中的目标、策略变化与释放仍走统一运行时。 */
+    public static NodeBinding enter(ReadableSignal<EntranceOptions> options) {
+        Objects.requireNonNull(options, "入场策略来源");
+        return (runtime, node, owner) -> {
+            club.heiqi.uilib.ui.reactive.Owner scope = owner.child();
+            List<BindingActivation> active = new ArrayList<>();
+            try {
+                active.add(NodeBinding.motionFrom(() -> options.get().offsetX, () -> 0f,
+                        () -> options.get().spatial, true, "translateX",
+                        (self, value) -> self.translation(value, self.translationY())).activate(runtime, node, scope));
+                scope.own(active.get(active.size() - 1));
+                active.add(NodeBinding.motionFrom(() -> options.get().offsetY, () -> 0f,
+                        () -> options.get().spatial, true, "translateY",
+                        (self, value) -> self.translation(self.translationX(), value)).activate(runtime, node, scope));
+                scope.own(active.get(active.size() - 1));
+                active.add(NodeBinding.motionFrom(() -> 0f, () -> 1f,
+                        () -> options.get().feedback, false, "opacity",
+                        (self, value) -> self.opacity(Math.max(0, Math.min(1, value)))).activate(runtime, node, scope));
+                scope.own(active.get(active.size() - 1));
+            } catch (RuntimeException | Error failure) {
+                try { scope.close(); } catch (RuntimeException | Error cleanup) { failure.addSuppressed(cleanup); }
+                throw failure;
+            }
+            return new BindingActivation() {
+                public void refresh() { for (BindingActivation binding : active) binding.refresh(); }
+                public void close() { scope.close(); }
+            };
+        };
+    }
     public static NodeBinding scroll(ReadableSignal<ScrollMotionOptions> options) { return NodeBinding.scrollMotion(options); }
     public static NodeBinding presence(ReadableSignal<Boolean> present, ReadableSignal<PresenceOptions> options) { return NodeBinding.presence(present, options); }
     public static NodeBinding layoutPositions(ReadableSignal<MotionSpec> spec) { return NodeBinding.layoutPositions(spec); }
