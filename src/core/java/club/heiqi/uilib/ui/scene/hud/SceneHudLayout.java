@@ -13,12 +13,6 @@ import java.util.*;
 final class SceneHudLayout {
     private SceneHudLayout() {}
 
-    static float guiScale(ReadableSignal<Float> source) {
-        float value = Objects.requireNonNull(source.get(), "GUI Scale");
-        if (!Float.isFinite(value) || value <= 0) throw new IllegalArgumentException("GUI Scale 须为有限正数");
-        return value;
-    }
-
     private static int dimension(double value) {
         if (!Double.isFinite(value) || value > Integer.MAX_VALUE)
             throw new IllegalArgumentException("HUD 缩放后尺寸超出 Scene 范围");
@@ -58,14 +52,13 @@ final class SceneHudLayout {
 
     static final class Anchored extends Layout {
         final ReadableSignal<SceneHudPlacement> placement;
-        final ReadableSignal<Float> guiScale;
         SceneNode content;
         // 一份有界的当批排列事实；每次 arrange 覆盖，正常 UP 前由生产输入管线重新结算。
         private Frame frame;
-        Anchored(ReadableSignal<SceneHudPlacement> placement, ReadableSignal<Float> guiScale) {
-            this.placement = placement; this.guiScale = guiScale;
+        Anchored(ReadableSignal<SceneHudPlacement> placement) {
+            this.placement = placement;
         }
-        public List<ReadableSignal<?>> arrangementDependencies(SceneNode n) { return Arrays.asList(placement, guiScale); }
+        public List<ReadableSignal<?>> arrangementDependencies(SceneNode n) { return Collections.<ReadableSignal<?>>singletonList(placement); }
         public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text, SceneChildMeasurer children) {
             return new MeasuredSize(c.availableWidth, c.availableHeight);
         }
@@ -75,18 +68,35 @@ final class SceneHudLayout {
             SceneHudPlacement value = Objects.requireNonNull(placement.get(), "HUD 位置");
             double baseX = anchorX(value.anchor) * Math.max(0, width - size.width);
             double baseY = anchorY(value.anchor) * Math.max(0, height - size.height);
-            float factor = guiScale(guiScale);
-            int x = clamp(baseX + value.offsetX * (double) factor, width - size.width);
-            int y = clamp(baseY + value.offsetY * (double) factor, height - size.height);
-            frame = new Frame(x, y, baseX, baseY, factor);
+            double rawX = baseX + value.offsetX;
+            double rawY = baseY + value.offsetY;
+            int x = clamp(rawX, width - size.width);
+            int y = clamp(rawY, height - size.height);
+            frame = new Frame(x, y, baseX, baseY, rawX, rawY,
+                    width - size.width, height - size.height);
             return place(content, padding + x, padding + y, size.width, size.height);
         }
         void drop(Signal<SceneHudPlacement> target, int dx, int dy) {
             Frame current = Objects.requireNonNull(frame, "HUD 尚未排列");
-            SceneHudPlacement value = target.get();
-            target.set(new SceneHudPlacement(value.anchor,
-                    (float) ((current.x + (double) dx - current.baseX) / current.scale),
-                    (float) ((current.y + (double) dy - current.baseY) / current.scale), value.scale));
+            SceneHudPlacement value = Objects.requireNonNull(target.get(), "HUD 位置");
+            double nextX = offsetAfterDrop(value.offsetX, dx, current.x, current.baseX,
+                    current.roomX, current.clampedX);
+            double nextY = offsetAfterDrop(value.offsetY, dy, current.y, current.baseY,
+                    current.roomY, current.clampedY);
+            SceneHudPlacement next = new SceneHudPlacement(value.anchor, nextX, nextY, value.scale);
+            if (!value.equals(next)) target.set(next);
+        }
+
+        // 限位和像素对齐只形成呈现事实。零有效位移保持原值；真正移动受限起点时
+        // 使用当前可见盒，否则沿原始小数增量，避免点击变脏或放下跳回。
+        private static double offsetAfterDrop(double original, int delta, int current,
+                double base, int room, boolean wasClamped) {
+            int destination = clamp(current + (double) delta, room);
+            if (delta == 0 || destination == current) return original;
+            double candidate = wasClamped ? destination - base : original + delta;
+            // IEEE 加法可能把半像素边界下侧的小数舍入到边界。优先保留小数；若其
+            // 投影已偏离本次落点，就使用该像素的精确中心偏移，不用 epsilon 补偿。
+            return clamp(base + candidate, room) == destination ? candidate : destination - base;
         }
     }
 
@@ -106,11 +116,17 @@ final class SceneHudLayout {
         }
     }
     private static final class Frame {
-        final int x, y;
+        final int x, y, roomX, roomY;
         final double baseX, baseY;
-        final float scale;
-        Frame(int x, int y, double baseX, double baseY, float scale) {
-            this.x = x; this.y = y; this.baseX = baseX; this.baseY = baseY; this.scale = scale;
+        final boolean clampedX, clampedY;
+        Frame(int x, int y, double baseX, double baseY, double rawX, double rawY, int roomX, int roomY) {
+            this.x = x; this.y = y; this.baseX = baseX; this.baseY = baseY;
+            this.roomX = roomX; this.roomY = roomY;
+            this.clampedX = outside(rawX, roomX); this.clampedY = outside(rawY, roomY);
+        }
+        private static boolean outside(double value, int room) {
+            int max = Math.max(0, room);
+            return value < 0 || value > max;
         }
     }
 }

@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.hud;
 
 import java.util.Objects;
 
-/** 不可变位置草稿；偏移使用逻辑像素，不包含宿主或持久化策略。 */
+/** 不可变位置草稿；偏移使用 UILib framebuffer 像素，scale 只缩放内容，不包含宿主或持久化策略。 */
 public final class SceneHudPlacement {
     public enum Anchor {
         TOP_LEFT, TOP_CENTER, TOP_RIGHT,
@@ -11,11 +11,12 @@ public final class SceneHudPlacement {
     }
 
     public final Anchor anchor;
-    public final float offsetX, offsetY, scale;
+    public final double offsetX, offsetY;
+    public final float scale;
 
-    public SceneHudPlacement(Anchor anchor, float offsetX, float offsetY, float scale) {
+    public SceneHudPlacement(Anchor anchor, double offsetX, double offsetY, float scale) {
         this.anchor = Objects.requireNonNull(anchor, "anchor");
-        if (!Float.isFinite(offsetX) || !Float.isFinite(offsetY) || !Float.isFinite(scale) || scale <= 0)
+        if (!Double.isFinite(offsetX) || !Double.isFinite(offsetY) || !Float.isFinite(scale) || scale <= 0)
             throw new IllegalArgumentException("HUD 偏移须有限，缩放须为有限正数");
         this.offsetX = offsetX == 0 ? 0 : offsetX;
         this.offsetY = offsetY == 0 ? 0 : offsetY;

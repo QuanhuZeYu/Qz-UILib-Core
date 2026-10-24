@@ -15,41 +15,39 @@ public final class SceneHud {
     private SceneHud() {}
 
     public static SceneNode create(ScenePageContext context, SceneNode content,
-            ReadableSignal<SceneHudPlacement> placement, ReadableSignal<Float> guiScale) {
-        return create(context, content, placement, guiScale, null, null);
+            ReadableSignal<SceneHudPlacement> placement) {
+        return create(context, content, placement, null, null);
     }
 
     public static SceneNode edit(ScenePageContext context, SceneNode content,
-            Signal<SceneHudPlacement> placement, ReadableSignal<Float> guiScale, ReadableSignal<Integer> snap) {
+            Signal<SceneHudPlacement> placement, ReadableSignal<Integer> snap) {
         Objects.requireNonNull(snap, "snap");
-        return create(context, content, placement, guiScale, placement, snap);
+        return create(context, content, placement, placement, snap);
     }
 
     private static SceneNode create(ScenePageContext context, SceneNode content,
-            ReadableSignal<SceneHudPlacement> placement, ReadableSignal<Float> guiScale,
-            Signal<SceneHudPlacement> writable, ReadableSignal<Integer> snap) {
+            ReadableSignal<SceneHudPlacement> placement, Signal<SceneHudPlacement> writable,
+            ReadableSignal<Integer> snap) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         Objects.requireNonNull(content, "content");
         Objects.requireNonNull(placement, "placement");
-        Objects.requireNonNull(guiScale, "guiScale");
         ReadableSignal<Float> scale = () -> {
-            float value = Objects.requireNonNull(placement.get(), "HUD 位置").scale * SceneHudLayout.guiScale(guiScale);
-            if (!Float.isFinite(value) || value <= 0) throw new IllegalArgumentException("HUD 合成缩放须为有限正数");
+            float value = Objects.requireNonNull(placement.get(), "HUD 位置").scale;
+            if (!Float.isFinite(value) || value <= 0) throw new IllegalArgumentException("HUD 缩放须为有限正数");
             return value;
         };
         SceneNode transformed = new SceneNode().size(Size.natural(), Size.natural()).add(content)
                 .bind(NodeBinding.value(scale, (n, s) -> n.transform(SceneTransform.scale(s, s))));
         SceneNode scaled = new SceneNode().control(new SceneHudLayout.Scaled(transformed, scale)).add(transformed);
-        SceneHudLayout.Anchored layout = new SceneHudLayout.Anchored(placement, guiScale);
+        SceneHudLayout.Anchored layout = new SceneHudLayout.Anchored(placement);
         SceneNode target = scaled;
         if (writable != null) {
             SceneDraggable.State drag = SceneDraggable.state(context.domain());
             target = SceneDraggable.create(context, scaled, drag, () -> {
                 int step = Objects.requireNonNull(snap.get(), "HUD 网格");
                 if (step < 0) throw new IllegalArgumentException("HUD 网格不能为负");
-                int pixels = Math.round(step * SceneHudLayout.guiScale(guiScale));
-                return new SceneDraggable.Options().bounds(SceneDraggable.Bounds.PARENT)
-                        .grid(pixels, pixels).autoScroll(false)
+                return new SceneDraggable.Options().activation(1, 0, 0)
+                        .bounds(SceneDraggable.Bounds.PARENT).grid(step, step).autoScroll(false)
                         .onDrop(value -> layout.drop(writable, value.deltaX, value.deltaY));
             });
         }
