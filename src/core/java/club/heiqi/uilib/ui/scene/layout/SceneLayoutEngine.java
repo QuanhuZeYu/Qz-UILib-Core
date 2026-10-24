@@ -175,7 +175,7 @@ public final class SceneLayoutEngine {
                 arrange(root, new LayoutBox(0, 0, w, h), null, entries);
             }
             LayoutBox viewport = new LayoutBox(0, 0, width, height);
-            entries = SceneGeometryProjection.project(entries, viewport);
+            entries = SceneGeometryProjection.project(entries, viewport, presentation);
             Map<SceneNode, SceneGeometryView.Entry> index = new IdentityHashMap<>();
             for (SceneGeometryView.Entry entry : entries) index.put(entry.node, entry);
             Map<SceneNode, Boolean> sources = new IdentityHashMap<>();
@@ -256,7 +256,7 @@ public final class SceneLayoutEngine {
                 LayoutBox placed = new LayoutBox(x, y, w, h);
                 int begin = entries.size();
                 arrange(child, placed, viewport, entries);
-                List<SceneGeometryView.Entry> projected = SceneGeometryProjection.project(new ArrayList<>(entries.subList(begin, entries.size())), viewport);
+                List<SceneGeometryView.Entry> projected = SceneGeometryProjection.project(new ArrayList<>(entries.subList(begin, entries.size())), viewport, presentation);
                 for (int i = 0; i < projected.size(); i++) {
                     entries.set(begin + i, projected.get(i)); index.put(projected.get(i).node, projected.get(i));
                 }
@@ -403,7 +403,7 @@ public final class SceneLayoutEngine {
         try {
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             arrange(root, allocated, ancestorClip, entries, true);
-            entries = SceneGeometryProjection.project(entries, worldViewport, inherited, externalWorldClip);
+            entries = SceneGeometryProjection.project(entries, worldViewport, inherited, externalWorldClip, presentation);
             return new SceneGeometry(SceneScrollDecorationLayout.project(entries, worldViewport), worldViewport);
         } finally {
             endTextRequests();

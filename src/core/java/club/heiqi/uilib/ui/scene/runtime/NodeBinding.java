@@ -22,6 +22,12 @@ public interface NodeBinding {
         return new RepeatBinding<>(source, key, declaration);
     }
 
+    /** SceneMotion.enter 的同概念运行时桥接，不占普通属性通道。 */
+    static NodeBinding enter(ReadableSignal<club.heiqi.uilib.ui.scene.motion.EntranceOptions> options) {
+        java.util.Objects.requireNonNull(options, "入场策略来源");
+        return (runtime, node, owner) -> runtime.bindEntrance(node, options, owner);
+    }
+
     static NodeBinding presence(ReadableSignal<Boolean> present,
             ReadableSignal<club.heiqi.uilib.ui.scene.motion.PresenceOptions> options) { return new PresenceBinding(present, options); }
 

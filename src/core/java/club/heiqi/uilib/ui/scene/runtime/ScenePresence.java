@@ -149,10 +149,11 @@ final class ScenePresence implements SceneTransitions.Step {
     PaintPlan paint(SceneGeometryView geometry) {
         PaintPlanBuilder target = new PaintPlanBuilder();
         for (Visibility state : visible.values())
-            if (!state.present && state.snapshot != null) state.snapshot.append(runtime, target, state.value.value(), geometry, this::opacity);
-        for (Exit exit : exits) exit.snapshot.append(runtime, target, exit.value.value(), geometry, this::opacity);
+            if (!state.present && state.snapshot != null) state.snapshot.append(runtime, target, state.value.value(), geometry, this::inheritedOpacity);
+        for (Exit exit : exits) exit.snapshot.append(runtime, target, exit.value.value(), geometry, this::inheritedOpacity);
         return target.build();
     }
+    private double inheritedOpacity(SceneNode node) { return opacity(node) * runtime.entranceOpacity(node); }
     public boolean advance(long now) {
         for (Visibility state : visible.values()) advanceVisibility(state, now);
         for (Exit exit : new ArrayList<>(exits)) advanceExit(exit, now);

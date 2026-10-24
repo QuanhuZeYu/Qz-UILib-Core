@@ -14,6 +14,8 @@ public interface SceneGeometryView {
         public final LayoutBox box, clip;
         public final LayoutBox layoutBox, worldBounds;
         public final SceneTransform transform, inverse;
+        /** 本节点已解析的局部效果，不含累计父矩阵及布局换基补偿。 */
+        public final SceneTransform localTransform;
         public final SceneClipRegion worldClip, shapeClip;
         /** 仅本节点的已解析裁剪；捕获和逐层显露复用同一mesh，不冻结祖先。 */
         public final SceneClipRegion ownWorldClip;
@@ -25,10 +27,11 @@ public interface SceneGeometryView {
         public Entry(SceneNode node, LayoutBox box, LayoutBox clip, TextLayout text) { this(node, box, clip, text, 0, 0); }
         public Entry(SceneNode node, LayoutBox box, LayoutBox clip, TextLayout text, int scrollOffset, int scrollMaximum) {
             this(node, box, box, SceneTransform.IDENTITY, clip == null ? SceneClipRegion.UNBOUNDED : SceneClipRegion.rectangle(clip),
-                    box, clip == null ? SceneClipRegion.UNBOUNDED : SceneClipRegion.rectangle(clip), text, scrollOffset, scrollMaximum, null, node.clip() ? SceneClipRegion.rectangle(box) : SceneClipRegion.UNBOUNDED);
+                    box, clip == null ? SceneClipRegion.UNBOUNDED : SceneClipRegion.rectangle(clip), text, scrollOffset, scrollMaximum, null, node.clip() ? SceneClipRegion.rectangle(box) : SceneClipRegion.UNBOUNDED, SceneTransform.IDENTITY);
         }
         private Entry(SceneNode node, LayoutBox layoutBox, LayoutBox worldBounds, SceneTransform transform,
-                SceneClipRegion worldClip, LayoutBox box, SceneClipRegion shapeClip, TextLayout text, int scrollOffset, int scrollMaximum, SceneMesh hitMesh, SceneClipRegion ownWorldClip) {
+                SceneClipRegion worldClip, LayoutBox box, SceneClipRegion shapeClip, TextLayout text, int scrollOffset, int scrollMaximum, SceneMesh hitMesh, SceneClipRegion ownWorldClip, SceneTransform localTransform) {
+            this.localTransform = localTransform;
             this.node = node; this.layoutBox = layoutBox; this.worldBounds = worldBounds; this.transform = transform;
             inverse = transform.inverse(); this.worldClip = worldClip; this.shapeClip = shapeClip; this.hitMesh = hitMesh; this.ownWorldClip = ownWorldClip;
             this.box = box; clip = shapeClip.bounds(); this.text = text; this.scrollOffset = scrollOffset; this.scrollMaximum = scrollMaximum;
@@ -36,21 +39,24 @@ public interface SceneGeometryView {
         public Entry projected(SceneTransform matrix, SceneClipRegion region) { return projected(matrix, region, hitMesh); }
         public Entry projected(SceneTransform matrix, SceneClipRegion region, SceneMesh hit) { return projected(matrix, region, hit, ownWorldClip); }
         public Entry projected(SceneTransform matrix, SceneClipRegion region, SceneMesh hit, SceneClipRegion ownClip) {
+            return projected(matrix, region, hit, ownClip, localTransform);
+        }
+        Entry projected(SceneTransform matrix, SceneClipRegion region, SceneMesh hit, SceneClipRegion ownClip, SceneTransform local) {
             LayoutBox bounds = hit != null ? bounds(hit) : matrix.identity() ? layoutBox
                     : bounds(SceneMesh.rectangle(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height).transformed(matrix));
-            return new Entry(node, layoutBox, bounds, matrix, region, bounds, region, text, scrollOffset, scrollMaximum, hit, ownClip);
+            return new Entry(node, layoutBox, bounds, matrix, region, bounds, region, text, scrollOffset, scrollMaximum, hit, ownClip, local);
         }
         public Entry in(SceneTransform frameInverse, boolean self) {
             if (frameInverse == null) return new Entry(node, layoutBox, worldBounds, transform, worldClip, layoutBox,
-                    SceneClipRegion.UNBOUNDED, text, scrollOffset, scrollMaximum, hitMesh, ownWorldClip);
+                    SceneClipRegion.UNBOUNDED, text, scrollOffset, scrollMaximum, hitMesh, ownWorldClip, localTransform);
             // 同一累计frame的孩子直接保布局盒，避免逆乘浮点尾差经floor/ceil膨胀一个像素。
             SceneTransform relative = frameInverse.equals(inverse) ? SceneTransform.IDENTITY : frameInverse.multiply(transform);
             LayoutBox bounds = self ? layoutBox : hitMesh != null ? bounds(hitMesh.transformed(frameInverse)) : relative.identity() ? layoutBox
                     : bounds(SceneMesh.rectangle(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height).transformed(relative));
-            return new Entry(node, layoutBox, worldBounds, transform, worldClip, bounds, worldClip.transformed(frameInverse), text, scrollOffset, scrollMaximum, hitMesh, ownWorldClip);
+            return new Entry(node, layoutBox, worldBounds, transform, worldClip, bounds, worldClip.transformed(frameInverse), text, scrollOffset, scrollMaximum, hitMesh, ownWorldClip, localTransform);
         }
         public Entry withText(TextLayout value) {
-            return new Entry(node, layoutBox, worldBounds, transform, worldClip, box, shapeClip, value, scrollOffset, scrollMaximum, hitMesh, ownWorldClip);
+            return new Entry(node, layoutBox, worldBounds, transform, worldClip, box, shapeClip, value, scrollOffset, scrollMaximum, hitMesh, ownWorldClip, localTransform);
         }
         public SceneMesh worldShape() { return hitMesh != null ? hitMesh : SceneMesh.rectangle(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height).transformed(transform); }
     }

@@ -64,6 +64,13 @@ public final class SceneRuntime implements AutoCloseable {
     private final SceneTransitions transitions = new SceneTransitions();
     private final SceneLayoutMotions layoutMotions = new SceneLayoutMotions(this);
     private final ScenePresence presence = new ScenePresence(this);
+    private final SceneEntrances entrances = new SceneEntrances(this);
+    BindingActivation bindEntrance(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.motion.EntranceOptions> source, Owner owner) {
+        return entrances.bind(node, source, owner);
+    }
+    /** 共同几何与绘制消费的挂载入场层，不回写 SceneNode 的普通属性。 */
+    public club.heiqi.uilib.ui.scene.geometry.SceneTransform entranceTransform(SceneNode node) { return entrances.transform(node); }
+    public float entranceOpacity(SceneNode node) { return entrances.opacity(node); }
     private final SceneScrollMotions scrollMotions = new SceneScrollMotions(this);
     void configureScrollMotion(SceneNode node, club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions options) { scrollMotions.configure(node, options); }
     void removeScrollMotion(SceneNode node) { scrollMotions.remove(node); }
@@ -653,6 +660,7 @@ public final class SceneRuntime implements AutoCloseable {
                 validateCurrentLayerPolicies();
                 // 选择依赖已结算声明；其响应投影再结算绑定，首次回放即可显示。
                 if(scopeFactsReady())focusRouter.prepareScopes();
+                entrances.settleVisibility();
             }while(!dirtyBindings.isEmpty());
         } finally {
             mutation = false;

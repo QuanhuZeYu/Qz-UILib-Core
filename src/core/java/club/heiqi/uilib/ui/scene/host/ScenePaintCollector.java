@@ -317,7 +317,7 @@ final class ScenePaintCollector {
     private PaintPlan.Presentation projection(SceneNode node, SceneNode stop) {
         float opacity = 1;
         for (SceneNode at = node; at != stop && at != null; at = at.parent())
-            opacity *= at.opacity() * (at == capturePresenceRoot ? 1 : runtime.presenceOpacity(at));
+            opacity *= at.opacity() * runtime.entranceOpacity(at) * (at == capturePresenceRoot ? 1 : runtime.presenceOpacity(at));
         return PaintPlan.presentation(0, 0, opacity, null);
     }
 

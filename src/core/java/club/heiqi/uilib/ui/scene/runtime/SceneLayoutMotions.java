@@ -1,5 +1,6 @@
 package club.heiqi.uilib.ui.scene.runtime;
 
+import club.heiqi.uilib.ui.scene.geometry.SceneTransform;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.layout.SceneLayoutPresentation;
@@ -49,34 +50,74 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
         }
         boolean active() { return width.active() || height.active(); }
     }
-    /** 局部基准与世界呈现只用于相应的换基，不作为新的布局权威。 */
+    /** 屏幕原点只桥接换父首帧；发布后仍由原局部 MotionValue 持有轨迹。 */
     private static final class Position {
         final MotionValue x = new MotionValue(), y = new MotionValue();
         SceneNode parent;
         int baseX, baseY;
-        LayoutBox published;
+        double publishedX, publishedY, worldVelocityX, worldVelocityY;
+        SceneTransform publishedFrame = SceneTransform.IDENTITY;
+        MotionSpec spec;
+        boolean published, rebasing, precise;
         Position(SceneNode parent, int x, int y, long now) {
             this.parent = parent; baseX = x; baseY = y;
             this.x.snap(0, now); this.y.snap(0, now);
         }
-        void retarget(SceneNode parent, LayoutBox box, int nextX, int nextY, boolean rebase, MotionSpec spec, long now) {
-            if (this.parent != parent && published != null) {
-                x.shift(published.x - box.x - x.value()); y.shift(published.y - box.y - y.value());
-                this.parent = parent;
-            } else if (rebase) {
+        void retarget(SceneNode parent, int nextX, int nextY, boolean rebase, MotionSpec spec, long now) {
+            this.spec = spec;
+            if (this.parent != parent) {
+                rebasing = published; precise |= published;
+                // 只换算本布局轨迹的速度，不把父运动或滚动伪造成输入速度。
+                worldVelocityX = publishedFrame.a * x.velocity() + publishedFrame.c * y.velocity();
+                worldVelocityY = publishedFrame.b * x.velocity() + publishedFrame.d * y.velocity();
+                x.snap(0, now); y.snap(0, now); this.parent = parent;
+            } else if (rebase && !rebasing) {
                 x.shift(baseX - nextX); y.shift(baseY - nextY);
             }
             baseX = nextX; baseY = nextY;
-            x.retarget(0, spec, now); y.retarget(0, spec, now);
+            if (!rebasing) { x.retarget(0, spec, now); y.retarget(0, spec, now); }
         }
         LayoutBox place(LayoutBox box) {
             return new LayoutBox(box.x + (int) Math.round(x.value()), box.y + (int) Math.round(y.value()), box.width, box.height);
         }
-        boolean displaced() { return x.value() != 0 || y.value() != 0; }
+        boolean transformed() {
+            return rebasing || precise && (x.value() != Math.round(x.value()) || y.value() != Math.round(y.value()));
+        }
+        private boolean immediate() {
+            return spec.kind == MotionSpec.Kind.INSTANT || spec.kind == MotionSpec.Kind.TWEEN && spec.durationNanos == 0;
+        }
+        SceneTransform transform(LayoutBox box, SceneTransform frame, SceneTransform local) {
+            if (rebasing) {
+                SceneTransform inverse = frame.inverse();
+                // 不可逆父frame没有唯一换基；与普通瞬时边界一样直接服从当前合法位置。
+                if (inverse == null || immediate()) return local;
+                double dx = inverse.x(publishedX, publishedY) - box.x - local.tx;
+                double dy = inverse.y(publishedX, publishedY) - box.y - local.ty;
+                return SceneTransform.translation(dx, dy).multiply(local);
+            }
+            return precise ? SceneTransform.translation(x.value() - Math.round(x.value()), y.value() - Math.round(y.value())).multiply(local) : local;
+        }
+        void published(SceneGeometryView.Entry entry, SceneTransform frame, long now) {
+            if (rebasing) {
+                SceneTransform inverse = frame.inverse();
+                if (inverse != null && !immediate()) {
+                    LayoutBox box = entry.layoutBox;
+                    double dx = inverse.x(publishedX, publishedY) - box.x - entry.localTransform.tx;
+                    double dy = inverse.y(publishedX, publishedY) - box.y - entry.localTransform.ty;
+                    x.release(dx, inverse.a * worldVelocityX + inverse.c * worldVelocityY, 0, spec, now);
+                    y.release(dy, inverse.b * worldVelocityX + inverse.d * worldVelocityY, 0, spec, now);
+                }
+                rebasing = false;
+            }
+            publishedX = entry.transform.x(entry.layoutBox.x, entry.layoutBox.y);
+            publishedY = entry.transform.y(entry.layoutBox.x, entry.layoutBox.y);
+            publishedFrame = frame; published = true;
+        }
+        boolean displaced() { return rebasing || x.value() != 0 || y.value() != 0; }
         boolean advance(long now) {
-            long beforeX = Math.round(x.value()), beforeY = Math.round(y.value());
+            double beforeX = precise ? x.value() : Math.round(x.value()), beforeY = precise ? y.value() : Math.round(y.value());
             x.advance(now); y.advance(now);
-            return beforeX != Math.round(x.value()) || beforeY != Math.round(y.value());
+            return beforeX != (precise ? x.value() : Math.round(x.value())) || beforeY != (precise ? y.value() : Math.round(y.value()));
         }
         boolean active() { return x.active() || y.active(); }
     }
@@ -96,7 +137,7 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
     }
     void remove(SceneNode node, boolean size) {
         if (size) { sizes.remove(node); dimensions.remove(node); }
-        else { positions.remove(node); offsets.entrySet().removeIf(entry -> entry.getValue().parent == node); }
+        else { positions.remove(node); offsets.entrySet().removeIf(entry -> entry.getKey().parent() == node); }
         schedule();
     }
     void release(SceneNode node) { remove(node, true); remove(node, false); offsets.remove(node); }
@@ -153,16 +194,29 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
         if (state == null) {
             state = new Position(parent, x, y, now); offsets.put(node, state);
         }
-        state.retarget(parent, entry.layoutBox, x, y, scope.reordered || !scope.resizing, scope.spec, now);
+        state.retarget(parent, x, y, scope.reordered || !scope.resizing, scope.spec, now);
     }
     void published(SceneGeometryView geometry) {
+        long now = runtime.inputNanos();
         for (Map.Entry<SceneNode, Position> entry : offsets.entrySet()) {
-            SceneGeometryView.Entry box = geometry.get(entry.getKey());
-            entry.getValue().published = box == null ? null : box.layoutBox;
+            SceneNode node = entry.getKey();
+            SceneGeometryView.Entry box = geometry.get(node), parent = geometry.get(node.parent());
+            if (box == null) { entry.getValue().published = false; continue; }
+            SceneTransform frame = parent == null || geometry.layerBoundary(node) == node ? SceneTransform.IDENTITY : parent.transform;
+            entry.getValue().published(box, frame, now);
         }
+        schedule();
     }
     SceneLayoutPresentation presentation(boolean place) {
+        boolean transformed = false;
+        if (place) for (Position state : offsets.values()) if (state.transformed()) { transformed = true; break; }
+        final boolean projected = transformed;
         return new SceneLayoutPresentation() {
+            public boolean transformed() { return projected; }
+            public SceneTransform transform(SceneNode node, LayoutBox box, SceneTransform parent, SceneTransform local) {
+                Position state = place ? offsets.get(node) : null;
+                return state == null ? local : state.transform(box, parent, local);
+            }
             public Size size(SceneNode node, SceneNode.Axis axis) {
                 Size original = axis == SceneNode.Axis.ROW ? node.width() : node.height();
                 Dimensions state = dimensions.get(node);
