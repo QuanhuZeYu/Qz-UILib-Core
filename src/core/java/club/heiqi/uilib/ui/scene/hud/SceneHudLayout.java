@@ -19,6 +19,11 @@ final class SceneHudLayout {
         return (int) Math.max(0, Math.ceil(value));
     }
 
+    // 测量上界饱和到 Scene 的 int 域；实际缩放几何仍由 dimension 检查。
+    private static int constraintDimension(double value) {
+        return dimension(Math.min(Integer.MAX_VALUE, value));
+    }
+
     private static ChildPlacements place(SceneNode child, int x, int y, int width, int height) {
         return new ChildPlacements(Collections.singletonList(
                 new ChildPlacements.Entry(child, new LayoutBox(x, y, width, height))));
@@ -39,7 +44,7 @@ final class SceneHudLayout {
         }
         public List<ReadableSignal<?>> measureDependencies(SceneNode n) { return Arrays.asList(scale, width, height); }
         Constraints natural() {
-            return new Constraints(dimension(Math.floor(width.get() / (double) scale.get())), Integer.MAX_VALUE);
+            return new Constraints(constraintDimension(Math.floor(width.get() / (double) scale.get())), Integer.MAX_VALUE);
         }
         double factor(int w, int h) {
             double value = scale.get();
@@ -69,7 +74,7 @@ final class SceneHudLayout {
         private MeasuredSize natural(Constraints c, SceneChildMeasurer children) {
             double scale = fit.scale.get();
             Constraints limits = fit.fit == SceneHud.Fit.CONTAIN ? fit.natural() : new Constraints(
-                    dimension(Math.floor(c.availableWidth / scale)), dimension(Math.floor(c.availableHeight / scale)));
+                    constraintDimension(Math.floor(c.availableWidth / scale)), constraintDimension(Math.floor(c.availableHeight / scale)));
             return children.measureChild(content, limits);
         }
         public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text, SceneChildMeasurer children) {
