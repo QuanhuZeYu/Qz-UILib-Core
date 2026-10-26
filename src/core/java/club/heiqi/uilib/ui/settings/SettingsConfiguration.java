@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntSupplier;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CancellationException;
@@ -26,6 +27,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.render.batch.BatchingConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
+import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 
 /** 设置工作区借用正式配置；保存基线归宿主持有的对象，不随页面释放。
@@ -36,6 +38,7 @@ public final class SettingsConfiguration implements AutoCloseable {
         private final boolean replace;
         private final ThemeMode theme;
         private final boolean aggressiveBatching;
+        private final int scrollStep;
 
         public Snapshot(List<String> candidates, boolean replace) {
             this(candidates, replace, ThemeMode.LIGHT, false);
@@ -46,6 +49,12 @@ public final class SettingsConfiguration implements AutoCloseable {
         }
 
         public Snapshot(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
+            this(candidates, replace, theme, aggressiveBatching, ScrollConfiguration.KEY.defaultValue());
+        }
+
+        public Snapshot(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching, int scrollStep) {
+            if (!ScrollConfiguration.validStep(scrollStep)) throw new IllegalArgumentException("滚轮距离必须为正");
+            this.scrollStep = scrollStep;
             this.aggressiveBatching = aggressiveBatching;
             this.candidates = freeze(candidates);
             this.replace = replace;
@@ -68,19 +77,22 @@ public final class SettingsConfiguration implements AutoCloseable {
             return aggressiveBatching;
         }
 
+        public int scrollStep() { return scrollStep; }
+
         @Override
         public boolean equals(Object other) {
             if (!(other instanceof Snapshot)) return false;
             Snapshot next = (Snapshot) other;
             return replace == next.replace
                     && aggressiveBatching == next.aggressiveBatching
+                    && scrollStep == next.scrollStep
                     && theme == next.theme
                     && candidates.equals(next.candidates);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(candidates, replace, theme, aggressiveBatching);
+            return Objects.hash(candidates, replace, theme, aggressiveBatching, scrollStep);
         }
     }
 
@@ -207,6 +219,13 @@ public final class SettingsConfiguration implements AutoCloseable {
         return session.schema().keys().contains(BatchingConfiguration.KEY);
     }
 
+    /** 配置归应用schema；未声明该实例的旧宿主保持Core默认且不越界访问。 */
+    public boolean hasScrolling() {
+        return session.schema().keys().contains(ScrollConfiguration.KEY);
+    }
+
+    public int defaultScrollStep() { return ScrollConfiguration.KEY.defaultValue(); }
+
     public List<String> defaultCandidates() {
         return fontKey.defaultValue();
     }
@@ -228,7 +247,8 @@ public final class SettingsConfiguration implements AutoCloseable {
                 session.get(fontKey),
                 mcKey != null && session.get(mcKey),
                 session.get(ThemeConfiguration.KEY),
-                hasBatching() && session.get(BatchingConfiguration.KEY));
+                hasBatching() && session.get(BatchingConfiguration.KEY),
+                hasScrolling() ? session.get(ScrollConfiguration.KEY) : defaultScrollStep());
     }
 
     public ReadableSignal<Snapshot> saved() {
@@ -315,14 +335,18 @@ public final class SettingsConfiguration implements AutoCloseable {
 
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme) {
         // 旧调用未选择合批策略；异步校验期间发布的新值必须在真正提交时保留。
-        return applySelection(candidates, replace, theme, () -> current().aggressiveBatching());
+        return applySelection(candidates, replace, theme, () -> current().aggressiveBatching(), () -> current().scrollStep());
     }
 
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
-        return applySelection(candidates, replace, theme, () -> aggressiveBatching);
+        return applySelection(candidates, replace, theme, () -> aggressiveBatching, () -> current().scrollStep());
     }
 
-    private CompletableFuture<Void> applySelection(List<String> candidates, boolean replace, ThemeMode theme, BooleanSupplier aggressiveBatching) {
+    public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching, int scrollStep) {
+        return applySelection(candidates, replace, theme, () -> aggressiveBatching, () -> scrollStep);
+    }
+
+    private CompletableFuture<Void> applySelection(List<String> candidates, boolean replace, ThemeMode theme, BooleanSupplier aggressiveBatching, IntSupplier scrollStep) {
         domain.checkWrite();
         checkOpen();
         List<String> frozen = freeze(candidates);
@@ -333,7 +357,7 @@ public final class SettingsConfiguration implements AutoCloseable {
             domain.enqueue(() -> {
                 if (closed) return;
                 domain.deferCleanup(() -> { requests.remove(result); result.complete(null); });
-                try { applyValidated(frozen, replace, theme, aggressiveBatching.getAsBoolean()); }
+                try { applyValidated(frozen, replace, theme, aggressiveBatching.getAsBoolean(), scrollStep.getAsInt()); }
                 catch (RuntimeException failure) { result.completeExceptionally(failure); }
             }, result::completeExceptionally);
             return result;
@@ -342,6 +366,10 @@ public final class SettingsConfiguration implements AutoCloseable {
 
     /** 仅由完成所属校验且仍持有请求身份的设置协调者调用。 */
     void applyValidated(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching) {
+        applyValidated(candidates, replace, theme, aggressiveBatching, current().scrollStep());
+    }
+
+    void applyValidated(List<String> candidates, boolean replace, ThemeMode theme, boolean aggressiveBatching, int scrollStep) {
         domain.checkWrite();
         checkOpen();
         Map<ConfigKey<?>, Object> updates = new LinkedHashMap<>();
@@ -349,6 +377,7 @@ public final class SettingsConfiguration implements AutoCloseable {
         if (mcKey != null) updates.put(mcKey, replace);
         updates.put(ThemeConfiguration.KEY, theme);
         if (hasBatching()) updates.put(BatchingConfiguration.KEY, aggressiveBatching);
+        if (hasScrolling()) updates.put(ScrollConfiguration.KEY, scrollStep);
         session.setAll(updates);
     }
 
@@ -387,7 +416,8 @@ public final class SettingsConfiguration implements AutoCloseable {
                 document.get(fontKey),
                 mcKey != null && document.get(mcKey),
                 document.get(ThemeConfiguration.KEY),
-                hasBatching() && document.get(BatchingConfiguration.KEY));
+                hasBatching() && document.get(BatchingConfiguration.KEY),
+                hasScrolling() ? document.get(ScrollConfiguration.KEY) : defaultScrollStep());
     }
 
     @FunctionalInterface

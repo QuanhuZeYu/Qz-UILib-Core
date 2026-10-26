@@ -33,6 +33,7 @@ public final class ScenePageContext {
     private final ReadableSignal<SceneTheme> theme;
     private final Signal<ReadableSignal<SceneDensity>> densitySource;
     private final ReadableSignal<SceneDensity> density;
+    private final ReadableSignal<Integer> scrollStep;
 
     ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime,
             ThemeConfiguration themes) {
@@ -41,6 +42,12 @@ public final class ScenePageContext {
 
     ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime, ThemeConfiguration themes,
             club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews) {
+        this(domain, scope, runtime, themes, mediaViews, null);
+    }
+
+    ScenePageContext(ReactiveDomain domain, Owner scope, SceneRuntime runtime, ThemeConfiguration themes,
+            club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews,
+            club.heiqi.uilib.ui.scene.control.ScrollConfiguration scrolling) {
         this.mediaViews = mediaViews;
         this.domain = domain;
         this.scope = scope;
@@ -51,12 +58,17 @@ public final class ScenePageContext {
         density = domain.computed(scope, () -> Objects.requireNonNull(densitySource.get().get(), "页面密度"));
         theme = domain.computed(scope, () -> themeMode.get().sceneTheme().withDensity(density.get()));
         runtime.scrollbarTheme(theme);
+        scrollStep = scrolling == null ? () -> club.heiqi.uilib.ui.scene.control.ScrollConfiguration.KEY.defaultValue()
+                : scrolling.bind(domain, scope);
+        runtime.scrollStep(scrollStep);
     }
 
     /** 应用配置的页面域投影；局部配色可由此派生，不抢占全局主题权威。 */
     public ReadableSignal<ThemeMode> themeMode() { return themeMode; }
     public ReadableSignal<SceneTheme> theme() { return theme; }
     public ReadableSignal<SceneDensity> density() { return density; }
+    /** 应用生效值；节点显式scrollStep继续覆盖此默认值。 */
+    public ReadableSignal<Integer> scrollStep() { return scrollStep; }
     /** 页面默认主题与自动条共用此可追踪来源，订阅归原页面Owner。 */
     public void density(ReadableSignal<SceneDensity> source) {
         domain.checkWrite(); densitySource.set(Objects.requireNonNull(source, "密度来源"));

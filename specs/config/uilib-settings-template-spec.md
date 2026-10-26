@@ -4,6 +4,6 @@
 
 模板不拥有业务配置或持久化，不推断“应用/保存”的先后，不执行文件 I/O；操作标签、资格和动作来自业务。局部主题预览以完整主题来源同时传入模板与字段，外壳、导航、弹层和正文保持同源，不改写宿主主题。页头可组合业务命令，分类可展示业务附注，复杂反馈及宽屏辅助说明进入模板所属区域，仍沿正式 Scene 节点及生命周期，不允许消费者复制工具栏、导航和页脚壳。不同分类保留同一份外部草稿，字段错误保留输入并关联字段；关闭及丢弃确认由业务声明，弹层、Tab 与 ESC 沿原范围合同。
 
-提供可组合的字段行与正式布尔、文本、选择控件；文字与控件共用 SceneAppearance 的界面字体、基础字号、密度与现代 palette，字段标签继承真实主题；文本的内部编辑可使用 editorTheme，选择器始终传完整主题并通过明确 framed=false 去框，二者由正式外表面绘制唯一边线及真实焦点线索；布尔说明与右侧 Switch 按可用空间排列，轨道与拇指保持主题对比，不逐字段套卡片。类型和合法值继续取业务 ConfigKey/schema，不复制默认值和校验规则。自定义对象编辑内容沿同一模板接入，不把所有配置强制降为字符串或 YAML。布尔及选择字段同时支持 Signal 草稿与 ReadableSignal/Consumer 受控意图，业务拒绝后仍显示原权威值；复杂对象、只读路径、字体及样本编辑可组合原 SceneField.Content 保留实际主控件和尾部动作。UILib 自身设置页直接组合 SettingsTemplate 与 SettingsFields，保持原应用/保存合同。
+提供可组合的字段行与正式布尔、文本、选择控件；文字与控件共用 SceneAppearance 的界面字体、基础字号、密度与现代 palette，字段标签继承真实主题；文本的内部编辑可使用 editorTheme，选择器始终传完整主题并通过明确 framed=false 去框，二者由正式外表面绘制唯一边线及真实焦点线索；布尔说明与右侧 Switch 按可用空间排列，轨道与拇指保持主题对比，不逐字段套卡片。类型和合法值继续取业务 ConfigKey/schema，不复制默认值和校验规则。自定义对象编辑内容沿同一模板接入，不把所有配置强制降为字符串或 YAML。文本、布尔及选择字段同时支持 Signal 草稿与 ReadableSignal/Consumer 受控意图，业务拒绝后仍显示原权威值；复杂对象、只读路径、字体及样本编辑可组合原 SceneField.Content 保留实际主控件和尾部动作。UILib 自身设置页直接组合 SettingsTemplate 与 SettingsFields，保持原应用/保存合同。
 
 验收使用正式 ScenePageSession、输入、语义与软件绘制，覆盖跨分类草稿、错误保留、业务提交拒绝、动态主题/密度/视口、窄屏操作及重复字段释放；现代工作台层级参考 [Shadcn Admin 设置](https://raw.githubusercontent.com/satnaing/shadcn-admin/main/src/features/settings/index.tsx)及其分类内容组合。游戏和 GPU 效果另行实机取证，不从构建通过外推视觉合格。

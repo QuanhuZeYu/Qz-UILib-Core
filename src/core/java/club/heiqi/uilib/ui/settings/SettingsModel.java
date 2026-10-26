@@ -13,6 +13,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.settings.SettingsConfiguration.Snapshot;
+import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 
 /** 一份工作区草稿，分类导航共享同一实例；页面释放仅结束本页订阅。
  * 值语义区分草稿、live 与 saved，不把字体路径当作行身份。 */
@@ -62,6 +63,9 @@ public final class SettingsModel {
     private final Signal<Boolean> replace;
     private final Signal<ThemeMode> theme;
     private final Signal<Boolean> aggressiveBatching;
+    private final Signal<String> scrollStepInput;
+    private final ReadableSignal<Integer> parsedScrollStep;
+    private final ReadableSignal<String> scrollStepError;
     private final Signal<Boolean> externalChanged;
     private final Signal<String> fontError;
     private final Signal<String> fileError;
@@ -87,11 +91,14 @@ public final class SettingsModel {
         replace = domain.signal(observed.replace());
         theme = domain.signal(observed.theme());
         aggressiveBatching = domain.signal(observed.aggressiveBatching());
+        scrollStepInput = domain.signal(Integer.toString(observed.scrollStep()));
+        parsedScrollStep = domain.computed(scope, () -> parseScrollStep(scrollStepInput.get()));
+        scrollStepError = domain.computed(scope, () -> parsedScrollStep.get() == null ? "请输入大于0的整数，且不超出32位整数范围。" : "");
         externalChanged = domain.signal(false);
         fontError = domain.signal("");
         fileError = domain.signal("");
         message = domain.signal(null);
-        dirty = domain.computed(scope, () -> !draft().equals(configuration.current()));
+        dirty = domain.computed(scope, () -> !configuration.current().equals(draft()));
         unsaved =
                 domain.computed(
                         scope, () -> !configuration.current().equals(configuration.saved().get()));
@@ -99,7 +106,9 @@ public final class SettingsModel {
                 domain.computed(
                         scope,
                         () ->
-                                !fontError.get().isEmpty()
+                                !scrollStepError.get().isEmpty()
+                                        ? scrollStepError.get()
+                                        : !fontError.get().isEmpty()
                                         ? fontError.get()
                                         : !fileError.get().isEmpty()
                                                 ? fileError.get()
@@ -128,6 +137,15 @@ public final class SettingsModel {
 
     public ReadableSignal<Boolean> aggressiveBatching() {
         return aggressiveBatching;
+    }
+
+    public ReadableSignal<String> scrollStepInput() { return scrollStepInput; }
+
+    public ReadableSignal<String> scrollStepError() { return scrollStepError; }
+
+    public boolean scrollStepChanged() {
+        Integer step = parsedScrollStep.get();
+        return step == null || step != configuration.current().scrollStep();
     }
 
     public ReadableSignal<Boolean> dirty() {
@@ -170,9 +188,23 @@ public final class SettingsModel {
     }
 
     private Snapshot draft() {
+        Integer step = parsedScrollStep.get();
+        if (step == null) return null;
+        return new Snapshot(candidateDraft(), replace.get(), theme.get(), aggressiveBatching.get(), step);
+    }
+
+    // 字体编辑独立于其他分类的未完成输入，只有应用整份配置才要求全部合法。
+    private List<String> candidateDraft() {
         List<String> values = new ArrayList<>();
         for (Source source : sources.get()) values.add(source.declaration());
-        return new Snapshot(values, replace.get(), theme.get(), aggressiveBatching.get());
+        return values;
+    }
+
+    private static Integer parseScrollStep(String input) {
+        try {
+            int value = Integer.parseInt(input.trim());
+            return ScrollConfiguration.validStep(value) ? value : null;
+        } catch (NumberFormatException failure) { return null; }
     }
 
     private static List<Source> rows(List<String> values, List<Source> previous) {
@@ -204,13 +236,13 @@ public final class SettingsModel {
         Snapshot current = configuration.current();
         configuration.saved().get();
         if (!current.equals(observed)) {
-            boolean pristine = draft().equals(observed)
+            boolean pristine = observed.equals(draft())
                     && !(pendingReload != null && editIdentity != reloadEdits);
             observed = current;
             if (pristine) restore(current);
-            else externalChanged.set(!draft().equals(current));
+            else externalChanged.set(!current.equals(draft()));
         }
-        if (draft().equals(current)) externalChanged.set(false);
+        if (current.equals(draft())) externalChanged.set(false);
     }
 
     private void restore(Snapshot snapshot) {
@@ -220,6 +252,7 @@ public final class SettingsModel {
                     replace.set(snapshot.replace());
                     theme.set(snapshot.theme());
                     aggressiveBatching.set(snapshot.aggressiveBatching());
+                    scrollStepInput.set(Integer.toString(snapshot.scrollStep()));
                     externalChanged.set(false);
                 });
     }
@@ -238,7 +271,7 @@ public final class SettingsModel {
     CompletableFuture<Addition> add(String declaration, BooleanSupplier accept) {
         write();
         clearFeedback();
-        List<String> values = new ArrayList<>(draft().candidates());
+        List<String> values = candidateDraft();
         values.add(Objects.requireNonNull(declaration, "字体来源不能为空"));
         Object request = new Object();
         Object submittedEdits = editIdentity;
@@ -313,6 +346,18 @@ public final class SettingsModel {
         aggressiveBatching.set(value);
     }
 
+    public void setScrollStepInput(String value) {
+        write();
+        Objects.requireNonNull(value, "滚轮距离草稿");
+        if (!configuration.hasScrolling() || scrollStepInput.get().equals(value)) return;
+        clearFeedback();
+        scrollStepInput.set(value);
+    }
+
+    public void resetInteraction() {
+        setScrollStepInput(Integer.toString(configuration.defaultScrollStep()));
+    }
+
     public void resetPerformance() {
         setAggressiveBatching(configuration.defaultAggressiveBatching());
     }
@@ -337,7 +382,7 @@ public final class SettingsModel {
     /** 等待资源准备后回原域核验请求和草稿身份，再发布全部值。 */
     public CompletableFuture<Void> apply() {
         write();
-        if (!dirty.get()) return CompletableFuture.completedFuture(null);
+        if (!dirty.get() || !scrollStepError.get().isEmpty()) return CompletableFuture.completedFuture(null);
         clearFeedback();
         Snapshot submitted = draft();
         Object request = new Object();
@@ -346,7 +391,7 @@ public final class SettingsModel {
         return validated(request, submittedEdits, submitted.candidates(), () -> {
             try {
                 configuration.applyValidated(
-                        submitted.candidates(), submitted.replace(), submitted.theme(), submitted.aggressiveBatching());
+                        submitted.candidates(), submitted.replace(), submitted.theme(), submitted.aggressiveBatching(), submitted.scrollStep());
                 observed = configuration.current();
                 externalChanged.set(false);
                 message.set(new Feedback("已应用全部更改", true));
@@ -387,7 +432,7 @@ public final class SettingsModel {
 
     private void applicationFailure(Throwable failure) {
         observed = configuration.current();
-        boolean published = draft().equals(observed);
+        boolean published = Objects.equals(draft(), observed);
         if (published) externalChanged.set(false);
         message.set(null);
         fontError.set((published ? "配置已发布，资源更新失败：" : "应用失败：") + reason(failure));

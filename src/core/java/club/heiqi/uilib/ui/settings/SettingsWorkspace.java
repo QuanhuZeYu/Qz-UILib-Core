@@ -14,6 +14,7 @@ import java.util.*;
 final class SettingsWorkspace {
     private enum Section {
         APPEARANCE("外观", "设置工作区主题、字体回退顺序与文字样本。", SceneIconButton.Symbol.SLIDERS),
+        INTERACTION("交互", "设置当前应用的滚轮距离。", SceneIconButton.Symbol.SLIDERS),
         PERFORMANCE("性能", "管理当前运行的绘制性能选项。", SceneIconButton.Symbol.SLIDERS),
         MINECRAFT("Minecraft 接入", "管理原版文字与 UILib 字体服务的接入。", SceneIconButton.Symbol.MONITOR),
         FILE("配置文件", "查看当前配置来源，显式保存或重新加载。", SceneIconButton.Symbol.FILE);
@@ -48,13 +49,13 @@ final class SettingsWorkspace {
         confirmation = context.domain().signal(Confirmation.NONE);
         fonts = new SettingsFontDialog(ui);
         save = SceneCommand.of(() -> !configuration.persisting().get() && !model.dirty().get() && model.unsaved().get(), model::save);
-        apply = SceneCommand.of(model.dirty(), model::apply);
+        apply = SceneCommand.of(() -> model.dirty().get() && model.scrollStepError().get().isEmpty(), model::apply);
         discard = SceneCommand.of(model.dirty(), model::discard);
     }
 
     SceneNode build() {
         SettingsTemplate template = new SettingsTemplate(() -> "QZ UILib / 工作区设置")
-                .description(() -> "管理界面外观、字体来源、绘制性能与当前宿主的本地配置。")
+                .description(() -> "管理界面外观、字体来源、滚轮交互、绘制性能与当前宿主的本地配置。")
                 .theme(() -> ui.colors.get().source)
                 .labels(() -> "返回", () -> "设置分类")
                 .onClose(() -> closeRequested(leave))
@@ -83,6 +84,7 @@ final class SettingsWorkspace {
     private SceneNode fields(Section target) {
         switch (target) {
             case APPEARANCE: return new SettingsAppearanceSection(ui, fonts::open).build();
+            case INTERACTION: return SettingsInteractionSection.build(ui);
             case PERFORMANCE: return SettingsPerformanceSection.build(ui);
             case MINECRAFT: return SettingsMinecraftSection.build(ui);
             case FILE: return SettingsFileSection.build(ui, this::reloadRequested);
@@ -93,6 +95,7 @@ final class SettingsWorkspace {
     private List<Section> sections() {
         List<Section> available = new ArrayList<>();
         available.add(Section.APPEARANCE);
+        if (ui.configuration.hasScrolling()) available.add(Section.INTERACTION);
         if (ui.configuration.hasBatching()) available.add(Section.PERFORMANCE);
         if (ui.configuration.hasMinecraft()) available.add(Section.MINECRAFT);
         available.add(Section.FILE);
@@ -102,6 +105,7 @@ final class SettingsWorkspace {
     private boolean changed(Section target) {
         SettingsConfiguration.Snapshot live = ui.configuration.current();
         if (target == Section.MINECRAFT) return ui.model.replace().get() != live.replace();
+        if (target == Section.INTERACTION) return ui.model.scrollStepChanged();
         if (target == Section.PERFORMANCE)
             return ui.model.aggressiveBatching().get() != live.aggressiveBatching();
         if (target == Section.APPEARANCE)

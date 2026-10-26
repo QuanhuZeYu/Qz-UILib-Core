@@ -58,6 +58,8 @@ final class SettingsFileSection {
                                                                 : "浅色"),
                                         13,
                                         false));
+        if (ui.configuration.hasScrolling())
+            current.add(ui.text(() -> "每格滚轮距离：" + ui.configuration.current().scrollStep() + " 像素", 13, true));
         if (ui.configuration.hasMinecraft())
             current.add(
                     ui.text(

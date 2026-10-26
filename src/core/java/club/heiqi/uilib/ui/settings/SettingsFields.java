@@ -53,7 +53,15 @@ public final class SettingsFields {
     /** 每次输入写入调用者的草稿 Signal；业务命令自行决定是否应用或保存。 */
     public SceneNode text(ReadableSignal<String> label, ReadableSignal<String> description,
             Signal<String> value, ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
-        Objects.requireNonNull(value, "value"); Objects.requireNonNull(enabled, "enabled");
+        Objects.requireNonNull(value, "value");
+        return text(label, description, value, value::set, enabled, error);
+    }
+
+    /** 文本草稿由业务持有，未完成输入与字段错误保留在同一工作区。 */
+    public SceneNode text(ReadableSignal<String> label, ReadableSignal<String> description,
+            ReadableSignal<String> value, Consumer<String> change, ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
+        Objects.requireNonNull(value, "value"); Objects.requireNonNull(change, "change");
+        Objects.requireNonNull(enabled, "enabled");
         SceneAppearance style = new SceneAppearance(context, theme);
         Owner owner = style.scope.child();
         ReadableSignal<SceneTheme> editorTheme = () -> style.colors.get().editorTheme();
@@ -66,7 +74,7 @@ public final class SettingsFields {
         });
         SceneNode editor = SceneTextField.create(context, state, editorTheme, () -> false,
                 submission -> {
-                    if (state.accept(submission, submission.text)) value.set(submission.text);
+                    if (state.accept(submission, submission.text)) change.accept(submission.text);
                 }, SceneTextField.SubmitPolicy.INPUT, () -> "", false)
                 .size(Size.fill(1), Size.natural())
                 .bind(NodeBinding.value(enabled, SceneNode::enabled));

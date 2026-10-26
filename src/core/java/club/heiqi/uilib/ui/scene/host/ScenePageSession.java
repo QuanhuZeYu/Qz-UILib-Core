@@ -37,7 +37,7 @@ public final class ScenePageSession implements AutoCloseable {
                     session.runtime = new SceneRuntime(domain);
                     session.runtime.prepareViewport(host.width(), host.height());
                     session.pipeline = new SceneFramePipeline(session.runtime, host, text);
-                    ScenePageContext context = new ScenePageContext(domain, session.scope, session.runtime, host.themeConfiguration(), host.mediaViews());
+                    ScenePageContext context = new ScenePageContext(domain, session.scope, session.runtime, host.themeConfiguration(), host.mediaViews(), host.scrollConfiguration());
                     context.inspection(session::inspect);
                     page.build(context);
                 },

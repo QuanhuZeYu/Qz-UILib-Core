@@ -163,7 +163,8 @@ public final class SceneNode {
                 : defaultGap ? club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.CONTROL_DEFAULT
                 : club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.Source.INITIAL;
     }
-    private int scrollStep = 20;
+    // 0表示继承所属运行时默认值；显式声明保持自己的像素距离。
+    private int scrollStep;
     private club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion;
     public club.heiqi.uilib.ui.scene.motion.MotionSpec feedbackMotion() { return feedbackMotion; }
     /** 标准控件局部覆盖；null恢复当前主题角色。 */
@@ -311,8 +312,10 @@ public final class SceneNode {
         return scrollOffset;
     }
 
+    /** 未显式声明时动态继承页面的应用配置；未挂载时返回Core默认值。 */
     public int scrollStep() {
-        return scrollStep;
+        return scrollStep != 0 ? scrollStep : runtime != null ? runtime.scrollStep()
+                : club.heiqi.uilib.ui.scene.control.ScrollConfiguration.KEY.defaultValue();
     }
 
     public SceneNode scrollStep(int value) {

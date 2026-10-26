@@ -115,6 +115,25 @@ public final class SceneRuntime implements AutoCloseable {
     SceneTransitions transitions() { return transitions; }
     private final club.heiqi.uilib.ui.reactive.Signal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy;
     private Observation motionPolicySource;
+    private volatile int scrollStep = club.heiqi.uilib.ui.scene.control.ScrollConfiguration.KEY.defaultValue();
+    private Owner scrollStepBinding;
+
+    /** 已发布的输入偏好可供只读几何快照消费者读取，不访问其他域或使布局失效。 */
+    public int scrollStep() { return scrollStep; }
+
+    public void scrollStep(ReadableSignal<Integer> source) {
+        command(); Objects.requireNonNull(source, "滚轮距离来源");
+        int initial = source.get();
+        if (!club.heiqi.uilib.ui.scene.control.ScrollConfiguration.validStep(initial)) throw new IllegalArgumentException("滚轮距离必须为正");
+        if (scrollStepBinding != null) scrollStepBinding.close();
+        scrollStep = initial;
+        scrollStepBinding = owner.child();
+        domain.effect(scrollStepBinding, () -> {
+            int next = source.get();
+            if (!club.heiqi.uilib.ui.scene.control.ScrollConfiguration.validStep(next)) throw new IllegalArgumentException("滚轮距离必须为正");
+            scrollStep = next;
+        });
+    }
     private boolean motionPolicyDirty;
     private final club.heiqi.uilib.ui.reactive.Signal<Long> interactionRevision;
     private long interactionClock;

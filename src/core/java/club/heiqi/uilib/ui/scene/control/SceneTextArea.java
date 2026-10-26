@@ -293,8 +293,8 @@ public final class SceneTextArea {
         }
         @Override
         public SceneScrollResult scrollResult(SceneNode node, ScenePointerEvent event, SceneGeometryView geometry) {
-            int step = source == null || source.lines().isEmpty() ? 0 : (int) Math.ceil(source.lines().get(0).lineHeight);
-            int moved = scrollByPixels(node, SceneNode.Axis.COLUMN, SceneControlViewport.wheelPixels(event.delta, step), geometry);
+            int moved = scrollByPixels(node, SceneNode.Axis.COLUMN,
+                    SceneControlViewport.wheelPixels(event.delta, node.scrollStep()), geometry);
             // 字段端点继续保留消费，只有正文实际位移才需要排列。
             return moved == 0 ? SceneScrollResult.CONSUMED : SceneScrollResult.CHANGED;
         }
