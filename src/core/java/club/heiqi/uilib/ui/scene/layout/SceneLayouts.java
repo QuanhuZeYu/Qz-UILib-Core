@@ -240,8 +240,8 @@ public final class SceneLayouts {
             List<ChildPlacements.Entry> placed = new ArrayList<>();
             for (SceneNode child : children.flowChildren()) {
                 MeasuredSize size = children.measureChild(child, limits);
-                int w = resolve(child.width(), limits.availableWidth, size.width),
-                        h = resolve(child.height(), limits.availableHeight, size.height);
+                int w = resolve(children.sizeIntent(child, SceneNode.Axis.ROW), limits.availableWidth, size.width),
+                        h = resolve(children.sizeIntent(child, SceneNode.Axis.COLUMN), limits.availableHeight, size.height);
                 place(placed, child, 0, 0, w, h);
                 width = Math.max(width, w);
                 height = Math.max(height, h);
@@ -256,8 +256,8 @@ public final class SceneLayouts {
             int width = 0, height = 0;
             for (SceneNode child : children.flowChildren()) {
                 MeasuredSize size = children.measureChild(child, limits);
-                int w = resolve(child.width(), limits.availableWidth, size.width),
-                        h = resolve(child.height(), limits.availableHeight, size.height);
+                int w = resolve(children.sizeIntent(child, SceneNode.Axis.ROW), limits.availableWidth, size.width),
+                        h = resolve(children.sizeIntent(child, SceneNode.Axis.COLUMN), limits.availableHeight, size.height);
                 place(
                         placed,
                         child,
@@ -282,27 +282,29 @@ public final class SceneLayouts {
         }
 
         Result layout(Constraints limits, SceneChildMeasurer children) {
-            int hh =
-                    children.measureChild(
-                                    header,
-                                    new Constraints(limits.availableWidth, Integer.MAX_VALUE))
-                            .height;
-            int fh =
-                    children.measureChild(
-                                    footer,
-                                    new Constraints(limits.availableWidth, Integer.MAX_VALUE))
-                            .height;
+            List<SceneNode> flow = children.flowChildren();
+            Constraints chromeLimits = new Constraints(limits.availableWidth, Integer.MAX_VALUE);
+            MeasuredSize headerSize = flow.contains(header) ? children.measureChild(header, chromeLimits) : null;
+            MeasuredSize footerSize = flow.contains(footer) ? children.measureChild(footer, chromeLimits) : null;
+            int hh = headerSize == null ? 0 : resolve(children.sizeIntent(header, SceneNode.Axis.COLUMN),
+                    Integer.MAX_VALUE, headerSize.height);
+            int fh = footerSize == null ? 0 : resolve(children.sizeIntent(footer, SceneNode.Axis.COLUMN),
+                    Integer.MAX_VALUE, footerSize.height);
             int remaining =
                     limits.availableHeight == Integer.MAX_VALUE
                             ? Integer.MAX_VALUE
                             : Math.max(0, limits.availableHeight - hh - fh);
-            MeasuredSize bodySize =
-                    children.measureChild(body, new Constraints(limits.availableWidth, remaining));
-            int bh = resolve(body.height(), remaining, bodySize.height);
+            MeasuredSize bodySize = flow.contains(body)
+                    ? children.measureChild(body, new Constraints(limits.availableWidth, remaining)) : null;
+            int bh = bodySize == null ? 0 : resolve(children.sizeIntent(body, SceneNode.Axis.COLUMN), remaining, bodySize.height);
             List<ChildPlacements.Entry> placed = new ArrayList<>();
-            place(placed, header, 0, 0, limits.availableWidth, hh);
-            place(placed, body, 0, hh, limits.availableWidth, bh);
-            place(placed, footer, 0, hh + bh, limits.availableWidth, fh);
+            // 宽高均消费当前尺寸投影；固定区保留自然高度，正文只获得扣除后的剩余空间。
+            if (headerSize != null) place(placed, header, 0, 0,
+                    resolve(children.sizeIntent(header, SceneNode.Axis.ROW), limits.availableWidth, headerSize.width), hh);
+            if (bodySize != null) place(placed, body, 0, hh,
+                    resolve(children.sizeIntent(body, SceneNode.Axis.ROW), limits.availableWidth, bodySize.width), bh);
+            if (footerSize != null) place(placed, footer, 0, hh + bh,
+                    resolve(children.sizeIntent(footer, SceneNode.Axis.ROW), limits.availableWidth, footerSize.width), fh);
             return new Result(limits.availableWidth, hh + bh + fh, placed);
         }
     }

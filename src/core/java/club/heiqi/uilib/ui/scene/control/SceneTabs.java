@@ -3,6 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
+import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -30,6 +31,22 @@ import java.util.function.Supplier;
 
 /** 只创建当前面板，标签条共享选择导航；业务状态不归属于面板挂载。 */
 public final class SceneTabs<K> {
+    public enum Variant { UNDERLINE, SEGMENTED }
+
+    /** 外观只改变标签条；选择、导航与同键面板生命周期保持同一条链。 */
+    public static final class Options {
+        final Variant variant;
+        final MotionSpec indicatorMotion;
+        public Options() { this(Variant.UNDERLINE, null); }
+        private Options(Variant variant, MotionSpec motion) {
+            this.variant = variant; this.indicatorMotion = motion;
+        }
+        public Options variant(Variant value) { return new Options(Objects.requireNonNull(value, "标签外观"), indicatorMotion); }
+        public Options indicatorMotion(MotionSpec value) {
+            return new Options(variant, Objects.requireNonNull(value, "底片动效"));
+        }
+    }
+
     public static final class Tab<K> {
         public final K key;
         public final ReadableSignal<String> title;
@@ -41,11 +58,16 @@ public final class SceneTabs<K> {
         }
         public Tab(K key, ReadableSignal<String> title, Supplier<SceneNode> content) { this(key, title, () -> true, content); }
     }
+    private static final class HeaderEntry<K> {
+        final Tab<K> tab;
+        HeaderEntry(Tab<K> tab) { this.tab = tab; }
+    }
     private final SceneNode node;
     private final SceneScrollViewport headerViewport;
     private SceneTabs(ScenePageContext page, ReadableSignal<List<Tab<K>>> source, ReadableSignal<K> selected,
-            Consumer<K> change, ReadableSignal<SceneTheme> theme) {
+            Consumer<K> change, ReadableSignal<Options> options, ReadableSignal<SceneTheme> theme) {
         Owner owner = page.scope().child();
+        ReadableSignal<Variant> variant = page.domain().computed(owner, () -> Objects.requireNonNull(options.get(), "标签选项").variant);
         ReadableSignal<SceneControlMetrics> metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.TABS));
         ReadableSignal<List<Tab<K>>> tabs = page.domain().computed(owner, () -> {
             List<Tab<K>> result = new ArrayList<>(Objects.requireNonNull(source.get(), "标签来源")); Set<K> keys = new HashSet<>();
@@ -55,11 +77,34 @@ public final class SceneTabs<K> {
         Map<K, SceneNode> targets = new HashMap<>();
         SceneChoiceNavigation<Tab<K>, K> navigation = new SceneChoiceNavigation<>(page, tabs, tab -> tab.key,
                 tab -> tab.enabled.get(), targets, selected, change, false);
-        SceneNode labels = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(), Size.natural());
-        labels.bind(NodeBinding.value(() -> metrics.get().gap, SceneNode::defaultGap));
-        labels.bind(NodeBinding.repeat(tabs, tab -> tab.key, current -> {
+        SceneNode labels = SceneTabsHeader.create(page, variant, options, theme, () -> {
+            SceneNode target = targets.get(selected.get());
+            return target == null ? null : target.parent();
+        });
+        labels.bind(NodeBinding.value(() -> variant.get() == Variant.SEGMENTED
+                ? Math.max(1, metrics.get().iconGap / 2) : metrics.get().gap, SceneNode::defaultGap));
+        labels.bind(NodeBinding.value(() -> variant.get() == Variant.SEGMENTED
+                ? Math.max(1, metrics.get().padding / 3) : 0, SceneNode::defaultPadding));
+        ReadableSignal<SceneAppearance.Palette> colors = page.domain().computed(owner, () -> new SceneAppearance.Palette(theme.get()));
+        ReadableSignal<SceneTheme> labelTheme = page.domain().computed(owner, () -> {
+            SceneTheme value = theme.get();
+            if (variant.get() == Variant.UNDERLINE) return value;
+            return value.withColors(value.panel, 0, 0, 0, 0, 0,
+                    colors.get().muted, value.tooltip, value.tooltipText);
+        });
+        SceneNode indicator = SceneTabsHeader.indicator(labels);
+        // repeat 拥有容器的完整子树；被动底片与标签必须进入同一归属集合，不能混入静态子项。
+        ReadableSignal<List<HeaderEntry<K>>> headers = page.domain().computed(owner, () -> {
+            List<HeaderEntry<K>> result = new ArrayList<>();
+            result.add(new HeaderEntry<>(null));
+            for (Tab<K> tab : tabs.get()) result.add(new HeaderEntry<>(tab));
+            return result;
+        });
+        labels.bind(NodeBinding.repeat(headers, item -> item.tab == null ? indicator : item.tab.key, entry -> {
+            if (entry.get().tab == null) return indicator;
+            ReadableSignal<Tab<K>> current = () -> entry.get().tab;
             K key = current.get().key;
-            SceneNode button = SceneButton.create(page, () -> current.get().title.get(), theme, () -> navigation.select(key), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
+            SceneNode button = SceneButton.create(page, () -> current.get().title.get(), labelTheme, () -> navigation.select(key), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                     .size(Size.natural(), Size.natural());
             button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
                     .defaultPadding(value.padding).defaultGap(value.iconGap)));
@@ -71,8 +116,11 @@ public final class SceneTabs<K> {
             targets.put(key, button); button.own(() -> targets.remove(key, button));
             SceneNode label = new SceneNode().size(Size.natural(), Size.natural());
             ReadableSignal<Float> marker = SceneControlMotion.progress(label, theme,
-                    () -> Objects.equals(selected.get(), key) ? 1f : 0f, false);
-            return label.control(new Label(button, theme, marker)).add(button);
+                    () -> variant.get() == Variant.UNDERLINE && Objects.equals(selected.get(), key) ? 1f : 0f, false);
+            Label decoration = new Label(button, theme, marker, variant, colors);
+            label.control(decoration).add(button);
+            decoration.surface.install(label);
+            return label;
         }));
         SceneScrollArea.Area scroll = SceneScrollArea.create(page, labels,
                 () -> new SceneScrollArea.Options().axes(SceneScrollArea.Axes.HORIZONTAL), theme);
@@ -107,9 +155,18 @@ public final class SceneTabs<K> {
     }
     public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
             Consumer<K> change, ReadableSignal<SceneTheme> theme) {
+        return create(page, tabs, selected, change, () -> new Options(), theme);
+    }
+    public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
+            Consumer<K> change, Options options) {
+        Objects.requireNonNull(options, "标签选项");
+        return create(page, tabs, selected, change, () -> options, page.theme());
+    }
+    public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
+            Consumer<K> change, ReadableSignal<Options> options, ReadableSignal<SceneTheme> theme) {
         Objects.requireNonNull(page, "page").domain().checkWrite();
         return new SceneTabs<>(page, Objects.requireNonNull(tabs, "标签来源"), Objects.requireNonNull(selected, "活动来源"),
-                Objects.requireNonNull(change, "切换意图"), Objects.requireNonNull(theme, "主题"));
+                Objects.requireNonNull(change, "切换意图"), Objects.requireNonNull(options, "标签选项"), Objects.requireNonNull(theme, "主题"));
     }
     public static <K> SceneTabs<K> create(ScenePageContext page, ReadableSignal<List<Tab<K>>> tabs, ReadableSignal<K> selected,
             Consumer<K> change) { return create(page, tabs, selected, change, page.theme()); }
@@ -125,20 +182,29 @@ public final class SceneTabs<K> {
         private final SceneNode button;
         private final ReadableSignal<SceneTheme> theme;
         private final ReadableSignal<Float> marker;
-        Label(SceneNode button, ReadableSignal<SceneTheme> theme, ReadableSignal<Float> marker) {
-            this.button = button; this.theme = theme; this.marker = marker;
+        private final ReadableSignal<Variant> variant;
+        private final SceneAppearance.Surface surface;
+        Label(SceneNode button, ReadableSignal<SceneTheme> theme, ReadableSignal<Float> marker, ReadableSignal<Variant> variant,
+                ReadableSignal<SceneAppearance.Palette> colors) {
+            this.button = button; this.theme = theme; this.marker = marker; this.variant = variant;
+            surface = new SceneAppearance.Surface(colors, SceneAppearance.Role.GHOST, button, () -> false) {
+                @Override int fill(SceneNode node) { return variant.get() == Variant.SEGMENTED ? super.fill(node) : 0; }
+            };
         }
+        @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(variant); }
+        private int underline() { return variant.get() == Variant.UNDERLINE ? 2 : 0; }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, marker); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) { return new MeasuredSize(0, 0); }
         @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text, SceneChildMeasurer children) {
             MeasuredSize actual = children.measureChild(button, limits);
-            return new MeasuredSize(actual.width, actual.height + 2);
+            return new MeasuredSize(actual.width, actual.height + underline());
         }
         @Override public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
             return new ChildPlacements(Collections.singletonList(new ChildPlacements.Entry(button,
-                    new LayoutBox(node.padding(), node.padding(), Math.max(0, box.width - node.padding() * 2), Math.max(0, box.height - node.padding() * 2 - 2)))));
+                    new LayoutBox(node.padding(), node.padding(), Math.max(0, box.width - node.padding() * 2), Math.max(0, box.height - node.padding() * 2 - underline())))));
         }
         @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {
+            if (variant.get() == Variant.SEGMENTED) { surface.paint(node, geometry, paint); return; }
             SceneGeometryView.Entry entry = geometry.get(node);
             int color = theme.get().focus;
             int alpha = Math.round((color >>> 24) * Math.max(0f, Math.min(1f, marker.get())));

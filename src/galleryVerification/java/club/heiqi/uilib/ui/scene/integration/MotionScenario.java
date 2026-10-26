@@ -732,9 +732,10 @@ public final class MotionScenario extends TestApplication {
         club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions options = new club.heiqi.uilib.ui.scene.motion.ScrollMotionOptions(MotionSpec.spring(.3, .8)).inertia(MotionSpec.decay(6));
         club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
             content[0] = new SceneNode().background(0xff112244).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(1000));
-            inner[0] = new SceneNode().scrollable(true).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(60))
+            inner[0] = new SceneNode().scrollable(true).scrollStep(20).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(60))
                     .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options)).add(content[0]);
-            outer[0] = new SceneNode().scrollable(true).scrollOffset(40)
+            // 此场景固定每格20px，祖先路由与反向接管不依赖应用的全局滚轮偏好。
+            outer[0] = new SceneNode().scrollable(true).scrollStep(20).scrollOffset(40)
                     .size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(120))
                     .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options)).add(inner[0])
                     .add(new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(400)));
@@ -882,7 +883,8 @@ public final class MotionScenario extends TestApplication {
         club.heiqi.uilib.ui.scene.host.ScenePageSession page = own(club.heiqi.uilib.ui.scene.host.ScenePageSession.open(domain, host, host, context -> {
             options[0] = domain.signal(motion);
             content[0] = new SceneNode().size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(1000));
-            viewport[0] = new SceneNode().scrollable(true).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(100))
+            // 固定段间滚动距离，保留200到220的既有采样隔离场景。
+            viewport[0] = new SceneNode().scrollable(true).scrollStep(20).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(100))
                     .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(options[0])).add(content[0]); context.mountOwned(viewport[0]);
         }));
         page.frame(); page.pointer(club.heiqi.uilib.ui.scene.input.ScenePointerEvent.scroll(5, 5, 1)); page.frame();

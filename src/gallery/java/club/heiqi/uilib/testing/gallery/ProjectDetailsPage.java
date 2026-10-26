@@ -180,6 +180,7 @@ public final class ProjectDetailsPage {
                                                     ? "概览。"
                                                     : next.equals("notes") ? "名称与备注。" : "活动记录。"));
                         },
+                        () -> new SceneTabs.Options().variant(SceneTabs.Variant.SEGMENTED),
                         theme);
         SceneCommand resetCommand =
                 SceneCommand.of(

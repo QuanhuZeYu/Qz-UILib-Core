@@ -2,7 +2,7 @@
 
 状态：沿[成熟度路线](<../proposals/2026-10-18-uilib-maturity-roadmap.md>)交付共享标签页；单入口、业务选择与有限方向续段沿[标准状态控件](<2026-10-18-uilib-state-controls-spec.md>)，内容继续普通SceneNode生命周期。
 
-采用[React Aria Tabs可操作案例](https://react-aria.adobe.com/Tabs.html)的受控选择、默认自动激活、单Tab入口与非活动面板默认卸载；[APG Tabs键盘规则](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)补充无可聚焦子项时的面板停靠，实际实现例见[useTabPanel](https://raw.githubusercontent.com/adobe/react-spectrum/main/packages/react-aria/src/tabs/useTabPanel.ts)，同键保留/换键重置沿[React状态保留示例](https://github.com/reactjs/react.dev/blob/main/src/content/learn/preserving-and-resetting-state.md#option-2-resetting-state-with-a-key)。
+采用[React Aria Tabs可操作案例](https://react-aria.adobe.com/Tabs.html)的受控选择、默认自动激活、单Tab入口与非活动面板默认卸载，以及[shadcn Tabs](https://ui.shadcn.com/docs/components/tabs)的分段表面与独立选中底片；[APG Tabs键盘规则](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)补充无可聚焦子项时的面板停靠，实际实现例见[useTabPanel](https://raw.githubusercontent.com/adobe/react-spectrum/main/packages/react-aria/src/tabs/useTabPanel.ts)，同键保留/换键重置沿[React状态保留示例](https://github.com/reactjs/react.dev/blob/main/src/content/learn/preserving-and-resetting-state.md#option-2-resetting-state-with-a-key)。
 
 ## 1. 标签与活动内容
 
@@ -12,7 +12,9 @@ SceneTabs接受有序Tab声明、当前活动键的只读来源和切换意图�
 
 ## 2. 标签条与共同焦点
 
-标签条是横向标准按钮组，当前选中标签有明确标记，宽窗口按自然标题排列，窄窗口由原横向SceneScrollArea保留完整标题与必要显露。名称、字号、主题及标签重排走正式测量与共同几何，不保存另一份位置。
+标签条是横向标准按钮组。默认 `Options` 与旧工厂保留下划线外观 `UNDERLINE`，宽窗口按自然标题排列；`Options.variant(SEGMENTED)` 使用现代圆角表面、铺满可用条宽的标签和一个滑动选中底片。分段标签以完整标题自然宽度为下限，由共同 Flow 均分可用空间；不足时两种外观均沿原横向 SceneScrollArea 滚动并必要显露，不压缩掉完整标题。名称、字号、主题及重排走正式测量与共同几何，不保存另一份位置。
+
+分段底片直接采用本次标签排列的目标盒，位置与尺寸沿 `SceneMotion.layoutPositions/layoutSize` 声明；默认使用主题 `spatialMotion`，可用 `Options.indicatorMotion(MotionSpec)` 覆盖，用户减少/关闭动效策略仍优先。动态 Options、主题或标题变化保留同键标签、活动面板与实际编辑联系；底片只作被动装饰，不新增动作、焦点、语义或布局宽度。
 
 条拥有一个逻辑Tab入口，沿原SceneFocusTraversal选择当前有效条内焦点、有效活动项或首个可用项；从条内按Tab直接继续当前内容的逻辑顺序。Shift+Tab从内容返回同一条的入口。条中的所有可用按钮仍能被唯一路由直接聚焦，活动内容中的编辑、动作和复合控件保持自己的入口。面板没有当前可达的可聚焦子项时，面板自身成为一个Tab停靠；有子项时直接进入其原顺序，不多加面板停靠。单入口遍历边界包含整个标签条滚动区及其横向滚动条，当前面板位于该边界外的后续兄弟；窄窗出现滚动范围也不在条与面板间插入额外Tab停靠。
 
@@ -31,6 +33,8 @@ SceneTabs接受有序Tab声明、当前活动键的只读来源和切换意图�
 | 切换后同批Tab及文字 | 字段属于实际新面板，旧焦点/组字联系结束 |
 | 返回原标签、重排、标题/可用变化 | 草稿仍归原业务对象，同键标签连续，面板按定义条件建立/结束 |
 | 同键新声明、换键、删除和关闭 | 同键编辑连续；换键或退出结束原视图，不保留非活动节点树 |
+| 默认/分段外观、动态 Options、长标题和窄窗 | 原入口保留下划线；分段铺满条宽，长标题横向可达，同键面板连续 |
+| 分段切换、重排、字号/主题与动效策略变化 | 底片跟随共同布局续接，减少/关闭策略生效，动作与焦点不等待动效 |
 | 按住方向后进入面板或离条再返回 | 原续段永久结束，不改投字段或其它标签条 |
 
 稳定行为经过正式ScenePageSession；标签状态、焦点线索、窄窗滚动及面板可读性需宿主实际画面核对。

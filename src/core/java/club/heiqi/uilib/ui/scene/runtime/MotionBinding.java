@@ -66,14 +66,25 @@ final class MotionBinding implements NodeBinding {
                 Float start = initial == null ? desired : initial.get();
                 if (start == null || !Float.isFinite(start))
                     throw new IllegalArgumentException("运动入场值必须有限: node=" + node.id());
+                if (!runtime.visibleInTree(node)) start = desired;
                 initialized = true; value.snap(start, now); published = start;
                 apply.accept(node, start);
             }
             if (desiredStrategy.kind == MotionSpec.Kind.DECAY) throw new IllegalArgumentException("属性目标不能使用自由惯性: node=" + node.id());
+            if (!runtime.visibleInTree(node)) { finish(now); return; }
             value.retarget(desired, desiredStrategy, now);
             publish();
             if (value.active()) runtime.transitions().start(this);
             else runtime.transitions().stop(this);
+        }
+        public void settleVisibility() {
+            if (closed || runtime.visibleInTree(node)) return;
+            try { finish(runtime.transitions().now()); }
+            catch (RuntimeException | Error failure) { failed(failure); throw failure; }
+        }
+        private void finish(long now) {
+            // 隐藏只结束普通轨迹，来源观察继续接收新目标；Presence 持有独立的退出快照。
+            value.snap(desired, now); publish(); runtime.transitions().stop(this);
         }
         public boolean advance(long now) {
             if (closed) return false;

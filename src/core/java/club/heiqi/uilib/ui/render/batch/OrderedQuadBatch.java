@@ -164,6 +164,8 @@ public final class OrderedQuadBatch {
         public final LayoutBox clip;
         public final SceneTransform transform;
         public final SceneClipRegion shapeClip;
+        // 输入纯值不可变，交集随当前 State 有界保留，不建立跨帧历史索引。
+        private volatile SceneClipRegion effectiveClip;
 
         public State(int material, long resource, long generation, LayoutBox clip) {
             this(material, resource, generation, clip, SceneTransform.IDENTITY, SceneClipRegion.UNBOUNDED);
@@ -181,7 +183,12 @@ public final class OrderedQuadBatch {
 
         /** 局部矩形也须随原图元变换，旋转后不能只用其包络替代精确裁剪。 */
         public SceneClipRegion effectiveClip() {
-            return shapeClip.intersect(SceneClipRegion.rectangle(clip).transformed(transform));
+            SceneClipRegion cached = effectiveClip;
+            if (cached == null) {
+                cached = shapeClip.intersect(SceneClipRegion.rectangle(clip).transformed(transform));
+                effectiveClip = cached;
+            }
+            return cached;
         }
 
         /** outer左乘当前几何；此前世界裁剪同样移入outer，再交外部当前裁剪。 */

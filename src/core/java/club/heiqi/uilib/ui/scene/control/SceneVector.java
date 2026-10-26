@@ -33,7 +33,16 @@ public final class SceneVector {
         SceneShape shape(){return SceneShape.vector(path,viewX,viewY,viewWidth,viewHeight,fill!=null,stroke);}
     }
     public static SceneNode create(ScenePageContext page,ReadableSignal<Model> model){
-        Objects.requireNonNull(page).domain().checkWrite();Control control=new Control(Objects.requireNonNull(model,"路径声明"));
+        return createNode(page,model,null,null);
+    }
+    /** 独立颜色只使绘制失效；model 的填充/描边存在性与几何仍定义共同命中。 */
+    public static SceneNode create(ScenePageContext page,ReadableSignal<Model> model,
+            ReadableSignal<Integer> fillColor,ReadableSignal<Integer> strokeColor){
+        return createNode(page,model,Objects.requireNonNull(fillColor,"填充颜色"),Objects.requireNonNull(strokeColor,"描边颜色"));
+    }
+    private static SceneNode createNode(ScenePageContext page,ReadableSignal<Model> model,
+            ReadableSignal<Integer> fillColor,ReadableSignal<Integer> strokeColor){
+        Objects.requireNonNull(page).domain().checkWrite();Control control=new Control(Objects.requireNonNull(model,"路径声明"),fillColor,strokeColor);
         SceneNode node=new SceneNode().control(control).size(Size.natural(),Size.natural());
         node.bind((runtime,self,owner)->{
             control.width=page.domain().computed(owner,()->control.model().viewWidth);
@@ -46,15 +55,20 @@ public final class SceneVector {
     public static SceneNode create(ScenePageContext page,ReadableSignal<Model> model,Runnable action){return create(page,model).focusable(true).clickFocus(true).onClick(Objects.requireNonNull(action));}
     private static final class Control implements SceneControl {
         final ReadableSignal<Model> source;
+        final ReadableSignal<Integer> fillColor,strokeColor;
         ReadableSignal<Double> width,height;ReadableSignal<SceneShape> shape;
         ScenePath lastPath;SceneStroke lastStroke;double lastWidth,lastHeight,lastX,lastY,lastViewWidth,lastViewHeight,lastError;
         boolean lastFilled;SceneMesh fill=SceneMesh.EMPTY,stroke=SceneMesh.EMPTY;
-        Control(ReadableSignal<Model> source){this.source=source;reset();}
+        Control(ReadableSignal<Model> source,ReadableSignal<Integer> fillColor,ReadableSignal<Integer> strokeColor){
+            this.source=source;this.fillColor=fillColor;this.strokeColor=strokeColor;reset();
+        }
         Model model(){return Objects.requireNonNull(source.get(),"路径声明值");}
         void reset(){width=()->model().viewWidth;height=()->model().viewHeight;shape=()->model().shape();lastPath=null;fill=stroke=SceneMesh.EMPTY;}
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node){return Arrays.asList(width,height);}
         @Override public List<ReadableSignal<?>> arrangementDependencies(SceneNode node){return Collections.singletonList(shape);}
-        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node){return Collections.singletonList(source);}
+        @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node){
+            return fillColor==null?Collections.singletonList(source):Arrays.asList(source,fillColor,strokeColor);
+        }
         @Override public MeasuredSize measure(SceneNode node,Constraints constraints,SceneTextMeasurer text){
             return new MeasuredSize((int)Math.min(Integer.MAX_VALUE,Math.ceil(width.get())),(int)Math.min(Integer.MAX_VALUE,Math.ceil(height.get())));
         }
@@ -78,8 +92,10 @@ public final class SceneVector {
                 lastX=value.viewX;lastY=value.viewY;lastViewWidth=value.viewWidth;lastViewHeight=value.viewHeight;lastError=error;
             }
             SceneTransform position=SceneTransform.translation(entry.box.x,entry.box.y);
-            if(!fill.empty())target.add(PaintCommand.path(fill.transformed(position),entry.clip,value.fill));
-            if(!stroke.empty())target.add(PaintCommand.path(stroke.transformed(position),entry.clip,value.strokeColor));
+            if(!fill.empty())target.add(PaintCommand.path(fill.transformed(position),entry.clip,
+                    fillColor==null?value.fill:Objects.requireNonNull(fillColor.get(),"填充颜色值")));
+            if(!stroke.empty())target.add(PaintCommand.path(stroke.transformed(position),entry.clip,
+                    strokeColor==null?value.strokeColor:Objects.requireNonNull(strokeColor.get(),"描边颜色值")));
         }
     }
 }

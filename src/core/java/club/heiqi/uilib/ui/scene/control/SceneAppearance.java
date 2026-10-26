@@ -278,6 +278,28 @@ public class SceneAppearance {
                 action(name, content, command::tryExecute, role, selected), command);
     }
 
+    /** 路径、viewBox 与正常填充/描边由调用方声明；交互反馈和颜色动效归共同外观。 */
+    public SceneNode vectorAction(ReadableSignal<String> name, ReadableSignal<SceneVector.Model> model,
+            Runnable action) {
+        return vectorAction(name, model, action, () -> false);
+    }
+
+    public SceneNode vectorAction(ReadableSignal<String> name, ReadableSignal<SceneVector.Model> model,
+            Runnable action, ReadableSignal<Boolean> selected) {
+        return SceneVectorAction.create(page, name, model, colors, action, selected);
+    }
+
+    public SceneNode vectorAction(ReadableSignal<String> name, ReadableSignal<SceneVector.Model> model,
+            SceneCommand command) {
+        return vectorAction(name, model, command, () -> false);
+    }
+
+    public SceneNode vectorAction(ReadableSignal<String> name, ReadableSignal<SceneVector.Model> model,
+            SceneCommand command, ReadableSignal<Boolean> selected) {
+        Objects.requireNonNull(command, "动作命令");
+        return SceneControlBindings.command(vectorAction(name, model, command::tryExecute, selected), command);
+    }
+
     public static SceneTheme theme(boolean dark) {
         Palette p = new Palette(dark);
         return SceneTheme.defaults(

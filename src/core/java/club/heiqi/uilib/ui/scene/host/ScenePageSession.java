@@ -1,6 +1,7 @@
 package club.heiqi.uilib.ui.scene.host;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
@@ -16,20 +17,29 @@ public final class ScenePageSession implements AutoCloseable {
     private volatile SceneRuntime runtime;
     private volatile SceneFramePipeline pipeline;
     private Owner scope;
+    private Consumer<ScenePageSession> retireInput;
     private final java.util.Set<SceneSemanticCompletion> semanticRequests = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     private final java.util.Set<java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot>> inspections = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
-    private ScenePageSession(ReactiveDomain domain) {
+    private ScenePageSession(ReactiveDomain domain, Consumer<ScenePageSession> retireInput) {
         this.domain = domain;
+        this.retireInput = retireInput;
     }
 
     public static ScenePageSession open(
             ReactiveDomain domain, SceneHost host, SceneTextMeasurer text, ScenePage page) {
+        return open(domain, host, text, page, session -> {});
+    }
+
+    /** 在请求完成通知及树/Owner释放前，同步退休这一次宿主输入；初始化末尾Effect失败同样执行。 */
+    public static ScenePageSession open(
+            ReactiveDomain domain, SceneHost host, SceneTextMeasurer text, ScenePage page,
+            Consumer<ScenePageSession> retireInput) {
         Objects.requireNonNull(domain, "domain");
         Objects.requireNonNull(host, "host");
         Objects.requireNonNull(text, "text");
         Objects.requireNonNull(page, "page");
-        ScenePageSession session = new ScenePageSession(domain);
+        ScenePageSession session = new ScenePageSession(domain, Objects.requireNonNull(retireInput, "retireInput"));
         domain.enqueue(
                 () -> {
                     if (session.ended) return;
@@ -41,12 +51,7 @@ public final class ScenePageSession implements AutoCloseable {
                     context.inspection(session::inspect);
                     page.build(context);
                 },
-                failure -> {
-                    session.ended = true;
-                    session.finishSemanticRequests(failure);
-                    session.finishInspections(failure);
-                    session.release();
-                });
+                session::fail);
         return session;
     }
 
@@ -204,10 +209,16 @@ public final class ScenePageSession implements AutoCloseable {
         domain.checkDispatch();
         if (ended) return;
         ended = true;
-        finishInspections(null);
-        // 先立即关闭输入队列，清理树延到handler之后；即使handler/Effect失败也执行。
+        // 宿主原生联系先于任何完成通知或卸载回调退休；这些回调可能同步打开后继页。
         Throwable failure = null;
-        try { finishSemanticRequests(null); } catch (RuntimeException | Error next) { failure = next; }
+        try { retireInput(); } catch (Throwable next) { failure = next; }
+        try { finishInspections(null); } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
+        }
+        // 先立即关闭输入队列，清理树延到handler之后；即使handler/Effect失败也执行。
+        try { finishSemanticRequests(null); } catch (RuntimeException | Error next) {
+            if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
+        }
         try {
             if (pipeline != null) pipeline.close();
         } catch (RuntimeException | Error next) {
@@ -223,6 +234,30 @@ public final class ScenePageSession implements AutoCloseable {
         }
         if (failure instanceof Error) throw (Error) failure;
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
+        if (failure != null) throw new IllegalStateException("页面结束失败", failure);
+    }
+
+    private void retireInput() {
+        // 先取走以防退休动作重入close；退休后旧session不再通过回调持有宿主与原生输入。
+        Consumer<ScenePageSession> retiring = retireInput;
+        retireInput = null;
+        if (retiring != null) retiring.accept(this);
+    }
+
+    private void fail(Throwable original) {
+        ended = true;
+        try { retireInput(); } catch (Throwable cleanup) {
+            if (cleanup != original) original.addSuppressed(cleanup);
+        }
+        try { finishSemanticRequests(original); } catch (Throwable cleanup) {
+            if (cleanup != original) original.addSuppressed(cleanup);
+        }
+        try { finishInspections(original); } catch (Throwable cleanup) {
+            if (cleanup != original) original.addSuppressed(cleanup);
+        }
+        try { release(); } catch (Throwable cleanup) {
+            if (cleanup != original) original.addSuppressed(cleanup);
+        }
     }
 
     private void release() {

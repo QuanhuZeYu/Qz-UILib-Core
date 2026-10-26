@@ -679,6 +679,7 @@ public final class SceneRuntime implements AutoCloseable {
                 validateCurrentLayerPolicies();
                 // 选择依赖已结算声明；其响应投影再结算绑定，首次回放即可显示。
                 if(scopeFactsReady())focusRouter.prepareScopes();
+                transitions.settleVisibility(interactionRevision.get());
                 entrances.settleVisibility();
             }while(!dirtyBindings.isEmpty());
         } finally {

@@ -169,6 +169,8 @@ public final class VectorPresentationPage {
             Signal<Integer> progress,
             Signal<String> task) {
         SceneNode card = section(page, theme, "扇区动作");
+        SceneAppearance appearance = new SceneAppearance(page, theme);
+        card.own(appearance.scope);
         Signal<Integer> active = page.domain().signal(-1);
         String[] labels = {"开始", "暂停", "完成", "重置"};
         String[] names = {"开始任务", "暂停任务", "完成任务", "重置任务"};
@@ -192,8 +194,7 @@ public final class VectorPresentationPage {
             final int choice = index;
             double angle = -Math.PI / 2 + index * Math.PI / 2;
             ScenePath path = sector(angle - Math.PI / 4 + .045, Math.PI / 2 - .09);
-            Signal<Boolean> hovered = page.domain().signal(false);
-            SceneNode[] target = new SceneNode[1];
+            SceneStroke stroke = new SceneStroke(1, SceneStroke.Cap.BUTT, SceneStroke.Join.ROUND, 10);
             SceneCommand command =
                     SceneCommand.of(
                             () -> true,
@@ -201,39 +202,14 @@ public final class VectorPresentationPage {
                                 active.set(choice);
                                 changes[choice].run();
                             });
-            target[0] =
-                    SceneVector.create(
-                                    page,
-                                    () -> {
-                                        SceneTheme value = theme.get();
-                                        SceneAppearance.Palette colors =
-                                                new SceneAppearance.Palette(value);
-                                        boolean focused =
-                                                page.runtime().focusRouter().focused().get()
-                                                        == target[0];
-                                        int fill =
-                                                active.get() == choice
-                                                        ? colors.selected
-                                                        : hovered.get()
-                                                                ? value.hover
-                                                                : value.button;
-                                        return new SceneVector.Model(
-                                                path,
-                                                240,
-                                                240,
-                                                fill,
-                                                focused ? value.focus : colors.border,
-                                                new SceneStroke(
-                                                        focused ? 3 : 1,
-                                                        SceneStroke.Cap.BUTT,
-                                                        SceneStroke.Join.ROUND,
-                                                        10));
-                                    },
-                                    command::tryExecute)
-                            .text(names[choice])
-                            .size(Size.fill(1), Size.fill(1))
-                            .bind(NodeBinding.hoverWithin(0, (self, value) -> hovered.set(value)));
-            diagram.add(target[0], 0, 0, 240, 240);
+            SceneNode target = appearance.vectorAction(
+                            () -> names[choice],
+                            () -> new SceneVector.Model(path, 240, 240,
+                                    appearance.colors.get().background, appearance.colors.get().border, stroke),
+                            command,
+                            () -> active.get() == choice)
+                    .size(Size.fill(1), Size.fill(1));
+            diagram.add(target, 0, 0, 240, 240);
             double x = 120 + Math.cos(angle) * 78, y = 120 + Math.sin(angle) * 78;
             diagram.add(
                     GalleryStyle.label(page, () -> labels[choice], theme, 18, false),
