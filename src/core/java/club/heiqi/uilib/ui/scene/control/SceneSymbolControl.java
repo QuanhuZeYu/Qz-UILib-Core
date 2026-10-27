@@ -25,7 +25,7 @@ abstract class SceneSymbolControl implements SceneControl {
     final ReadableSignal<SceneTheme> theme;
     private final boolean showLabel;
     private final SceneTextPolicy policy;
-    private final SceneControlMotion motion = new SceneControlMotion();
+    final SceneControlMotion motion = new SceneControlMotion();
     private TextLayout source, presented;
     private int presentWidth, presentHeight;
 
@@ -44,10 +44,10 @@ abstract class SceneSymbolControl implements SceneControl {
                 .focusable(true).clickFocus(true).onClick(action);
         node.bind(NodeBinding.value(() -> Objects.requireNonNull(name.get(), "控件名称"), SceneNode::text));
         node.bind(NodeBinding.value(control.theme, (n, t) -> {
-            SceneControlMetrics metrics = t.metrics(SceneControlMetrics.Kind.SYMBOL);
-            n.defaultStyle(metrics.textStyle).defaultPadding(metrics.padding).defaultGap(control.showLabel ? metrics.iconGap : 0);
+            SceneControlMetrics metrics = t.metrics(control.kind());
+            n.defaultStyle(metrics.textStyle).defaultPadding(metrics.padding).defaultGap(control.labelGap(metrics));
         }));
-        control.motion.install(node, () -> control.theme.get().feedbackMotion, self -> SceneControlMotion.target(self, control.theme.get()));
+        control.installFeedback(node);
         control.installPresentation(node);
         return node;
     }
@@ -58,6 +58,12 @@ abstract class SceneSymbolControl implements SceneControl {
         control.installPresentation(node);
         return node;
     }
+    SceneControlMetrics.Kind kind() { return SceneControlMetrics.Kind.SYMBOL; }
+    int labelGap(SceneControlMetrics metrics) { return showLabel ? metrics.iconGap : 0; }
+    void installFeedback(SceneNode node) {
+        motion.install(node, () -> theme.get().feedbackMotion, self -> SceneControlMotion.target(self, theme.get()));
+    }
+
     /** 子类只装配自己的呈现目标；真实状态、语义和意图仍读原来源。 */
     void installPresentation(SceneNode node) { }
 
