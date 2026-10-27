@@ -131,9 +131,12 @@ final class SceneTabsHeader implements SceneControl {
             if (entry == null || entry.box.width == 0 || entry.box.height == 0) return;
             SceneAppearance.Palette value = colors.get();
             int corner = radius.get();
-            ScenePaintShapes.rounded(paint, entry.box, entry.clip, value.border, corner);
+            // 暗色底片使用选中表面和可辨边缘；页面背景在深色轨道上近乎同色。
+            int edge = value.dark ? (value.muted & 0x00ffffff) | 0x80000000 : value.border;
+            int fill = value.dark ? value.selected : value.background;
+            ScenePaintShapes.rounded(paint, entry.box, entry.clip, edge, corner);
             ScenePaintShapes.rounded(paint, new LayoutBox(entry.box.x + 1, entry.box.y + 1,
-                    Math.max(0, entry.box.width - 2), Math.max(0, entry.box.height - 2)), entry.clip, value.background, Math.max(0, corner - 1));
+                    Math.max(0, entry.box.width - 2), Math.max(0, entry.box.height - 2)), entry.clip, fill, Math.max(0, corner - 1));
         }
     }
 }

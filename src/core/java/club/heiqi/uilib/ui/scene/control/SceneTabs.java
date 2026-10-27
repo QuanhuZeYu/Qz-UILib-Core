@@ -106,8 +106,10 @@ public final class SceneTabs<K> {
             K key = current.get().key;
             SceneNode button = SceneButton.create(page, () -> current.get().title.get(), labelTheme, () -> navigation.select(key), SceneTextPolicy.ELLIPSIS_SINGLE_LINE)
                     .size(Size.natural(), Size.natural());
-            button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
-                    .defaultPadding(value.padding).defaultGap(value.iconGap)));
+            button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultPadding(value.padding).defaultGap(value.iconGap)));
+            button.bind(NodeBinding.value(() -> variant.get() == Variant.SEGMENTED
+                    ? metrics.get().textStyle.withColor(Objects.equals(selected.get(), key) ? colors.get().text : colors.get().muted)
+                    : metrics.get().textStyle, SceneNode::defaultStyle));
             button.bind(NodeBinding.value(() -> current.get().enabled.get(), SceneNode::enabled));
             button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TAB)
                     .name(current.get().title.get()).selected(Objects.equals(selected.get(), key))
@@ -188,7 +190,11 @@ public final class SceneTabs<K> {
                 ReadableSignal<SceneAppearance.Palette> colors) {
             this.button = button; this.theme = theme; this.marker = marker; this.variant = variant;
             surface = new SceneAppearance.Surface(colors, SceneAppearance.Role.GHOST, button, () -> false) {
-                @Override int fill(SceneNode node) { return variant.get() == Variant.SEGMENTED ? super.fill(node) : 0; }
+                @Override int fill(SceneNode node) {
+                    if (variant.get() != Variant.SEGMENTED || super.fill(node) == 0) return 0;
+                    // 底片在标签下方滑动；反馈只作透明叠色，不能用不透明 hover 或禁用底色截断轨迹。
+                    return (colors.get().text & 0x00ffffff) | 0x14000000;
+                }
             };
         }
         @Override public List<ReadableSignal<?>> measureDependencies(SceneNode node) { return Collections.singletonList(variant); }
