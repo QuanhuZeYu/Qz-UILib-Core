@@ -63,7 +63,9 @@ final class SceneRadioOptionControl extends SceneSymbolControl {
                 if (!segmented()) return 0;
                 SceneAppearance.Palette palette = colors.get();
                 if (checked.get()) return palette.dark ? palette.selected : palette.background;
-                return SceneControlMotion.enabled(self) ? super.fill(self) : 0;
+                // Surface用内层填色留出焦点轮廓；透明色会露出整块焦点底层。
+                int feedback = SceneControlMotion.enabled(self) ? super.fill(self) : 0;
+                return (feedback >>> 24) == 0 ? palette.dark ? palette.background : palette.hover : feedback;
             }
         };
     }

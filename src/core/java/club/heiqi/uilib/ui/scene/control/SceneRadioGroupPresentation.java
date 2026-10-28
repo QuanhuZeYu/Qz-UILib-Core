@@ -37,7 +37,8 @@ final class SceneRadioGroupPresentation extends SceneAppearance.Surface {
     }
 
     @Override int fill(SceneNode node) {
-        return variant.get() == SceneRadioGroup.Variant.SEGMENTED ? colors.get().surface : 0;
+        SceneAppearance.Palette palette = colors.get();
+        return variant.get() == SceneRadioGroup.Variant.SEGMENTED ? palette.dark ? palette.background : palette.hover : 0;
     }
     @Override public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder paint) {
         if (variant.get() == SceneRadioGroup.Variant.SEGMENTED) super.paint(node, geometry, paint);
