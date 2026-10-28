@@ -109,7 +109,15 @@ public final class TooltipScenario extends TestApplication {
                     .bind(club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(modal[0],SceneNode::visible));
                 layer.add(SceneTooltip.attach(ctx,trigger[2],()->SceneTooltip.Content.text("内层说明"),()->new SceneTooltip.Options(),()->SceneAppearance.theme(false)));ctx.mount(layer);
             })){
-                page.frame();require(text(host,"说明0"),"初始键盘提示缺失");
+                page.frame();
+                domain.execute(()->require(page.runtime().focusRouter().focused().get()==trigger[0]
+                        &&!page.runtime().focusRouter().focusVisible(trigger[0]),"自动初始焦点应保留逻辑归属"));
+                require(!text(host,"说明0")&&!text(host,"说明1"),"初始提示应等待悬停或键盘触发");
+                page.navigation(SceneNavigationEvent.NEXT);page.frame();
+                page.navigation(SceneNavigationEvent.PREVIOUS);page.frame();
+                domain.execute(()->require(page.runtime().focusRouter().focused().get()==trigger[0]
+                        &&page.runtime().focusRouter().focusVisible(trigger[0]),"键盘导航应建立来源可见焦点"));
+                require(text(host,"说明0"),"键盘导航应即时显示提示");
                 PaintCommand tip=host.last.commands().stream().filter(c->c.kind==PaintCommand.Kind.TEXT&&rendered(c).equals("说明0")).findFirst().get();
                 require(tip.box.y>=box(page,trigger[0]).height,"顶部没有空间时未反侧");
                 LayoutBox second=box(page,trigger[1]);point(page,second.x+5,second.y+5);require(text(host,"说明1")&&!text(host,"说明0"),"同组快速切换或唯一提示失败");

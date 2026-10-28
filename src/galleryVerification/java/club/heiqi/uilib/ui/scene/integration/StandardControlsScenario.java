@@ -212,8 +212,19 @@ public final class StandardControlsScenario extends TestApplication {
             require(entry(session, actions[1]).text.lines().size() > entry(session, actions[2]).text.lines().size()
                     && entry(session, actions[1]).box.height > entry(session, actions[2]).box.height,
                     "现代默认没有自然换行或显式单行策略失效");
-            PaintCommand last = host.last.commands().get(host.last.commands().size()-1);
-            require(last.kind == PaintCommand.Kind.TEXT && LONG.equals(last.text.logicalText), "键盘焦点缺组合动作完整提示");
+            require(session.runtime().focusRouter().focused().get() == actions[0]
+                    && !session.runtime().focusRouter().focusVisible(actions[0])
+                    && host.last.commands().stream().noneMatch(c -> c.kind == PaintCommand.Kind.TEXT
+                            && !ellipsis(c.text)
+                            && LONG.equals(c.text.lines().stream().map(line -> line.text).reduce("", String::concat))),
+                    "自动初始焦点应保持逻辑归属，完整提示等待真实触发");
+        });
+        session.navigation(SceneNavigationEvent.NEXT); session.frame();
+        session.navigation(SceneNavigationEvent.PREVIOUS); session.frame();
+        domain.execute(() -> {
+            require(session.runtime().focusRouter().focused().get() == actions[0]
+                    && session.runtime().focusRouter().focusVisible(actions[0]), "键盘导航应建立组合动作的可见焦点");
+            assertTooltipContent(host, LONG);
         });
         club.heiqi.uilib.ui.scene.input.SceneKeyEvent space = new club.heiqi.uilib.ui.scene.input.SceneKeyEvent(
                 club.heiqi.uilib.ui.scene.input.SceneKey.SPACE, false, false, false, false, false, null);
@@ -882,6 +893,15 @@ public final class StandardControlsScenario extends TestApplication {
                         && last.kind == PaintCommand.Kind.TEXT
                         && last.color == theme.tooltipText,
                 "提示未在计划末端绘制");
+        assertTooltipContent(host, text);
+    }
+
+    private static void assertTooltipContent(TextHost host, String text) {
+        List<PaintCommand> commands = host.last.commands();
+        require(commands.size() >= 2, "提示应包含背景与正文");
+        PaintCommand background = commands.get(commands.size() - 2), last = commands.get(commands.size() - 1);
+        require(background.kind == PaintCommand.Kind.RECT && last.kind == PaintCommand.Kind.TEXT,
+                "提示应在计划末端绘制背景与正文");
         require(
                 text.equals(last.text.originalText)
                         && text.equals(last.text.logicalText)

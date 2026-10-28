@@ -18,6 +18,7 @@ import club.heiqi.uilib.ui.scene.host.SceneHost;
 import club.heiqi.uilib.ui.scene.host.ScenePageSession;
 import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
+import club.heiqi.uilib.ui.scene.input.SceneNavigationEvent;
 import club.heiqi.uilib.ui.scene.layout.ChildPlacements;
 import club.heiqi.uilib.ui.scene.layout.Constraints;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
@@ -527,40 +528,52 @@ public final class PointerInputScenario extends TestApplication {
             p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
                     "物理尾部结束后新的空白主键未失焦"));
         });
-        scenario("viewport与模态外不失焦，模态内背景正常失焦", () -> {
-            Page p = new Page(true);
-            SceneNode[] focused = new SceneNode[1];
-            p.domain.execute(() -> {
-                focused[0] = new SceneNode().size(Size.fixed(20), Size.fixed(10)).focusable(true);
-                p.overlay = new SceneNode().size(Size.fixed(40), Size.fixed(30)).modal(true)
-                        .initialFocus(focused[0]).add(focused[0]);
-                p.children.set(Collections.singletonList(p.overlay));
+        for (boolean keyboard : new boolean[] {false, true}) {
+            scenario("范围外保持模态焦点与线索，范围内背景正常失焦 keyboard=" + keyboard, () -> {
+                Page p = new Page(true);
+                SceneNode[] focused = new SceneNode[1];
+                p.domain.execute(() -> {
+                    focused[0] = new SceneNode().size(Size.fixed(20), Size.fixed(10)).focusable(true);
+                    p.overlay = new SceneNode().size(Size.fixed(40), Size.fixed(30)).modal(true)
+                            .initialFocus(focused[0]).add(focused[0]);
+                    p.children.set(Collections.singletonList(p.overlay));
+                });
+                p.session.frame();
+                p.domain.execute(() -> require(!p.runtime.focusRouter().focusVisible(focused[0]),
+                        "自动初始焦点应保持无线索状态"));
+                if (keyboard) {
+                    p.session.navigation(SceneNavigationEvent.NEXT);
+                    p.session.frame();
+                }
+                p.domain.execute(() -> {
+                    SceneGeometryView geometry = p.pipe.current().geometry;
+                    require(p.runtime.focusRouter().focused().get() == focused[0]
+                            && geometry.get(p.overlay).box.contains(5, 20)
+                            && !geometry.get(p.overlay).box.contains(60, 40)
+                            && !geometry.get(focused[0]).box.contains(5, 20),
+                            "fixture没有建立模态焦点与内外背景位置");
+                });
+                p.events(ScenePointerEvent.down(0, p.host.width + 1, 5),
+                        ScenePointerEvent.up(0, p.host.width + 1, 5));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                        "viewport外按下应保留模态焦点"));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focusVisible(focused[0]) == keyboard,
+                        "viewport外按下应保留已有线索状态"));
+                p.events(ScenePointerEvent.down(0, 60, 40), ScenePointerEvent.up(0, 60, 40));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                        "模态外背景应保留前台焦点"));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focusVisible(focused[0]) == keyboard,
+                        "模态外背景应保留已有线索状态"));
+                p.events(ScenePointerEvent.down(0, 5, 5), ScenePointerEvent.up(0, 5, 5));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
+                        "无clickAction的焦点节点内部被当作外部背景"));
+                p.events(ScenePointerEvent.down(0, 5, 20));
+                p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
+                        "模态内焦点外背景未清除焦点"));
+                p.events(ScenePointerEvent.up(0, 5, 20));
+                p.expect(0, "模态内外背景不得激活后台");
             });
-            p.session.frame();
-            p.domain.execute(() -> {
-                SceneGeometryView geometry = p.pipe.current().geometry;
-                require(p.runtime.focusRouter().focused().get() == focused[0]
-                        && geometry.get(p.overlay).box.contains(5, 20)
-                        && !geometry.get(p.overlay).box.contains(60, 40)
-                        && !geometry.get(focused[0]).box.contains(5, 20),
-                        "fixture没有建立模态焦点与内外背景位置");
-            });
-            p.events(ScenePointerEvent.down(0, p.host.width + 1, 5),
-                    ScenePointerEvent.up(0, p.host.width + 1, 5));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0]&&p.runtime.focusRouter().focusVisible(focused[0]),
-                    "viewport外按下清除了模态焦点或键盘线索"));
-            p.events(ScenePointerEvent.down(0, 60, 40), ScenePointerEvent.up(0, 60, 40));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0]&&p.runtime.focusRouter().focusVisible(focused[0]),
-                    "模态外背景清除了前台焦点或键盘线索"));
-            p.events(ScenePointerEvent.down(0, 5, 5), ScenePointerEvent.up(0, 5, 5));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == focused[0],
-                    "无clickAction的焦点节点内部被当作外部背景"));
-            p.events(ScenePointerEvent.down(0, 5, 20));
-            p.domain.execute(() -> require(p.runtime.focusRouter().focused().get() == null,
-                    "模态内焦点外背景未清除焦点"));
-            p.events(ScenePointerEvent.up(0, 5, 20));
-            p.expect(0, "模态内外背景不得激活后台");
-        });
+        }
         scenario("焦点raw box内但祖先clip外的背景正常失焦", () -> {
             Page p = new Page(true);
             SceneNode[] focused = new SceneNode[1];
