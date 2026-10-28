@@ -1,7 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import java.util.Locale;
-/** 一次有序页的不可变查询；扫描全目录，仅保留一页候选，不累计目录快照。 */
+/** 一次有序页的不可变查询，全目录扫描按页预算保留候选。 */
 final class FilePickerQuery {
     enum Direction { FIRST, NEXT, PREVIOUS, AROUND }
     final long page;

@@ -35,7 +35,7 @@ public final class SettingsPage implements ScenePage {
         requestClose(leave);
     }
 
-    /** 确认后仅退出，不隐含保存或撤销已应用值。 */
+    /** 确认后退出页面，已应用值继续保留，文件保存由显式操作负责。 */
     public void requestClose(Runnable afterConfirmed) {
         Objects.requireNonNull(afterConfirmed, "afterConfirmed");
         configuration

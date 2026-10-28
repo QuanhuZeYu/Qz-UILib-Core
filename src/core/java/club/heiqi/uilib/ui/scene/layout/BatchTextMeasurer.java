@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** 同节点有效测量代际内复用精确文字请求；不保留同批子测量入口。 */
+/** 在节点有效测量代际内缓存精确文字请求，子测量联系仅供当批使用。 */
 final class BatchTextMeasurer implements SceneTextMeasurer {
     private final SceneTextMeasurer delegate;
     private static final int MAX_REQUESTS = 16;
@@ -33,7 +33,7 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
 
     private void remember(Request request, TextLayout layout, Object paintDeclaration) {
         layouts.put(request, new PaintEntry(layout, paintDeclaration));
-        // 活跃集合也随淘汰收缩，控件在一批内发出许多约束时不能旁路容量边界。
+        // 缓存淘汰时同步收缩活跃集合，使同批多约束请求同受容量限制。
         while (layouts.size() > MAX_REQUESTS) {
             Request eldest = layouts.keySet().iterator().next();
             layouts.remove(eldest);
@@ -97,8 +97,8 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
         return layout;
     }
 
-    /** 与原定位缓存共用16项边界和失效。显式记录本次颜色声明，不能从旧glyph颜色猜测继承。
-     * 拖动只改变排列时文字声明不变，避免每帧重新走全部安全簇并创建临时Line/列表。
+    /** 与定位缓存共用 16 项容量与失效，显式记录当前颜色声明。
+     * 纯排列变化时复用同一文字声明的安全簇结果。
      */
     private static final class PaintEntry {
         private TextLayout layout;

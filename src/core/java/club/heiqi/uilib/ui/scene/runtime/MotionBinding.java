@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 
-/** 来源收集不执行呈现映射；映射与推进只在框架准备阶段，卸载结束轨迹。 */
+/** 观察目标来源，在框架准备阶段映射并推进呈现，卸载时结束轨迹。 */
 final class MotionBinding implements NodeBinding {
     private final ReadableSignal<Float> source;
     private final ReadableSignal<Float> initial;

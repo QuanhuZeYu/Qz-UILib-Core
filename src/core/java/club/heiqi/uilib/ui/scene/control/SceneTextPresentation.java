@@ -304,7 +304,7 @@ final class SceneTextPresentation {
         return line != null && right(line) <= width && bottom(line) <= height;
     }
 
-    /** 一次省略请求的局部上下文，不写入布局结果或跨批缓存。 */
+    /** 一次省略请求内使用的局部整形上下文。 */
     private static final class FinalLine {
         final TextLayout full;
         final TextLayout.Line original;
@@ -328,7 +328,7 @@ final class SceneTextPresentation {
         TextLayout shape(int end) {
             int length = end - original.logicalStart;
             String value = original.text.substring(0, length) + "…";
-            // 旧结果未声明策略事实，仍通过原三参入口最终整形，不给旧measurer增加能力前提。
+            // 缺少策略事实时，通过原三参入口完成最终整形。
             if (policy == null) return measurer.layout(value, full.style, Integer.MAX_VALUE);
             List<StyleSpan> spans = new ArrayList<>();
             int cursor = original.logicalStart;
@@ -344,7 +344,7 @@ final class SceneTextPresentation {
                     ? logicalClusters.isEmpty() ? full.style : logicalClusters.get(0).style
                     : spans.get(spans.size() - 1).style;
             span(spans, end, end + 1, markerStyle);
-            // 单样式保留旧String入口；原已支持的属性请求才需要Attributed入口。
+            // 单样式走 String 入口，属性请求走 Attributed 入口。
             if (spans.size() == 1)
                 return measurer.layout(value, spans.get(0).style, Integer.MAX_VALUE, policy);
             return measurer.layout(new AttributedText(

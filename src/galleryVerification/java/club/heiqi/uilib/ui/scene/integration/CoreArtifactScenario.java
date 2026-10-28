@@ -75,7 +75,7 @@ public final class CoreArtifactScenario extends TestApplication {
             new File(inputArgs[1]).toURI().toURL(),
             new File(inputArgs[2]).toURI().toURL()
         };
-        // null parent 排除开发进程中的 main/core 输出、MC、原始 ICU/YAML 与 native；不把宿主成品接进来。
+        // null parent 隔离加载正式核心，外部类仅从声明的成品来源解析。
         try (URLClassLoader loader = new URLClassLoader(urls, null)) {
             scenario(
                     "独立核心实际加载配置状态布局与字体资源",
@@ -130,7 +130,7 @@ public final class CoreArtifactScenario extends TestApplication {
                                     "org.nibor.autolink.LinkExtractor",
                                     "org.jsoup.parser.Parser"
                                 }) assertAbsent(loader, name);
-                        // 成品隔离执行真正的解析、实体资源与数学扩展注册，不能仅检查.class存在。
+                        // 隔离成品实际执行解析、实体资源读取与数学扩展注册。
                         Object markdown =
                                 loader.loadClass("club.heiqi.uilib.ui.scene.text.MarkdownDocument")
                                         .getMethod("parse", String.class)
@@ -203,7 +203,7 @@ public final class CoreArtifactScenario extends TestApplication {
                         runConsumer(loader, "ThemeConfigurationScenario");
                         runConsumer(loader, "FontConfigurationScenario");
                         runConsumer(loader, "PageSessionScenario");
-                        // 隔离生产来源实际调用公共策略、工厂、frame 与输入，不借开发classpath。
+                        // 从隔离生产来源实际调用公共策略、工厂、frame 与输入。
                         loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                 .getMethod("publicGridConsumer").invoke(null);
                          loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
@@ -212,7 +212,7 @@ public final class CoreArtifactScenario extends TestApplication {
                                  .getMethod("publicFieldPresentationConsumer").invoke(null);
                          loader.loadClass("club.heiqi.uilib.ui.scene.integration.SceneCoreLoopTest")
                                  .getMethod("publicLayerConsumer").invoke(null);
-                        // 字素路径实际使用重定位后的 ICU；配置/布局消费者不依赖原始 ICU 名称。
+                        // 字素路径实际使用私有重定位 ICU，配置与布局通过核心公开能力消费。
                         Class<?> unicode =
                                 loader.loadClass(
                                         "club.heiqi.uilib.ui.scene.text.unicode.UnicodeGraphemes");
@@ -384,7 +384,7 @@ public final class CoreArtifactScenario extends TestApplication {
                 require(!name.startsWith("club/heiqi/uilib/host/media/")&&!name.startsWith("assets/qz_uilib/runtime/media/"), "MC重复嵌入独立媒体模块："+name);
                 if(name.endsWith(".class")&&name.startsWith("club/heiqi/uilib/"))verifyMajor(jar.getInputStream(jar.getJarEntry(name)),name);
                 if (entry.isDirectory()) continue;
-                // ResourceManager只识别外层Mod资源包；只允许同一正式Core资源的完整镜像，不形成第二份实现。
+                // 为外层 Mod 资源包准备同一正式 Core 资源的完整镜像。
                 if (name.startsWith("assets/qz_uilib/fonts/") || name.startsWith("assets/qz_uilib/unicode/emoji17/")) {
                     JarEntry original = core.getJarEntry(name);
                     require(original != null && !original.isDirectory() && original.getSize() == entry.getSize(),
@@ -489,8 +489,7 @@ public final class CoreArtifactScenario extends TestApplication {
         int count = data.readUnsignedShort();
         String[] utf8 = new String[count];
         List<Integer> typeReferences = new ArrayList<Integer>();
-        // 检查真实类符号与描述符，不把 YAML 为反射保留的任意类名字符串当作平台链接。
-        // 类常量和 NameAndType 同时覆盖方法体中的调用，不能只检查公开签名。
+        // 检查类符号、描述符与 NameAndType，覆盖签名及方法体调用；字符串按普通值处理。
         for (int i = 1; i < count; i++) {
             switch (data.readUnsignedByte()) {
                 case 1:
@@ -571,7 +570,7 @@ public final class CoreArtifactScenario extends TestApplication {
         // ICU含可选AWT重载；约束自有core引用，并以无desktop模块的真实逻辑闭环证明加载。
         if(startsWith(name,CORE))require(!value.contains("java/awt/")&&!value.contains("javax/imageio/")&&!value.contains("javax/sound/"),"自有核心引用desktop："+name+" -> "+value);
         for (String forbidden : forbiddenTypes) {
-            // 核心供应的私有重定位引用有效；原始依赖类型不能由开发classpath补齐。
+            // 核心私有重定位引用按内部实现处理，其余引用继续接受成品边界检查。
             String checked =
                     desktopMode
                                     && (forbidden.equals("com/ibm/icu/")
@@ -686,7 +685,7 @@ public final class CoreArtifactScenario extends TestApplication {
             case 'S':
             case 'Z':
             case 's':
-                // 包括注解字符串在内的值不是类型符号，不按其文本推断平台依赖。
+                // 类型依赖按符号分类，注解字符串等普通值保留原值语义。
                 data.readUnsignedShort();
                 break;
             default:

@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
-/** 文档图像引用与基准位置；结构化内容仍由现有图像来源signal提供，不把宿主载荷写进DSL。 */
+/** 解析文档图像引用与基准位置，结构化内容由图像来源 Signal 提供。 */
 public final class DocumentResources {
     public static final class ImageReference {
         public final ReadableSignal<ImageSource> source;

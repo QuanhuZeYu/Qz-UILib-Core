@@ -20,7 +20,7 @@ public final class MathLayout {
     public final List<Diagnostic> diagnostics;
     public final boolean fallback;
 
-    /** 供同文档下一公式显式串联，重新布局本公式不会改变输入编号。 */
+    /** 供同文档下一公式显式串联，本公式布局始终使用原输入编号。 */
     public final int nextEquationNumber;
 
     /** 降级时完整原文的正常文本布局；也同时作为一个 TextPiece 发布。 */
@@ -99,7 +99,7 @@ public final class MathLayout {
         return entries;
     }
 
-    /** 只重绑继承前景色；几何、来源、字体和旧快照都保持原事实。 */
+    /** 为继承前景色生成新投影，复用原几何、来源与字体事实。 */
     public MathLayout withColor(int color) {
         List<Entry> current = new ArrayList<Entry>();
         boolean changed = false;
@@ -144,7 +144,7 @@ public final class MathLayout {
         public final Rule rule;
         public final Stroke stroke;
         public final Embed embed;
-        /** 默认条目为显式色；生产引擎在生成作用域标明继承，不能按颜色数值猜来源。 */
+        /** 默认条目使用显式色，生产引擎按作用域明确标记颜色继承。 */
         public final boolean inheritedColor;
         final boolean colorBound;
 

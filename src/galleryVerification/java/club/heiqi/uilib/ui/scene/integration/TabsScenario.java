@@ -277,7 +277,7 @@ public final class TabsScenario extends TestApplication {
             target[0] = new club.heiqi.uilib.ui.scene.layout.LayoutBox(box.x, box.y + Math.max(0, box.height - 2), box.width, Math.min(2, box.height));
         });
         for (club.heiqi.uilib.ui.scene.paint.PaintCommand command : plan.commands())
-            // LayoutBox不定义值相等；新建期望盒必须比较四个坐标，不能按对象身份漏掉真实标记。
+            // 按四个坐标比较 LayoutBox，核验其实际标记区域。
             if (command.kind == club.heiqi.uilib.ui.scene.paint.PaintCommand.Kind.RECT
                     && command.box.x == target[0].x && command.box.y == target[0].y
                     && command.box.width == target[0].width && command.box.height == target[0].height) return command.color >>> 24;

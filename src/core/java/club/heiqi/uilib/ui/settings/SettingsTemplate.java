@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.*;
 import java.util.function.Function;
 
-/** 文档式设置骨架；不持有配置事务，参见 specs/config/uilib-settings-template-spec.md。 */
+/** 组合文档式设置区域与操作，参见 specs/config/uilib-settings-template-spec.md。 */
 public final class SettingsTemplate implements ScenePage {
     private final ReadableSignal<String> title;
     private ReadableSignal<String> description = () -> "", notice = () -> "";
@@ -44,7 +44,7 @@ public final class SettingsTemplate implements ScenePage {
         theme = Objects.requireNonNull(value, "theme"); return this;
     }
 
-    /** 分类元数据只表达当前内容层级，不改变业务草稿或提交策略。 */
+    /** 分类元数据表达当前内容层级，草稿与提交策略由业务模型维护。 */
     public SettingsTemplate section(String id, ReadableSignal<String> title,
             ReadableSignal<String> description, SceneIconButton.Symbol icon,
             Function<ScenePageContext, SceneNode> content) {
@@ -70,7 +70,7 @@ public final class SettingsTemplate implements ScenePage {
         return this;
     }
 
-    /** 页头附加动作与底部操作使用相同命令，不增加页面状态权威。 */
+    /** 页头附加动作与底部操作共用命令声明。 */
     public SettingsTemplate headerAction(ReadableSignal<String> label, SceneIconButton.Symbol icon, SceneCommand command) {
         headerActions.add(new HeaderAction(Objects.requireNonNull(label, "label"),
                 Objects.requireNonNull(icon, "icon"), Objects.requireNonNull(command, "command")));

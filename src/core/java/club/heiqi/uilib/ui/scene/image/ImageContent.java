@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.image;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** 实际不可变内容；straight RGBA8，像素以左上为原点。身份只标识此份内容，不是宿主纹理。 */
+/** 左上原点的不可变 straight RGBA8 内容，身份标识本份内容版本。 */
 public class ImageContent {
     public enum Kind {
         PIXELS,
@@ -27,7 +27,7 @@ public class ImageContent {
         this.rgba = rgba.clone();
     }
 
-    /** 宿主物品内容持不可变专用快照；core只知道自然尺寸与身份，不读MC数据。子类必须保持不可变。 */
+    /** 宿主提供不可变物品快照，core 消费自然尺寸与中性身份；子类保持同样的不可变合同。 */
     protected ImageContent(int width, int height) {
         if (width < 1 || height < 1) throw new IllegalArgumentException("无效宿主图像尺寸");
         this.kind = Kind.HOST_ITEM;

@@ -6,14 +6,14 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 拖动控件共用的纯资格/几何及有界滚动计算；不持有第二套场景几何。 */
+/** 按共同场景事实计算拖动资格、几何与有界滚动。 */
 final class SceneDragSupport {
     private SceneDragSupport() {}
 
-    /** 作用域只观察正式拖动；normalDrop 返回清理后的业务动作，cancel 永不提交。 */
+    /** 观察正式拖动，normalDrop 清理后交付业务动作，cancel 只结束会话。 */
     interface Observer {
         boolean same(Observer other);
-        /** 同一来源身份的当前配置刷新；same 只比较，不修改挂载或会话状态。 */
+        /** 刷新同一来源身份的当前配置，same 仅比较来源身份。 */
         default void configure(SceneNode node, Observer next) {}
         void attach(SceneRuntime runtime, SceneNode node, Runnable cancel);
         void detach(SceneNode node);

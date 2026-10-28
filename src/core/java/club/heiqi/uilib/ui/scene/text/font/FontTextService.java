@@ -49,9 +49,9 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * ICU Unicode 算法 + 真实 FT/HB 共享排版服务。创建、测量、重载、关闭均在创建线程。 度量不申请 GPU 资源；光栅消费者用 Glyph.source.openFace
- * 在自己的 native 线程重开。 有界 face/layout/字形颜色事实缓存。默认资源只是显式候选列表，不建立第二条 fallback 链。
- * 当前未实现省略和编辑器双向光标 affinity；软连字符只在采用断点的最终行内投影，不改原文。
+ * 以 ICU 与真实 FT/HB 完成字体匹配、整形和行布局，创建、测量、重载与关闭均限创建线程。
+ * 有界缓存 face、布局与字形颜色事实；光栅消费者在所属 native 线程按 Glyph.source 重开资源。
+ * 省略内容与编辑光标由 scene 选择，本服务提供最终行与来源事实；软连字符仅在采用断点时投影。
  */
 public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     private final Thread thread = Thread.currentThread();
@@ -136,7 +136,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         unicodeRules = Objects.requireNonNull(rules, "rules");
         unicodeProfile = Objects.requireNonNull(rules.snapshot(), "profile");
         emojiData = unicodeProfile.emoji;
-        // 低级构造用于同步批处理；UI 走显式 FontResources 构造，不能隐式准备资源。
+        // 同步批处理在此准备具名资源，UI 入口消费 worker 已准备的 FontResources。
         named.putAll(resources == null ? synchronousNamed(1, this.defaults) : resources.named);
         defaultMathTextNames.addAll(named.keySet());
         nativeService = Objects.requireNonNull(engine, "engine").openSession();
@@ -334,7 +334,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return defaults;
     }
 
-    /** 宿主将这个变化通知接入其正常 measure/layout 失效，不在 replay 改计划。 */
+    /** 宿主将变化通知接入 measure/layout 失效，后续准备阶段生成新计划。 */
     public AutoCloseable onInvalidated(final Runnable listener) {
         check();
         invalidation.add(Objects.requireNonNull(listener, "listener"));
@@ -363,7 +363,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         invalidate();
     }
 
-    /** 主线程发布整代，具名链和默认候选一起失效，不进行资源 I/O 或 metadata 解析。 */
+    /** 在所属线程发布整代已准备资源，使具名链与默认候选共同失效。 */
     public void reload(FontResources resources) {
         check();
         defaults = resources.defaults;
@@ -406,7 +406,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }
 
-    /** 默认数学声明使用具名 math；显式候选完整覆盖它，不向普通文本链添加数学字体。 端口仅持有服务和样式；LRU/reload 后每次重新取得当前 source/face。 */
+    /** 数学默认使用具名 math，显式候选完整覆盖；普通文本保留自身候选链。
+     * 端口持有服务与样式，每次按当前资源代际取得 source/face。 */
     @Override
     public MathFont mathFont(TextStyle style) {
         check();
@@ -461,7 +462,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return null;
     }
 
-    /** 仅在一次调用栈内有效，不作为 MathFont 的持久字段。 */
+    /** 一次调用栈内借用的当前数学字体事实。 */
     private static final class MathSelection {
         final FontSource source;
         final FontFace face;
@@ -1046,7 +1047,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             return style.candidates();
         }
         List<FontSource> result = named.get(style.font);
-        // 旧任意名称均映射配置的默认列表，没有基于名称偷偷添加字体。
+        // 通用名称映射配置默认列表，具名列表使用其明确注册的候选。
         return result == null ? defaults : result;
     }
 
@@ -1196,7 +1197,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 cached.input).withPolicy(cached.policy());
     }
 
-    /** 输入对象携带 byte/UTF16 来源，因此不与 String cache 混用。 */
+    /** 保留 TextInput 的 BYTE/UTF16 来源，按完整属性声明参与布局缓存。 */
     public TextLayout layout(TextInput text, TextStyle style, int width, TextPolicy policy) {
         check();
         Objects.requireNonNull(style, "style");
@@ -1220,7 +1221,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
             }
             if (found != null) {
                 faces.put(key, found);
-                // 关闭错误属于退休face，不能污染已取得的新face加载结果。
+                // 先登记新 face，再释放淘汰 face，关闭错误沿退休资源通道传播。
                 while (faces.size() > faceLimit) {
                     FaceKey oldest = faces.keySet().iterator().next();
                     faces.remove(oldest).close();
@@ -1246,7 +1247,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return found;
     }
 
-    /** 仅加载真实glyph metrics/bitmap，不执行FT_Render_Glyph。实际identity与光栅请求完全相同。 */
+    /** 按光栅请求的同一字形身份读取真实墨迹边界，像素生成归光栅入口。 */
     private InkBounds inkBounds(
             FontSource source, float size, int glyph, GlyphRasterStyle variant, UnicodeText doc) {
         InkKey key = new InkKey(source, size, glyph, variant);
@@ -1265,7 +1266,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         while (cache.size() > limit) cache.remove(cache.keySet().iterator().next());
     }
 
-    /** 区间决定字体分段；匹配只发布实际来源或稳定替代，不改写 Unit 的整形样式。 */
+    /** 按区间匹配实际字体来源或稳定替代，Unit 保留原整形样式。 */
     private void match(
             UnicodeText doc,
             List<Unit> units,
@@ -1325,7 +1326,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         FontSource cached = key == null ? null : independent.get(key);
         boolean resourceFailure = false;
         if (cached != null) {
-            // 本段落已核对过候选前缀；紧 face 预算下不能为重复字素重开全部来源。
+            // 复用本段落已核验的候选前缀，使重复字素保持有限来源开销。
             if (face(cached, style.logicalEm, doc) != null) return new FontSelection(cached, false, 0);
             resourceFailure = true;
         }
@@ -1490,7 +1491,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                                 source + " (" + source.origin + "): SFNT元数据解析失败: " + error));
             }
         List<FontSource> resolved = Collections.unmodifiableList(result);
-        // 失败仍沿原入口诊断，不把缺失来源固化为完整候选快照。
+        // 成功解析后缓存完整候选快照，失败沿原入口保留诊断。
         if (doc.diagnostics.size() == diagnostics) matching.remember(key, resolved);
         return resolved;
     }
@@ -1542,7 +1543,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         Objects.requireNonNull(policy, "policy");
         if (!Float.isFinite(width)) throw new IllegalArgumentException("无效布局宽度");
         // 颜色属于绘制；属性范围、来源、内联度量与其余样式才决定定位身份。
-        // 与纯文字共用容量、LRU及资源换代，不能按主题颜色积累第二套缓存。
+        // 属性文本与纯文字共用容量、LRU 和资源换代，颜色通过条目内投影更新。
         AttributedText resolved = supportedText(resolveScripts(text));
         AttributedKey key = new AttributedKey(resolved, width, policy);
         FontLayoutEntry cached = layouts.get(key);
@@ -1635,7 +1636,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 style.highlightColor, style.defaultHighlightColor, TextScript.NONE);
     }
 
-    /** 属性布局不实现动画；保留真实正文及来源，给出稳定范围诊断，不在 paint 反复抛错。 */
+    /** 属性布局将混淆声明呈现为原正文，并保留来源与范围诊断。 */
     private static AttributedText supportedText(AttributedText value) {
         boolean unsupported =
                 value.baseStyle.effects.obfuscated || value.trailingStyle.effects.obfuscated;
@@ -1785,10 +1786,10 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         TreeSet<Integer> normal = new TreeSet<Integer>();
         for (int b = breaks.first(); b != BreakIterator.DONE; b = breaks.next())
             if (safe.contains(start + b)) normal.add(start + b);
-        // 段落终点始终结束本行；例如末尾SHY并不是需要显示连字符的自动断点。
+        // 段落终点按原文结束本行，SHY 只在实际采用软断点时显示。
         safe.add(end);
         normal.add(end);
-        // 段落只整形一次建立前缀；每行只按最终候选范围重整形，不再shape剩余整段。
+        // 段落整形建立前缀，最终行只对选定候选范围重新整形。
         BreakPlan plan =
                 new BreakPlan(
                         policy.wrap == TextPolicy.Wrap.EMERGENCY ? safe : normal,
@@ -1864,7 +1865,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 paragraph.sources);
     }
 
-    /** 只消费最终行事实，字形、簇和装饰仍统一映射到原 TextInput，不再选择断点。 */
+    /** 将选定最终行的字形、簇与装饰统一投影回原 TextInput。 */
     private TextLayout.Line materialize(UnicodeText doc, FinalLine line, float y) {
         TextInput input = doc.input;
         int a = line.start, b = line.end;
@@ -1982,7 +1983,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
                 line.paragraphRtl);
     }
 
-    /** 候选事实只在当前段落存活；前缀不能作为最终行几何发布。 */
+    /** 当前段落内的候选断点与前缀事实，最终行另行整形后发布。 */
     private static final class ParagraphPlan {
         final int start, end;
         final TextStyle style;
@@ -2012,7 +2013,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         }
     }
 
-    /** 选择完成后的行事实；shaped 与 direction 此后只读，不向公开布局暴露局部可变对象。 */
+    /** 选定的最终行事实，shaped 与 direction 只读消费并投影为公开布局。 */
     private static final class FinalLine {
         final int start, end;
         final Draft shaped;
@@ -2083,8 +2084,8 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
 
     /**
      * 混淆只替换完整安全簇；复杂脚本的连续必要face范围整体替换为单色中性cell。
-     * 独立字素优先真实等advance桶；无精确桶/复杂range使用完整cell等比收纳并居中，绝不假称仍保原连接形态。
-     * tick/salt由宿主捕获，逻辑advance/断行/source/style保持原计划；不重新整形原字符串。
+     * 独立字素优先使用真实等 advance 桶，其余完整范围以中性 cell 等比收纳并居中。
+     * 宿主捕获 tick/salt，替换仅更新绘制，逻辑 advance、断行、source 与 style 沿用原计划。
      */
     public TextLayout obfuscate(TextLayout layout, long tick, long salt) {
         TreeMap<Integer, TextStyle> styles = new TreeMap<Integer, TextStyle>();
@@ -2369,7 +2370,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
         return GlyphRasterStyle.NORMAL;
     }
 
-    /** 不shape、不render，同glyphId实际采样边界映回逻辑坐标。 */
+    /** 将同 glyphId 的实际采样边界映回逻辑坐标。 */
     public TextLayout sample(TextLayout layout, RasterSampling sampling) {
         check();
         Objects.requireNonNull(layout, "layout");
@@ -2504,7 +2505,7 @@ public final class FontTextService implements SceneTextMeasurer, AutoCloseable {
     }
 
     /**
-     * 单次行/段落整形的唯一工作状态。只在 shape 调用内存在，不持有跨调用资源或缓存。
+     * shape 调用内持有的单次行或段落工作状态，随调用结束释放。
      * 视觉分段、无字形 advance 和真实字形投影共用 draft/pen，最终行仍独立重新整形。
      */
     private final class LineShaper {

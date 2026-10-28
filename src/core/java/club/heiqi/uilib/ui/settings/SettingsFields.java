@@ -22,7 +22,7 @@ public final class SettingsFields {
         this(context, Objects.requireNonNull(context, "context").theme());
     }
 
-    /** 局部预览传完整主题，不改变页面或宿主的主题权威。 */
+    /** 为字段提供完整局部预览主题，页面与宿主继续使用原主题来源。 */
     public SettingsFields(ScenePageContext context, ReadableSignal<SceneTheme> theme) {
         this.context = Objects.requireNonNull(context, "context");
         this.theme = Objects.requireNonNull(theme, "theme");
@@ -67,7 +67,7 @@ public final class SettingsFields {
         ReadableSignal<SceneTheme> editorTheme = () -> style.colors.get().editorTheme();
         SceneEditState state = new SceneEditState(context.domain(), value.get());
         context.domain().effect(owner, () -> {
-            // 与 SceneEditState 单行入口使用相同规范化，避免 reset 的 Snapshot 反复使本 Effect 失效。
+            // 与 SceneEditState 单行入口共用规范化，使 reset 快照与业务草稿保持同值。
             String next = Objects.requireNonNull(value.get(), "字段草稿").replace("\r", "").replace("\n", "");
             // 此 Signal 本身就是业务草稿；显式放弃/恢复须结束旧输入联系，同值输入保留选区与历史。
             if (!next.equals(state.text().get())) state.reset(next);
@@ -88,7 +88,7 @@ public final class SettingsFields {
         return toggle(label, description, value, value::set, enabled, error);
     }
 
-    /** 业务可拒绝意图；显示值始终重读原来源，不在字段内部另存草稿。 */
+    /** 向业务递交更改意图，显示值从原来源重读，以反映业务实际接受结果。 */
     public SceneNode toggle(ReadableSignal<String> label, ReadableSignal<String> description,
             ReadableSignal<Boolean> value, Consumer<Boolean> change,
             ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {
@@ -101,7 +101,7 @@ public final class SettingsFields {
     }
 
     private static SceneTheme switchTheme(SceneAppearance.Palette palette, boolean checked) {
-        // Switch 自己绘制轨道；不使用为外层 field 去框的透明编辑主题。
+        // Switch 自绘轨道，使用完整主题保持轨道与状态颜色。
         int thumb = checked ? palette.onPrimary : palette.dark ? palette.text : palette.background;
         return new SceneTheme(palette.textStyle.withColor(thumb), palette.background, 0, 0, 0,
                 palette.primary, palette.border, palette.muted, palette.primary, palette.onPrimary,
@@ -117,7 +117,7 @@ public final class SettingsFields {
         return choice(label, description, options, value, value::set, enabled, error);
     }
 
-    /** 标准选择器传完整主题；内部触发去框不改变所属弹层表面。 */
+    /** 将完整主题传给选择器，触发器的局部表面与所属弹层分别呈现。 */
     public <K> SceneNode choice(ReadableSignal<String> label, ReadableSignal<String> description,
             ReadableSignal<List<SceneSelect.Option<K>>> options, ReadableSignal<K> value, Consumer<K> change,
             ReadableSignal<Boolean> enabled, ReadableSignal<String> error) {

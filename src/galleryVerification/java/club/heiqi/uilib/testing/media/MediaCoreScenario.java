@@ -32,7 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** 无native/classpath下通过正式SPI检验时间线、预算和迟到操作；不声称设备/GPU证据。 */
+/** 在独立核心 classpath 下通过正式 SPI 核验时间线、预算与迟到操作。 */
 public final class MediaCoreScenario extends TestApplication {
     private static final MediaSource SOURCE=MediaSource.of(URI.create("test://media/current"));
     private static final MediaAudioSinkFactory NO_AUDIO=b->{throw new AssertionError("纯视频不应打开设备");};

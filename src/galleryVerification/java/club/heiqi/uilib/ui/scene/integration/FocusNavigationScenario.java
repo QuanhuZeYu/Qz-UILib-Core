@@ -420,7 +420,7 @@ public final class FocusNavigationScenario extends TestApplication {
                                 require(p.clicks == 0, "未释放占位必须吞synthetic激活");
                             });
                     drain.run();
-                    // 底层合同：pipeline.close不释放runtime，另一管线须共用物理尾部权威。
+                    // 关闭 pipeline 后保留 runtime，核验另一管线继续使用同一物理尾部。
                     SceneFramePipeline other = new SceneFramePipeline(p.runtime, p.host, p.host);
                     p.domain.execute(() -> p.context.own(other));
                     drain.run();

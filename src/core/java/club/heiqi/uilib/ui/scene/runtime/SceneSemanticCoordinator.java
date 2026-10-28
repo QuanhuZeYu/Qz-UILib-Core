@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** 挂载期描述观察和当批纯值投影；语义不拥有另一棵控件或焦点树。 */
+/** 观察挂载期语义声明，将共同几何、范围与焦点投影为当批纯值快照。 */
 final class SceneSemanticCoordinator {
     private static final class Mounted {
         final SceneNode node;
@@ -47,7 +47,7 @@ final class SceneSemanticCoordinator {
     private boolean changed;
     SceneSemanticCoordinator(SceneRuntime runtime){this.runtime=runtime;}
     SceneSemanticId id(SceneNode node) { Mounted m = mounted.get(node); return m == null ? null : m.id; }
-    /** 消费同批声明已核验的目标；挂载身份不同即失效，读取不重新描述或遍历控件。 */
+    /** 读取同批已准备的焦点目标，并核验其原挂载身份。 */
     SceneNode preparedFocusTarget(SceneNode node) {
         Mounted source = mounted.get(node);
         if (source == null) return null;
@@ -152,7 +152,7 @@ final class SceneSemanticCoordinator {
         List<SceneNode> content=new ArrayList<>();
         for(SceneNode child:node.children())content.addAll(collect(child,geometry,output,order,relationTargets));
         for(SceneNode child:runtime.scrollDecorations(node))collect(child,geometry,output,order,relationTargets);
-        // 工厂可返回普通布局容器；关联透过它指向真实语义内容，不要求旧用法增加GROUP。
+        // 普通布局容器将标签关系透传到其真实语义内容。
         List<SceneNode> targets=semantic?Collections.singletonList(node):content;
         relationTargets.put(node,targets);return targets;
     }

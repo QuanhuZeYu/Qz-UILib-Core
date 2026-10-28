@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.reactive;
 
-/** 显式副作用在域操作结束后执行，回调内写入不递归重入。 */
+/** 显式副作用在域操作结束后执行，回调写入产生的后续执行由队列承接。 */
 public final class Effect extends Tracker implements AutoCloseable {
     private final Runnable action;
     boolean queued;

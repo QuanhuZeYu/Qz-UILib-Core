@@ -43,7 +43,7 @@ import club.heiqi.uilib.ui.scene.localization.LocalizationResource;
 import club.heiqi.uilib.ui.scene.localization.LocalizationSnapshot;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 正式独立资源闭环：真实 classpath 和临时目录，不替换加载器或 Formatter。
+/** 以真实 classpath、临时目录和 Formatter 核验独立语言资源闭环。
  * 输入包装仅观测关闭与注入可达 IO 失败；文案/布局/域递交仍使用生产路径。 */
 public final class LocalizationResourceScenario extends TestApplication {
     @Override
@@ -445,7 +445,7 @@ public final class LocalizationResourceScenario extends TestApplication {
                 });
         domain.execute(
                 () -> {
-                    // 域仍在本次业务操作中；外部线程只将 B 排队，不争抢同一域的状态访问。
+                    // 外部线程在原业务操作中将 B 排队，状态访问仍归所属域线程。
                     AtomicReference<Throwable> failure = new AtomicReference<>();
                     Thread external =
                             new Thread(

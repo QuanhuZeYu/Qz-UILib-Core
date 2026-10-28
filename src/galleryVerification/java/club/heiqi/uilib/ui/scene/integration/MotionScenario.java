@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 解析求解互证与真实挂载生命周期，不依赖墙钟 sleep。 */
+/** 以显式时刻互证解析求解，并核验真实挂载生命周期。 */
 public final class MotionScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("解析弹簧同时间、不同分帧及三种阻尼", this::spring);
@@ -364,7 +364,7 @@ public final class MotionScenario extends TestApplication {
             public void paint(SceneNode node, SceneGeometryView geometry, PaintPlanBuilder target) {}
         };
     }
-    // 反射只观察合法生产调用形成的容量与释放，不注入缓存，也不改变求解路径。
+    // 反射只读观察正式调用形成的容量与释放状态。
     private static int measurementCount(ScenePageSession page, SceneNode node) throws Exception {
         Object layout = field(page.pipeline(), "layout"), dependencies = field(layout, "measureDependencies");
         Object stamp = ((Map<?, ?>) field(dependencies, "stamps")).get(node);
@@ -734,7 +734,7 @@ public final class MotionScenario extends TestApplication {
             content[0] = new SceneNode().background(0xff112244).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(1000));
             inner[0] = new SceneNode().scrollable(true).scrollStep(20).size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(60))
                     .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options)).add(content[0]);
-            // 此场景固定每格20px，祖先路由与反向接管不依赖应用的全局滚轮偏好。
+            // 场景显式固定每格 20px，单独核验祖先路由与反向接管。
             outer[0] = new SceneNode().scrollable(true).scrollStep(20).scrollOffset(40)
                     .size(club.heiqi.uilib.ui.scene.layout.Size.fixed(100), club.heiqi.uilib.ui.scene.layout.Size.fixed(120))
                     .bind(club.heiqi.uilib.ui.scene.motion.SceneMotion.scroll(() -> options)).add(inner[0])
@@ -1048,7 +1048,7 @@ public final class MotionScenario extends TestApplication {
                 catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
                 require(moves[0] == 1 && sortableActive(motion[0]), "未建立UP后的活动排序：" + mode);
                 observerOwner[0] = domain.owner();
-                // Flights 的身份容器不承诺行顺序；第一条真实通知才是首错，清理故障须在它之后启用。
+                // 按第一条真实通知记录首错，随后启用清理故障以核验附加错误顺序。
                 if (!"frame".equals(entry)) for (String key : new String[] {"b", "c"})
                     domain.observe(observerOwner[0], sortableRowOffset(model[0], key)::get, () -> {
                         if (armed[0] && !primaryRaised[0]) {
@@ -1258,7 +1258,7 @@ public final class MotionScenario extends TestApplication {
             });
         }
     }
-    /** 仅测试观测：区分肉眼落定与 elevation/亚像素仍活跃，不给生产增加探针。 */
+    /** 通过测试侧只读反射区分视觉落定与 elevation、亚像素轨迹仍活跃的状态。 */
     private static boolean sortableActive(SceneNode board) { return sortableActive(sortableMotion(board)); }
     private static boolean sortableActive(Object motion) {
         try {

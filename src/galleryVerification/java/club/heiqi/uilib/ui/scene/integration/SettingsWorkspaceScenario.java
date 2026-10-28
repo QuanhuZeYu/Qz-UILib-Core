@@ -18,7 +18,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-/** 正式设置页面经原语义/快捷键入口消费真实配置文件，不以Gallery草稿替代应用保存。 */
+/** 通过正式设置页面的语义与快捷键入口，核验真实配置文件的应用和保存。 */
 public final class SettingsWorkspaceScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
@@ -453,7 +453,7 @@ public final class SettingsWorkspaceScenario extends TestApplication {
                     f.request(SceneSemanticRequest.text(sample.id, "保留样本编辑 Aa 123"))
                             == SceneSemanticRequest.Result.APPLIED,
                     "样本拒绝实际编辑");
-            // 同页持续挂载避免重建编辑器；退场画面不能保留原输入资格。
+            // 同页保留原编辑器挂载，退场时核验输入资格立即结束。
             for (MotionPolicy policy : MotionPolicy.values()) {
                 f.domain.execute(() -> f.motion.set(policy));
                 f.session.frame();

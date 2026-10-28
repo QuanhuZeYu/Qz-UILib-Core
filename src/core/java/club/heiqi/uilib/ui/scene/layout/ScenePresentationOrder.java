@@ -39,7 +39,7 @@ final class ScenePresentationOrder {
         final SceneNode active = modal;
         parts.removeIf(part -> part.layer != null && active != null
                 && !inside(part.layer, active) && !inside(active, part.layer));
-        // 绘制必须与有效 modal 选择同序，不同根分支的深度不能让后台范围盖住当前范围。
+        // 绘制按有效 modal 选择顺序排列完整根分支。
         // 当批声明序只排完整子树组；组内 placements 与 child/afterChildren 关系保持原样。
         parts.sort(Comparator.comparingInt((Part part) -> scopeRanks.get(part.scope))
                 .thenComparingInt(part -> part.layer == null ? 0 : 1));
@@ -74,7 +74,7 @@ final class ScenePresentationOrder {
                 part = new Part(boundary, layer, scope, layer == null ? null : policy(layer));
                 groups.put(boundary, part); parts.add(part);
             }
-            // 内容投影的排列顺序来自 engine 的 placements，不能由逻辑 children 重建。
+            // 按 engine 的 placements 顺序投影内容。
             part.entries.add(entry);
         }
     }

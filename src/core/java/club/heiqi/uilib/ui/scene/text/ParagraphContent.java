@@ -18,7 +18,7 @@ public final class ParagraphContent {
         this(text, links, inline, Collections.<TextSemanticSpan>emptyList());
     }
 
-    /** 语义范围沿同一已投影 UTF-16 文本；保留顺序、重叠与重复嵌套，不从视觉样式反推含义。 */
+    /** 在共同 UTF-16 文本上显式记录语义，保留来源顺序、重叠与重复嵌套。 */
     public ParagraphContent(StyledText text, List<TextContent.LinkSpan> links,
             List<InlineContent> inline, List<TextSemanticSpan> semantics) {
         this.text = Objects.requireNonNull(text, "text");

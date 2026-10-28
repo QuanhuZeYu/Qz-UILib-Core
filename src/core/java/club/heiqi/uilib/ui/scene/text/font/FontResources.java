@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 一次资源准备的不可变发布事实；只含 bytes/metadata，不持 native 会话或宿主线程。
+/** 一次资源准备的不可变字节、元数据与候选事实。
  * prepare 由资源 owner 的 worker 调用，UI 只构造/重载 FontTextService 消费本对象。
  * 普通、具名数学、数学正文和工作区 UI 的完整候选在同一次准备中封口。
  */
@@ -58,13 +58,13 @@ public final class FontResources {
         return new FontResources(revision, defaults, named, unicode);
     }
 
-    /** 无宿主批处理的显式同步准备；不能从 UI 初始化、事件或测量路径调用。 */
+    /** 同步批处理入口；UI 宿主在资源 worker 中调用。 */
     public static FontResources prepare(ClassLoader loader, long revision, List<FontSource> defaults) {
         try { return prepare(loader, revision, FontTextService.defaultSources(loader, revision), defaults); }
         catch (IOException failure) { throw new UncheckedIOException(failure); }
     }
 
-    /** 同一资源代的候选变更复用全部已准备的具名头链和 UI 来源；不重读资源包。 */
+    /** 同代候选变更复用已准备的具名头链与 UI 来源。 */
     public FontResources select(List<FontSource> candidates) {
         Map<String, List<FontSource>> selected = new LinkedHashMap<>(named);
         for (String name : Arrays.asList(MathTextFontSources.ROMAN, MathTextFontSources.SANS, MathTextFontSources.MONO))

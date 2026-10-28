@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** 可通知的独立资料所有者；每次publish均表示完成一次加载，不按语言码或表内容去重。
- * close只解除共享来源订阅，不销毁绑定所持有的不可变资料。 */
+/** 拥有独立语言资料，每次 publish 表示一次已完成加载。
+ * close 解除共享来源订阅，绑定已持有的不可变资料继续可用。 */
 public final class MutableLocalizationSource implements LocalizationSource, AutoCloseable {
     private LocalizationSnapshot current;
     private Object publication;
@@ -47,7 +47,7 @@ public final class MutableLocalizationSource implements LocalizationSource, Auto
         Object token = new Object();
         publication = token;
         // 回调可能重入发布；即使复用同一snapshot实例，也是一批新的资料事实。
-        // 新事实已通知订阅后，旧批次不能继续覆盖它；当前事实始终立即可读。
+        // 新事实立即可读，通知按 publication 代际继续。
         Throwable failure = null;
         for (Consumer<LocalizationSnapshot> listener : new ArrayList<>(listeners)) {
             if (closed || publication != token) break;
@@ -59,7 +59,7 @@ public final class MutableLocalizationSource implements LocalizationSource, Auto
                 else if (nextFailure != failure) failure.addSuppressed(nextFailure);
             }
         }
-        // 一页失败不截断仍有效批次的其他订阅；旧批次被替代也保留已收集错误，不吞错、不重试。
+        // 逐项通知仍有效批次的订阅，结束后传播首错并附加其余错误。
         if (failure instanceof Error) throw (Error) failure;
         if (failure instanceof RuntimeException) throw (RuntimeException) failure;
     }

@@ -44,7 +44,7 @@ public final class SceneDragDrop<K> {
             x = value.x; y = value.y; keyboard = value.keyboard;
         }
     }
-    /** 同批几何的短期查询结果，供同包排序控件消费，不保存另一棵几何树。 */
+    /** 同批几何的短期候选快照，供排序控件消费。 */
     static final class Candidate<K> {
         final K key;
         final SceneNode node;
@@ -134,7 +134,7 @@ public final class SceneDragDrop<K> {
                 publish(new Snapshot<>(true, current.keyboard, current.source, null, current.box, current.x, current.y));
         };
     }
-    /** 只在活动输入或明确的排序查询调用；无会话不登记逐帧目标扫描。 */
+    /** 在活动输入或显式排序查询中，按当前几何准备接收候选。 */
     List<Candidate<K>> candidates(K sourceKey, SceneNode sourceNode, SceneGeometryView geometry) {
         List<Candidate<K>> result = new ArrayList<>();
         List<SceneGeometryView.Entry> ordered = geometry.ordered();
@@ -146,7 +146,7 @@ public final class SceneDragDrop<K> {
             LayoutBox visible = SceneDragSupport.visibleBox(geometry, entry);
             if (visible.width == 0 || visible.height == 0) continue;
             SceneDroppable.Options<K> options = Objects.requireNonNull(target.options.get(), "drop options");
-            // accepts 本身也可以读取 Signal；不能把谓词结果缓存到挂载期。
+            // accepts 可读取 Signal，每次查询均按当前来源核验。
             if (options.accepts.test(sourceKey)) result.add(new Candidate<>(target.key, target.node, entry.box, visible, geometry.visibleRegion(target.node), options.priority, i));
         }
         return Collections.unmodifiableList(result);
@@ -218,7 +218,7 @@ public final class SceneDragDrop<K> {
     private Runnable normalDrop(SourceRegistration<K> source, SceneGeometryView geometry, boolean keyboard, LayoutBox box, int x, int y) {
         if (session != source || source == null) return null;
         try {
-            // UP 必须重新读取接收资格和同批最终几何，旧 target 不是提交依据。
+            // UP 按当前接收资格与同批最终几何重新确定提交目标。
             update(source, geometry, keyboard, box, x, y);
             Snapshot<K> current = state.get();
             Drop<K> drop = session == source && current.target != null ? new Drop<>(current) : null;
@@ -268,7 +268,7 @@ public final class SceneDragDrop<K> {
         if (key == null) return null;
         Target<K> target = targets.get(key);
         SceneNode node = scrollSource == null ? target == null ? null : target.node : scrollSource.apply(key, geometry);
-        // 自定义祖先仍须属于目标的呈现路径，不能跨所属层或滚动后台。
+        // 自定义滚动祖先须属于目标的当前呈现路径与所属层。
         if (target == null || node == null || !SceneDragSupport.within(target.node, node) || !runtime.interactive(node)
                 || geometry.layerBoundary(target.node) != geometry.layerBoundary(node)) return null;
         return node;

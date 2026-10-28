@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 用户指定的dnd-kit普通Draggable参考；只声明内容、拖中样式和状态，不维护坐标或输入。 */
+/** 参照 dnd-kit 普通 Draggable 声明内容、拖中样式与状态，输入和位移由正式控件承接。 */
 public final class DraggablePage {
     private DraggablePage() {}
 
@@ -170,7 +170,7 @@ public final class DraggablePage {
         SceneNode surface =
                 GalleryStyle.frame(context, body, theme).size(Size.natural(), Size.natural());
         SceneNode node = SceneDraggable.create(context, surface, state);
-        // 视觉跟随正式焦点信号；不建立页面级键盘监听或另一套目标身份。
+        // 视觉直接读取正式焦点与拖动状态。
         surface.bind(
                 club.heiqi.uilib.ui.scene.runtime.NodeBinding.value(
                         () -> {

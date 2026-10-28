@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 实际状态/声明/布局/回放闭环；只复用既有固定字体夹具，不替代焦点路由。 */
+/** 通过实际状态、声明、布局与回放闭环核验焦点，固定字体仅提供度量。 */
 public final class FocusInputScenario extends TestApplication {
     private static final class FocusProbe implements SceneControl {
         boolean focused;
@@ -417,7 +417,7 @@ public final class FocusInputScenario extends TestApplication {
                                 session.close();
                                 drain.run();
                             });
-                    // 底层合同：直接关闭runtime后的focused可读与排队顺序，不用session替代关闭命令。
+                    // 直接关闭 runtime，核验 focused 可读性与排队顺序。
                     domain.execute(
                             () -> require(runtime[0].focusRouter().request(target[0]), "排队请求接受"));
                     domain.execute(

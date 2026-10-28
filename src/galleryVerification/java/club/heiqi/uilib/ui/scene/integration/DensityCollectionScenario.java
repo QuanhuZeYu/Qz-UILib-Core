@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import java.util.*;
 
-/** 复合控件与有限集合的真实密度换代；只记录实际行测量，不复制高度索引或输入路由。 */
+/** 在真实复合控件与有限集合中切换密度，记录实际行测量与呈现结果。 */
 public final class DensityCollectionScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("打开Select切密度保留弹层与实际命中且Tabs保留草稿", this::popupAndTabs);
@@ -116,7 +116,7 @@ public final class DensityCollectionScenario extends TestApplication {
             host.width = 420; host.height = 180; for (int i = 0; i < 600; i++) source.add(i);
             session = ScenePageSession.open(domain, host, host, context -> {
                 page = context; density = domain.signal(SceneDensity.COMFORTABLE); dark = domain.signal(false); page.density(density);
-                // 明确完整字体：此用法切密度只改变内距，估算值也始终不变。
+                // 完整字体固定，此用法切密度只改变内距并保留显式估算。
                 theme = () -> {
                     SceneTheme base = dark.get() ? SceneTheme.dark() : SceneTheme.light();
                     return base.withTextStyle(base.textStyle.withEm(18)).withDensity(density.get());

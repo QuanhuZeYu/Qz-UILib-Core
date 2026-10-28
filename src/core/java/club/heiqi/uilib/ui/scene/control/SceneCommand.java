@@ -3,8 +3,8 @@ package club.heiqi.uilib.ui.scene.control;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import java.util.Objects;
 
-/** 业务共享的可执行条件与动作；不持有控件或范围，不改变编辑历史。
- * 控件观察归其挂载，执行在调用方所属响应域内；见命令规格第1节。 */
+/** 封装共享可执行条件与业务动作，在调用方所属响应域内执行。
+ * 控件观察归各自挂载，范围与编辑历史由原机制管理；见命令规格第 1 节。 */
 public final class SceneCommand {
     private final ReadableSignal<Boolean> executable;
     private final Runnable action;
@@ -21,7 +21,7 @@ public final class SceneCommand {
     public ReadableSignal<Boolean> executable() { return executable; }
 
     /** 组合获准后的内部收尾；当前条件只由组合命令检查一次，收尾后直接执行原动作。
-     * 条件拒绝时两者均不执行；收尾或业务失败原样传播。 */
+     * 当前条件获准后依次执行收尾与业务动作，失败原样传播。 */
     public SceneCommand beforeExecute(Runnable preparation) {
         Objects.requireNonNull(preparation, "preparation");
         return new SceneCommand(executable, () -> {
@@ -30,7 +30,7 @@ public final class SceneCommand {
         });
     }
 
-    /** 尝试时读取当前条件，不能把上一帧enabled当成执行许可；业务失败原样传播。 */
+    /** 读取当前条件后尝试执行，业务失败原样传播。 */
     public boolean tryExecute() {
         if (!executable.get()) return false;
         action.run();

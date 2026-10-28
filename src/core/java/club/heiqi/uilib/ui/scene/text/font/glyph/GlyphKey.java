@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.GlyphRasterStyle;
 
-/** 光栅身份绑定实际不可变 source 快照，绝不以字体名称替换旧计划资源。 */
+/** 以实际不可变 source 快照、字号、glyphId 与变体标识光栅需求。 */
 public final class GlyphKey {
     public final FontSource source;
     public final float size;

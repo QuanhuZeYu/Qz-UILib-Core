@@ -25,7 +25,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 正式页面、真实输入与软件矩形回放；业务期望不读取框架内部差异算法。 */
+/** 以业务期望核验正式页面、真实输入与软件矩形回放中的动态结构。 */
 public final class DynamicStructureScenario extends TestApplication {
     private static final class Software implements SceneHost, SceneTextMeasurer {
         final SoftwareSceneScenario.SoftwareHost metrics = new SoftwareSceneScenario.SoftwareHost();

@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 
 import java.util.Objects;
 
-/** 封闭值载荷：不引用节点、不读回布局；嵌套计划均为同代已定位值。 */
+/** 保存同代已定位的封闭绘制值，回放直接消费载荷与嵌套计划。 */
 public final class PaintCommand {
     public enum Kind {
         RECT,
@@ -71,7 +71,7 @@ public final class PaintCommand {
                     || right - left > Integer.MAX_VALUE
                     || bottom - top > Integer.MAX_VALUE)
                 throw new IllegalArgumentException("线段超出布局坐标范围");
-            // 仅作保守包络；消费者必须使用line端点生成四角，不能绘制此box。
+            // box 供保守剔除，实际绘制按 line 端点生成四角。
             return new LayoutBox((int) left, (int) top, (int) (right - left), (int) (bottom - top));
         }
     }
@@ -79,7 +79,7 @@ public final class PaintCommand {
     /** IMAGE的呈现分支由控件定义，backend仅依据资源事实选择；null表示该分支留空。 */
     public final PaintPlan pendingPaint, failedPaint, readyOverlay;
 
-    /** 只引用本计划中先执行的IMAGE不可变命令；延后overlay复用它已作出的选择，不重画原图。 */
+    /** 引用本计划先执行的 IMAGE，延后 overlay 复用该次资源分支选择。 */
     public final PaintCommand branchSource;
 
     private PaintCommand(
@@ -168,7 +168,7 @@ public final class PaintCommand {
     private static final PaintCommand ORDER_BARRIER = new PaintCommand(Kind.ORDER_BARRIER,
             new LayoutBox(0, 0, 0, 0), null, 0, null, null, null, null, null);
 
-    /** 呈现组的封闭提交边界；无几何或资源，不受裁剪、透明度及变换影响。 */
+    /** 呈现组的纯提交边界，始终独立于裁剪、透明度与变换生效。 */
     public static PaintCommand orderBarrier() { return ORDER_BARRIER; }
 
     /** 当前命令的页面裁剪，包含原局部矩形clip经过实际矩阵后的精确区域。 */
@@ -185,7 +185,7 @@ public final class PaintCommand {
         PaintCommand source=branchSource==null?null:branchSource.withGeometry(outer,externalClip,mapped);
         SceneTransform combined=outer.multiply(transform);SceneClipRegion region=shapeClip.transformed(outer).intersect(externalClip);
         LayoutBox localClip=clip;
-        // 原单位坐标+矩形裁剪继续原值型合同；普通节点不用新geometry载荷才能正确回放或平移。
+        // 单位变换下将矩形区域归回原 clip 字段，保持矩形回放与平移语义。
         if(combined.identity()&&(region.unbounded()||region.rectangular())){
             if(!region.unbounded())localClip=clip==null?region.bounds():clip.intersect(region.bounds());
             region=SceneClipRegion.UNBOUNDED;
@@ -204,7 +204,7 @@ public final class PaintCommand {
         return image(box, clip, image, (TextLayout) null);
     }
 
-    /** 旧手工载荷不声明占位；alt仅作文字元数据，backend不据此另造UI。 */
+    /** 手工图像载荷仅携带 alt 元数据，占位呈现由带分支的入口声明。 */
     public static PaintCommand image(
             LayoutBox box, LayoutBox clip, ImagePlacement image, TextLayout alt) {
         return new PaintCommand(
@@ -256,7 +256,7 @@ public final class PaintCommand {
                 source);
     }
 
-    /** 封闭端点/线宽事实；不持有live节点，不以clip裁短后重新计算方向。 */
+    /** 封装原始端点与线宽，裁剪仅限制覆盖区域，方向沿原端点计算。 */
     public static PaintCommand line(
             float x0, float y0, float x1, float y1, float thickness, LayoutBox clip, int color) {
         Line line = new Line(x0, y0, x1, y1, thickness);
@@ -264,7 +264,7 @@ public final class PaintCommand {
                 Kind.LINE, line.bounds(), clip, color, null, null, null, null, null, null, line);
     }
 
-    /** 视频是同一有序计划的封闭值，不读取播放会话或包含 GPU 句柄。 */
+    /** 将视频帧定位作为封闭值加入同一有序计划。 */
     public static PaintCommand video(LayoutBox box, LayoutBox clip, club.heiqi.uilib.ui.scene.video.VideoPlacement video) {
         return new PaintCommand(Kind.VIDEO, box, clip, 0xFFFFFFFF, null, null, null, null, null, null, null,
                 Objects.requireNonNull(video, "video"));

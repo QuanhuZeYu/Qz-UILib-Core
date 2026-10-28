@@ -11,7 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 只消费 Task3 的已展开 token；不执行宏、不共享全局、不接触字体或宿主。 */
+/** 消费展开游标提供的 token，构造保留原文来源的公式 AST。 */
 final class MathParser {
     static final class Failure extends RuntimeException {
         final MathLayout.Diagnostic diagnostic;
@@ -183,7 +183,7 @@ final class MathParser {
         take();
     }
 
-    /** 调用来源可能不单调，范围必须求 union；不把最后展开索引冒充原文范围。 */
+    /** 合并实际 token 的来源并集，支持宏调用与参数的非单调来源。 */
     private Node node(
             Kind kind,
             int from,
@@ -1468,7 +1468,7 @@ final class MathParser {
         return node(kind, from, value, null, null, null, null, new DelimiterSpec(raw, group, size));
     }
 
-    /** 本次环境的语法与默认策略；不保存读列、读行或索引回填的可变状态。 */
+    /** 保存本次环境的语法与默认布局策略，读列和读行状态各归所属阶段。 */
     private static final class EnvironmentPolicy {
         final String name;
         final MathEnvironmentSpec spec;
@@ -1947,7 +1947,7 @@ final class MathParser {
         return new CdPart(arrow, next);
     }
 
-    /** 标签的来源仍从@开始，到各自闭合方向符结束，不把后续对象吞入标签。 */
+    /** 标签来源从 @ 至各自闭合方向符，后续对象按独立 cell 读取。 */
     private CdPart cdLabel(List<Node> parts, int next, int sourceStart, String direction, Token start) {
         List<Node> values = new ArrayList<Node>();
         while (next < parts.size()) {

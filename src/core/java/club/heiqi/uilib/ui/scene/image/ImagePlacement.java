@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.image;
 
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
-/** 绘制计划的值型几何，不含节点/callback/GL句柄；fractional quad保持实际比例。 */
+/** 图像绘制计划的纯值几何，以 fractional quad 保持实际比例。 */
 public final class ImagePlacement {
     public final ImageContent content;
     public final float x, y, width, height;

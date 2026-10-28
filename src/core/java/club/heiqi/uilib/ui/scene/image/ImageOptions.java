@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.image;
 import java.util.Objects;
 import club.heiqi.uilib.ui.scene.layout.Size;
 
-/** 图像声明：尺寸沿Size，未知来源占位不提供宽高比；document默认只缩大图。 */
+/** 图像呈现声明，尺寸沿 Size，来源比例从已知内容解析；document 默认只缩大图。 */
 public final class ImageOptions {
     public enum Fit {
         CONTAIN,
@@ -133,7 +133,7 @@ public final class ImageOptions {
                 tooltip);
     }
 
-    /** 各项独立启用，默认关闭；图标声明不隐含库存操作。 */
+    /** 分别声明图标覆盖层，默认关闭；库存动作归业务处理。 */
     public ImageOptions quantity(boolean value) {
         return new ImageOptions(
                 width,

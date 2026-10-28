@@ -25,7 +25,7 @@ final class SettingsUi extends SceneAppearance {
                 context,
                 () -> {
                     SceneTheme source = context.theme().get(), preview = model.theme().get().sceneTheme();
-                    // 只预览配色；字体、密度、尺寸与动效沿同一正式主题，不再缩小共享设置页。
+                    // 局部预览只替换配色，字体、密度、尺寸与动效沿用正式主题。
                     return source.withColors(preview.panel, preview.button, preview.hover, preview.pressed,
                             preview.focus, preview.disabled, preview.disabledText, preview.tooltip, preview.tooltipText)
                             .withTextStyle(source.textStyle.withColor(preview.textStyle.color));
@@ -115,7 +115,7 @@ final class SettingsUi extends SceneAppearance {
         return motion.scroll(content.size(Size.fill(1), Size.fill(1)).clip(true).scrollable(true));
     }
 
-    /** 正文与添加页持续显示溢出范围，低窗不依赖悬停才发现滚动。 */
+    /** 正文与添加页持续显示滚动提示，使低窗溢出范围直接可见。 */
     SceneScrollArea.Area scrollArea(SceneNode content) {
         return SceneScrollArea.create(
                 context,

@@ -7,8 +7,8 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** runtime唯一焦点权威。范围进入/返回按spec6.3.1选择；普通失活、清除不补选。
- * 复用声明树和挂载代际，恢复记录只在覆盖期间持有，不持有第二棵输入树。 */
+/** 维护 runtime 唯一焦点，按声明树与挂载代际核验资格。
+ * 范围进入或返回按核心规格选择目标，普通失活与清除保留空焦点；覆盖期间持有合法恢复记录。 */
 public final class SceneFocusRouter {
     private static final class Range {
         final MountHandle modal; // null为页面；页面非模态根共享同一输入范围。
@@ -28,7 +28,7 @@ public final class SceneFocusRouter {
     private final Signal<Boolean> keyboardCue;
     private final List<Range> ranges = new ArrayList<>();
     private MountHandle owner, pendingReveal;
-    // 仅记录已发出的控件通知，不参与焦点资格或路由决定；owner是唯一权威。
+    // 记录控件通知进度，实际焦点始终读取 owner。
     private MountHandle notifiedOwner;
     private static final class FocusLoss {
         final SceneNode node;
@@ -55,17 +55,17 @@ public final class SceneFocusRouter {
         retainedView = retained::get;
         // 初始自动逻辑焦点保持安静；真实键盘或辅助导航再显示线索，见主题规格。
         keyboardCue=runtime.domain().signal(false);
-        view = value::get; // 只读包装保留依赖追踪，不暴露可强转的写端。
+        view = value::get; // 只读包装保留依赖追踪，写端由路由器持有。
         ranges.add(new Range(null));
     }
 
-    /** 无焦点为null，读取只观察，不结算声明或执行选择。 */
+    /** 只读观察当前焦点，无焦点时为 null。 */
     public ReadableSignal<SceneNode> focused() {
         runtime.domain().checkAccess();
         return view;
     }
 
-    /** 一次实际输入范围的只读有效性联系；内容继续显示不延长已结束的模态代际。 */
+    /** 按原范围及模态代际提供只读有效性联系。 */
     public final class RangeHandle {
         private final Range range;
         private RangeHandle(Range range) { this.range = range; }
@@ -73,18 +73,18 @@ public final class SceneFocusRouter {
             runtime.domain().checkAccess();
             return !closed && ranges.contains(range) && (range.modal == null || alive(range));
         }
-        /** 原范围仍为唯一当前范围；被内层覆盖的active范围不能继续消费旧KEY。 */
+        /** 核验原范围仍有效且位于当前输入栈顶。 */
         public boolean current() { runtime.domain().checkAccess(); return active() && top() == range; }
     }
 
-    /** 捕获当前范围，不选择焦点；异步呈现意图可据此拒绝已结束范围的旧请求。 */
+    /** 捕获当前输入范围联系，供异步意图核验原范围有效性。 */
     public RangeHandle captureRange() {
         runtime.domain().checkWrite();
         revalidate();
         return new RangeHandle(top());
     }
 
-    /** 当前owner及被覆盖范围的合法恢复记录；供按需视图有限保留，不是另一份焦点权威。 */
+    /** 投影当前 owner 与被覆盖范围的合法恢复目标，供按需视图有限保留。 */
     public ReadableSignal<List<SceneNode>> retainedFocus() {
         runtime.domain().checkAccess(); return retainedView;
     }
@@ -111,7 +111,7 @@ public final class SceneFocusRouter {
         if(keyboardCue.get()!=next) {keyboardCue.set(next);runtime.invalidatePaint();}
     }
 
-    /** 域内受控请求，可从handler调用；无效/异runtime/旧token返回false，不激活业务。 */
+    /** 在域内请求合法挂载焦点，核验失败返回 false；业务激活由单独入口处理。 */
     public boolean request(MountHandle target) {
         runtime.domain().checkWrite();
         Objects.requireNonNull(target, "target");
@@ -124,12 +124,12 @@ public final class SceneFocusRouter {
         return true;
     }
 
-    /** 控件的显式键盘导航意图复用唯一owner，并只为本意图显露目标；普通request仍不追焦。 */
+    /** 按显式键盘导航意图切焦点并请求一次必要显露，普通 request 只切焦点。 */
     public boolean navigateTo(MountHandle target){
         runtime.domain().checkWrite();Objects.requireNonNull(target);if(!local(target)||!target.node().focusable())return false;keyboardInput();if(!request(target))return false;pendingReveal=owner;return true;
     }
 
-    /** 由真实指针悬停交互切换焦点，不把鼠标选择画成键盘导航线索。 */
+    /** 按指针悬停意图切焦点，并采用指针输入线索。 */
     public boolean pointTo(MountHandle target) {
         runtime.domain().checkWrite();
         if (!request(target)) return false;
@@ -137,7 +137,7 @@ public final class SceneFocusRouter {
     }
 
     /** 按spec6.2当前范围的逻辑前序循环；调用方先结算声明。返回是否有有效候选，
-     * 单项仍返回true但不重复通知，无焦点正向取首项/反向取末项；不激活控件。 */
+     * 单项返回 true 并复用原焦点，无焦点时按方向选择首项或末项；此入口仅导航。 */
     public boolean navigate(boolean backward) {
         runtime.domain().checkWrite();
         keyboardInput();
@@ -214,7 +214,7 @@ public final class SceneFocusRouter {
         if (pending != null) pending.close();
     }
 
-    /** 激活唯一当前焦点，不补选或改变owner；标准键盘按钮复用同一业务click路径。 */
+    /** 通过共同 click 路径激活当前焦点，当前 owner 保持原值。 */
     public boolean activate() {
         runtime.domain().checkWrite();
         keyboardInput();
@@ -227,7 +227,7 @@ public final class SceneFocusRouter {
         return true;
     }
 
-    /** 清除当前焦点并取消当前待进入选择；不取消被覆盖外层的合法恢复记录。 */
+    /** 清除当前焦点与待进入选择，被覆盖外层的合法恢复记录继续保留。 */
     public void clear() {
         runtime.domain().checkWrite();
         if (!closed) cancelPending();
@@ -235,7 +235,7 @@ public final class SceneFocusRouter {
         setOwner(null);
     }
 
-    /** 批次失败只丢弃尚未执行的范围退出意图，不清除当前焦点或恢复规则。 */
+    /** 批次失败时结束待执行范围退出意图，当前焦点与合法恢复记录继续沿原规则维护。 */
     void cancelScopeExit() { scopeExit = null; }
 
     private void cancelPending() {
@@ -252,12 +252,12 @@ public final class SceneFocusRouter {
         SceneNode before = owner == null ? null : owner.node();
         SceneNode after = target == null ? null : target.node();
         if (before != after) {
-            // 记录失焦当刻的原因；终止preedit的Signal可能使下一批布局失效，不能把失活改判为正常BLUR。
+            // 按失焦当刻资格记录原因，后续 preedit 清理引发的失效沿用该原因。
             if (before != null) pendingFocusLosses.add(new FocusLoss(before, runtime.interactive(before)));
             runtime.invalidateComposition(before);
         }
         owner = target;
-        // 资格扩展失败不能截断已完成的owner转换；先结束许可、发布同一事实并通知，再传播原首错。
+        // owner 转换后先结束失效许可、发布事实并通知，资格扩展失败沿原通道保留首错。
         Throwable failure = runtime.keyFocusChanged(after);
         try { publishRetained(); }
         catch (RuntimeException | Error error) { failure = SceneRuntime.collectFailure(failure, error); }
@@ -271,9 +271,9 @@ public final class SceneFocusRouter {
 
     private void notifyControls() {
         // Signal订阅与控件失焦回调均可同步request；每次回调后重新读取唯一owner。
-        // 先推进通知游标再调用扩展，嵌套转移不会覆盖已经发布的新通知。
+        // 先推进通知游标再调用扩展，重入转移从最新通知进度继续。
         while (true) {
-            // 实际离开按发生顺序保存，Signal订阅中离开再返回也不能吞掉BLUR提交。
+            // 按发生顺序处理实际离开，即使订阅同步切回仍结算原 BLUR。
             FocusLoss loss = pendingFocusLosses.poll();
             if (loss != null) {
                 SceneNode lost = loss.node;
@@ -291,8 +291,8 @@ public final class SceneFocusRouter {
         }
     }
 
-    /** 仅呈现准备消费；读取焦点不推进。失活、换owner或卸载会取消旧意图，
-     * 无法修复的裁剪也只尽力一次，不在后续内容变化或用户滚动时追随。 */
+    /** 呈现准备消费一次显露意图，失活、换 owner 或卸载时结束。
+     * 裁剪仅按本次几何尽力处理，后续滚动使用独立意图。 */
     MountHandle takeReveal() {
         runtime.domain().checkWrite();
         revalidate();
@@ -377,7 +377,7 @@ public final class SceneFocusRouter {
                 if (ranges.size() > found + 1) ranges.subList(found + 1, ranges.size()).clear();
             } else {
                 Range previous = top();
-                // 未显示的暂态范围没有owner时，不能覆盖合法旧记录；已结束范围的owner也不能写进外层。
+                // 仅保存仍属原栈顶范围的合法 owner，其他暂态沿用已有恢复记录。
                 if (previous == previousTop && local(owner) && contains(previous, owner.node()))
                     previous.saved = owner;
                 List<SceneNode> chain = new ArrayList<>();
@@ -387,7 +387,7 @@ public final class SceneFocusRouter {
                 entering = true;
             }
         }
-        // 只删除被覆盖记录不会改变前台范围，不能重选其焦点或覆盖主动clear。
+        // 仅在栈顶范围实际变化时启动进入或返回选择。
         // modal属性关闭后目标可能仍是非模态可交互节点，但真正返回仍释放旧owner。
         if (top() != previousTop) {
             cancelNavigation();
@@ -401,7 +401,7 @@ public final class SceneFocusRouter {
         }
     }
 
-    /** 声明结算结束才选目标；无待转换则不遍历候选树，清除不会被下一帧补回。 */
+    /** 声明结算后处理待进入范围；稳定范围保留当前焦点及显式清除结果。 */
     void prepareScopes() {
         runtime.domain().checkWrite();
         if (closed) return;

@@ -16,8 +16,8 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 
-/** 共享CPU内容owner。worker只写有界完成入口；宿主线程drain才投各domain，绝不从worker运行direct域。
- * 缓存、排队和实际RGBA总字节均有界。活跃消费者超预算明确失败，不静默删除或每帧重试。
+/** 拥有共享 CPU 图像内容，worker 写有界完成队列，宿主线程 drain 后向各 domain 递交。
+ * 缓存、任务与实际 RGBA 总字节分别有界，活跃消费者超预算时明确失败。
  */
 public final class SharedImageService implements ImageService, AutoCloseable {
     public static final class Budget {
@@ -45,7 +45,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
     private final ThreadPoolExecutor workers;
     private final LinkedHashMap<ImageSource, Entry> entries = new LinkedHashMap<>();
     private final LinkedHashSet<RequestAttempt> completed = new LinkedHashSet<>();
-    // 登记只随活跃 Lease；拒绝不占资源条目，也不进入自动重试队列。
+    // 活跃 Lease 登记资源条目，拒绝结果仅归当前租约。
     private final LinkedHashSet<Subscription> consumers = new LinkedHashSet<>();
     private long request, bytes;
     private boolean closed;
@@ -102,7 +102,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             return true;
         }
 
-        // completion与Entry当前快照属于同一次请求；转交发布不重复计费。
+        // completion 与 Entry 快照同属本次请求，内容交接沿用已有字节计费。
         private void account(ImageState next) {
             long nextBytes = next == null || next.content == null ? 0 : next.content.bytes();
             bytes += nextBytes - retainedBytes;
@@ -114,7 +114,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             entry.state = next;
         }
 
-        // 先解除归属再调用close，异常或重复取消不会再次释放；Task自身仍可在call中幂等关闭。
+        // 先解除任务归属再调用 close，Task 在 call 内同样支持幂等收尾。
         private void closeSnapshot() throws Exception {
             ImageLoader.Task owned = snapshot;
             snapshot = null;
@@ -190,7 +190,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
             try {
                 Callable<ImageContent> load = loader.prepare(entry.source);
                 synchronized (SharedImageService.this) {
-                    // prepare在锁外执行；其迟到快照仍归此attempt，不能清理后来的请求。
+                    // prepare 在锁外执行，迟到快照按原 attempt 身份清理。
                     snapshot = load instanceof ImageLoader.Task ? (ImageLoader.Task) load : null;
                     if (!current()) {
                         closeSnapshot();
@@ -362,7 +362,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         publish(subscribers, Collections.nCopies(subscribers.size(), next));
     }
 
-    /** 资源包换代只重启资源依赖；HTTP/调用方独立位图不随资源包取消。 */
+    /** 资源包换代时重启其所属依赖，HTTP 与独立位图继续沿原来源更新。 */
     public void resourcesReloaded() {
         LinkedHashSet<ImageSource> sources = new LinkedHashSet<>();
         synchronized (this) {
@@ -399,7 +399,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         return false;
     }
 
-    /** 唯一宿主资源入口；不逐控件轮询。每次限额收完成、启动任务及安全snapshot。 */
+    /** 宿主统一资源入口，限额领取完成结果、启动任务并发布安全快照。 */
     public void drain() {
         checkHost();
         List<Subscription> subscriptions = new ArrayList<>();
@@ -428,7 +428,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
                 if (start.size() < budget.completions && entry.attempt.claimStart())
                     start.add(entry.attempt);
         }
-        // 通知和启动都是本批已接受的工作；一个失败不能遗失完成结果或截断其余启动。
+        // 逐项执行本批已接受的通知与启动，保留首错并继续完成其余工作。
         for (RequestAttempt attempt : start) {
             try { attempt.start(); }
             catch (RuntimeException | Error next) {
@@ -439,7 +439,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         rethrow(failure);
     }
 
-    /** 宿主呈现结果只作用于仍使用同一不可变内容的当前请求；旧plan错误不能覆盖reload。 */
+    /** 按来源、内容身份与请求代际核验宿主呈现结果，再发布到当前请求。 */
     public void presentation(long identity, boolean pending, String failure) {
         presentation(identity, pending, "upload", failure);
     }
@@ -483,7 +483,7 @@ public final class SharedImageService implements ImageService, AutoCloseable {
         publish(subscriptions, notifications);
     }
 
-    /** 一个domain的通知错误不截断其余有效消费者；沿原通道保留首错及其余原因。 */
+    /** 逐项通知有效消费者，沿原通道报告首错并附加其余原因。 */
     private void publish(List<Subscription> subscriptions, List<ImageState> notifications) {
         Throwable failure = null;
         for (int i = 0; i < subscriptions.size(); i++) {

@@ -11,9 +11,8 @@ import java.util.Map;
 import com.ibm.icu.text.UnicodeSet;
 
 /**
- * 版本化不可变 Emoji property/RGI 数据；ICU76 的 Unicode16 属性不能代表 Emoji17。
- * 字体升级一并重载此数据。普通 Unicode/Bidi/语言断行仍执行 ICU76.1，
- * 新 RGI trie 补充整体边界，不宣称整个 UAX29 已升级到 Unicode17。
+ * 版本化不可变 Emoji17 property/RGI 数据，字体换代时一并重载。
+ * RGI trie 补充完整序列边界，普通 Unicode、Bidi 与语言断行继续使用 ICU76.1。
  */
 public final class EmojiData {
     public final String version;
@@ -120,7 +119,7 @@ public final class EmojiData {
         current.terminal = true;
     }
 
-    /** 正式数据缺失/损坏就是资源初始化错误；不猜测新版本或静默使用 ICU 旧数据。 */
+    /** 从随包的固定版本数据初始化，缺失或损坏沿资源入口报告失败。 */
     public static EmojiData bundled(ClassLoader loader) throws IOException {
         String base = "assets/qz_uilib/unicode/emoji17/";
         try (InputStream p = required(loader, base + "emoji-data.txt");

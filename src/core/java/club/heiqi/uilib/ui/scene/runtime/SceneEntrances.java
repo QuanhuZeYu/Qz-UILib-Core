@@ -48,7 +48,7 @@ final class SceneEntrances {
         return state == null ? 1 : state.opacity;
     }
 
-    /** 显隐绑定均已结算后只检查活跃入场，完成者不再参与逐帧资格扫描。 */
+    /** 显隐声明结算后按资格修订检查活跃入场，完成时移出活跃集合。 */
     void settleVisibility() {
         long revision = runtime.interactionRevision().get();
         if (rangeRevision == revision && !visibilityDirty) return;

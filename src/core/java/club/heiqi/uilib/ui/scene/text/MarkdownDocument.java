@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.text.markdown.MarkdownAdapter;
 
 import java.util.Objects;
 
-/** 显式 Markdown 输入入口；转换一次，呈现继续消费共同文档，不增加 TextContent.Mode。 */
+/** 显式 Markdown 转换入口，返回供呈现复用的共同文档。 */
 public final class MarkdownDocument {
     private MarkdownDocument() {}
 

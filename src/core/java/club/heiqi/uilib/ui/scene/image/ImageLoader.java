@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.image;
 
 import java.util.concurrent.Callable;
 
-/** 宿主线程prepare取得安全资源快照；返回工作在有界worker运行，不能访问节点/GL/ResourceManager。 */
+/** 宿主线程的 prepare 捕获安全资源快照，返回工作在有界 worker 中消费该快照。 */
 public interface ImageLoader {
     Callable<ImageContent> prepare(ImageSource source) throws Exception;
 

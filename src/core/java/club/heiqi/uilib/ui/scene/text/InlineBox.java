@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 
-/** 中性行内对象的本批次度量；offset 指向显式声明的 U+FFFC，坐标不含宿主类型。 */
+/** 中性行内对象的本批度量，offset 指向显式声明的 U+FFFC。 */
 public final class InlineBox {
     public final int offset;
     public final float width, height, baseline;

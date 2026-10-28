@@ -1,12 +1,12 @@
 package club.heiqi.uilib.ui.media;
 
-/** 工程预算，不是规格常量。视频字节/条目含 current，时长只计未消费部分；core 与设备 PCM 分别限额。 */
+/** 可配置工程预算。视频字节与条目包含 current，时长只计未消费部分；core 与设备 PCM 分别限额。 */
 public final class MediaBudget {
     public static final MediaBudget DEFAULT = new MediaBudget(4, 8, 80L*1024*1024, 300_000_000L,
             64, 2L*1024*1024, 1_000_000_000L, 16, 256L*1024, 300_000_000L);
     public final int sessions, videoFrames, audioBlocks, deviceBuffers;
     public final int deferredPackets=512, presentationRecords=128, presentationLeases=16;
-    /** 顺序read忽略轨道需求时的独立raw延后存储，不冒充encoded packet。 */
+    /** 为顺序 read 返回的暂缓轨道保留独立 raw 解码结果预算。 */
     public final int deferredDecodedItems=64;
     public final long deferredDecodedBytes=8L*1024*1024, deferredDecodedNanos=2_000_000_000L;
     public final long deferredBytes=8L*1024*1024, deferredNanos=10_000_000_000L;

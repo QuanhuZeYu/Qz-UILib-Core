@@ -112,7 +112,7 @@ public final class SceneSortable {
         public Options<T, C> reorderMotion(MotionSpec value) {
             return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, dropAnimation, value, dropMotion);
         }
-        /** 非 null 时独占落下通道；取消也回到当前业务位置，不发布 Move。 */
+        /** 非 null 时使用此落下策略；取消仅回到当前业务位置，Move 归正常放下路径。 */
         public Options<T, C> dropMotion(MotionSpec value) {
             return new Options<>(draggable, accepts, autoScroll, autoScrollSpeed, transition, dropAnimation, reorderMotion, value);
         }

@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.image;
 import java.util.Objects;
 import club.heiqi.uilib.ui.scene.text.TextContent;
 
-/** 宿主准备的只读覆盖层/提示事实。格式转换在宿主完成，内容按当前主题派生，不持宿主palette或字号快照。 */
+/** 宿主格式转换后的只读覆盖层与提示事实，内容按当前主题派生。 */
 public final class ItemImageFacts {
     public final String quantity;
     public final TextContent tooltip;

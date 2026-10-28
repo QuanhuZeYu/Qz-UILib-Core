@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.control;
 import java.util.ArrayDeque;
 import java.util.Iterator;
 
-/** 只消费真实指针采集；几何换基与呈现时钟不能向窗口补样本。 */
+/** 以真实指针采集样本维护有限速度窗口，几何换基与呈现使用独立通道。 */
 final class ScenePointerVelocity {
     private static final long WINDOW = 64_000_000L;
     private static final class Sample {

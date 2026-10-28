@@ -64,7 +64,7 @@ public final class PaintPlan {
     }
 
     /** 唯一资源优先序：本层所有主命令及readyOverlay闭包先取得预算，pending/failed只进入下一层。
-     * 字体需求和图像pin/upload共享这些层。只遍历值片段，不执行分支，也不遍历branchSource。
+     * 字体需求与图像 pin/upload 共用这些值片段层，分支选择留给回放。
      * 同一片段引用只在最早可达层处理一次；资源owner仍按GlyphKey/内容identity去重。
      */
     public List<List<PaintCommand>> resourceLayers() {

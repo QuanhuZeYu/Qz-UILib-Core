@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.SceneLayouts;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 只声明通知区与业务意图，不另建计时、定位或输入实现。 */
+/** 以正式通知区组合页面业务意图。 */
 final class NotificationComponentsPage {
     private NotificationComponentsPage() {}
 

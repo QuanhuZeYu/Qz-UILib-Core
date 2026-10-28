@@ -32,7 +32,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 共享可执行条件必须同时约束即时业务意图与正式按钮，不能依赖上一帧enabled。 */
+/** 核验即时业务入口与正式按钮共同读取当前可执行条件。 */
 public final class CommandScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("保存命令即时重读条件且正式按钮共享动作", this::sharedCommand);

@@ -18,7 +18,7 @@ import java.util.List;
 
 /**
  * jsoup 1.19.1 的公开 trackPosition 接缝；位置是解析 fragment 的 UTF16。 CommonMark
- * 容器剥除的前缀通过字符投影恢复到完整原输入，不用搜索重复正文。 升级解析器须核对 sourceRange/endSourceRange、实体及 CRLF 的真实语料。
+ * 容器前缀通过字符投影恢复到完整原输入。升级解析器须核对 sourceRange/endSourceRange、实体及 CRLF 的真实语料。
  */
 final class HtmlSource {
     final String text;
@@ -36,7 +36,7 @@ final class HtmlSource {
     }
 
     HtmlSource sliceOriginal(int start, int end) {
-        // 投影按原文顺序单调排列；保留与范围相交的字符，重复边界不能用任意命中代替。
+        // 按单调原文投影取完整相交字符，重复边界用明确的开闭条件定位。
         int first = boundary(ends, start, true);
         int last = Math.max(first, boundary(starts, end, false));
         int[] slicedStarts = Arrays.copyOfRange(starts, first, last);
@@ -71,8 +71,8 @@ final class HtmlSource {
 
     /**
      * 固定 jsoup1.19.1 没有公开逐实体来源；复用成熟 consumeCharacterReference 及 reader.pos。
-     * 不复制实体词法/名称表，也不以解码字符串搜索原文。升级公开来源 token API 后删除反射。 每次 decode 持有自己的
-     * parser/reader；接缝变化显式失败，不改变实体解释。
+     * 直接复用成熟实体消费与位置事实，升级公开来源 token API 后删除反射。
+     * 每次 decode 独立持有 parser/reader，接缝变化时显式失败。
      */
     static final class Decoder implements AutoCloseable {
         private static final Method INITIALISE, REFERENCE;

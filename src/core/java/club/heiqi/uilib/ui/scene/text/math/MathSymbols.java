@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 固定参照的数学/文本符号事实，不依 Unicode 外观猜原子类别或字体。 font=main/ams 是参照事实类别，不是宿主字体绑定；生产字形选择仍由 UILib 字体管线负责。 */
+/** 固定参照的数学与文本符号事实，font=main/ams 表示参照类别，实际字形由 UILib 字体管线选择。 */
 public final class MathSymbols {
     private MathSymbols() {}
 
@@ -29,7 +29,7 @@ public final class MathSymbols {
     public static final class Entry {
         public final String mode, token, font, group, visibility;
 
-        /** null 表示此 token 没有替换字形（例如 \nobreak）；不能丢掉 token 或改为空字符。 */
+        /** null 表示该 token 没有替换字形（例如 \nobreak），解析仍保留其语义身份。 */
         public final String replace;
 
         public final MathCommandCatalog.Source source;

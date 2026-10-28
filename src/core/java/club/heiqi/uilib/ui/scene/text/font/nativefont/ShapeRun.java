@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.RandomAccess;
 
-/** 不可变HB顺序载荷；不包含face、native地址或宿主类型。 */
+/** 按 HB 输出顺序保存不可变字形值载荷。 */
 public final class ShapeRun extends AbstractList<ShapedGlyph> implements RandomAccess {
     public static final ShapeRun EMPTY = new ShapeRun(Collections.<ShapedGlyph>emptyList());
     private final List<ShapedGlyph> glyphs;

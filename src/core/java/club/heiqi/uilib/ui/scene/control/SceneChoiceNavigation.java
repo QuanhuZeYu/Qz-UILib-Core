@@ -75,7 +75,7 @@ final class SceneChoiceNavigation<T, K> implements SceneControl {
         return (from, backward) -> new SceneFocusTraversal.Cursor() {
             private boolean closed;
             public SceneFocusTraversal.Result prepare() {
-                // 边界可以含专用滚动区；其内部显式条不成为标签与面板间的额外Tab停靠。
+                // 专用滚动区与内部显式条共用本边界的单一逻辑入口。
                 if (closed || from != null) return SceneFocusTraversal.Result.end();
                 List<SceneNode> choices = available(); if (choices.isEmpty()) return SceneFocusTraversal.Result.end();
                 SceneNode target = page.runtime().focusRouter().focused().get();

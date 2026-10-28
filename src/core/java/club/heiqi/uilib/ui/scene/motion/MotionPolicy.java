@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.motion;
 
-/** 用户限制优先于局部与主题策略；不改变业务状态或输入资格。 */
+/** 优先按用户动效限制解析局部与主题策略，仅作用于呈现。 */
 public enum MotionPolicy {
     NORMAL, REDUCED, OFF;
     private static final MotionSpec FEEDBACK = MotionSpec.tween(120_000_000L, MotionSpec.SMOOTH);

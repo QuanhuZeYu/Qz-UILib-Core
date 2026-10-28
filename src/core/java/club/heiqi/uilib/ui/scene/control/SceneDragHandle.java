@@ -22,7 +22,7 @@ public final class SceneDragHandle extends SceneSymbolControl {
         SceneDragHandle control = new SceneDragHandle(theme);
         return new SceneNode().control(control).size(Size.natural(), Size.natural())
                 .bind((runtime, node, owner) -> {
-                    // 只发布实际尺寸变化；Computed的来源失效会先通知依赖，不能以它过滤纯配色变化。
+                    // 按实际最小尺寸变化发布，过滤主题纯配色失效。
                     club.heiqi.uilib.ui.reactive.Signal<Integer> minimum = runtime.domain().signal(theme.get().spacing(44));
                     control.minimum = minimum;
                     return NodeBinding.value(theme, (SceneNode self, SceneTheme value) -> {
@@ -38,7 +38,7 @@ public final class SceneDragHandle extends SceneSymbolControl {
     }
 
     @Override public MeasuredSize measure(SceneNode node, Constraints limits, SceneTextMeasurer text) {
-        // 热区是实际布局盒，主题密度和控件大小共同决定；不向裁剪外扩张命中。
+        // 热区使用主题密度与控件大小共同决定的布局盒，并遵守当前裁剪。
         int side = Math.max(symbolSize(node), theme.get().spacing(44) - node.padding() * 2);
         return new MeasuredSize(side, side);
     }

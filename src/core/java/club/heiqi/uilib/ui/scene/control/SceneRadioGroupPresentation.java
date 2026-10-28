@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 组根直接拥有选项、正式Flow与导航；轨道只添加同根表面，不复制布局属性。 */
+/** 组根统一拥有选项、正式 Flow 与导航，轨道仅组合该根表面。 */
 final class SceneRadioGroupPresentation extends SceneAppearance.Surface {
     private final SceneChoiceNavigation<?, ?> navigation;
     private final ReadableSignal<SceneRadioGroup.Variant> variant;

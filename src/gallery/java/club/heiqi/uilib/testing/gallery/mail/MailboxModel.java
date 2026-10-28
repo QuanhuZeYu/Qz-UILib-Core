@@ -14,7 +14,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.LinkedHashSet;
 
-/** 本地收件箱业务；打开、勾选和消息事实分别拥有权威，不从控件位置推断身份。 */
+/** 按稳定消息身份维护本地收件箱，打开、勾选与消息状态分别持有。 */
 public final class MailboxModel implements AutoCloseable {
     public enum Folder { INBOX, STARRED, ALL }
     public enum Category { PRIMARY, PROMOTIONS, SOCIAL }
@@ -95,7 +95,7 @@ public final class MailboxModel implements AutoCloseable {
             source.get(); Item item = byId.get(openedId.get()); return item == null ? null : item.value.get();
         });
     }
-    /** 分类计数独立于当前查询；声明绑定追踪同一消息来源，不另存一份邮箱快照。 */
+    /** 从共同消息来源计算文件夹计数，独立于当前查询。 */
     public int count(Folder selected) {
         int total = 0;
         for (Item item : source.get()) {
@@ -104,7 +104,7 @@ public final class MailboxModel implements AutoCloseable {
         }
         return total;
     }
-    /** 仅分类收件箱，查询和其他文件夹覆盖全部分类；不保存第二份消息集合。 */
+    /** 切换收件箱分类，查询与其他文件夹继续使用完整消息来源。 */
     public void setCategory(Category value) {
         if(category.get()!=value) {category.set(Objects.requireNonNull(value));checked.set(Collections.emptySet());requestedPage.set(0);}
         reading.set(false);
@@ -152,10 +152,10 @@ public final class MailboxModel implements AutoCloseable {
         normalizePage();
     }
     private void normalizePage() {
-        // 结果缩短时结束旧的越界翻页意图，后来的新消息不能使它复活。
+        // 结果缩短后将请求页归到当前有效页。
         requestedPage.set(pageIndex.get());
     }
-    /** 阅读动作仅归档当前稳定id，不借批量选择暂存或改动其他勾选。 */
+    /** 按当前稳定 id 归档阅读中的消息，批量选择独立维护。 */
     public void archive(String id) {
         Item item=require(id);Message m=item.value.get();item.value.set(m.flags(m.starred,m.read,false));
         retainVisibleSelection();feedback.set("已归档邮件，可在所有邮件中查看");
@@ -171,7 +171,7 @@ public final class MailboxModel implements AutoCloseable {
         for (Item item : new ArrayList<>(results.get())) if (checked.get().contains(item.id)) setRead(item.id, value);
         checked.set(Collections.emptySet());
     }
-    /** 样本身份随业务模型存活；页面只发布意图，候选分配不重复提交receive。 */
+    /** 样本序号归业务模型，每次收取意图分配当前可用稳定 id。 */
     public void receiveSample() {
         domain.checkWrite();
         String id;

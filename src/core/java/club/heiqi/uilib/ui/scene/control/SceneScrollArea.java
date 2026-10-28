@@ -67,7 +67,7 @@ public final class SceneScrollArea {
         Composition composition = new Composition(context);
         return composition.create(context, content, options, theme);
     }
-    /** 布局只观察轴/厚度投影；样式与活动期限不成为内容测量依赖。 */
+    /** 向布局投影轴与厚度，样式和活动期限由绘制与时间通道处理。 */
     private static final class Composition {
         final Signal<Axes> axes;
         final Signal<Integer> thickness;

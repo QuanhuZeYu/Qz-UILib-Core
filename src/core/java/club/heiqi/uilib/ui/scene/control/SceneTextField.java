@@ -64,7 +64,7 @@ public final class SceneTextField {
             SubmitPolicy policy) {
         return create(context,state,theme,readOnly,onSubmit,policy,() -> "");
     }
-    /** 提示属于呈现，不参与草稿、输入、提交、选区或复制。 */
+    /** 提示仅作空草稿呈现，编辑操作继续消费原草稿。 */
     public static SceneNode create(ScenePageContext context, SceneEditState state,
             ReadableSignal<SceneTheme> theme, ReadableSignal<Boolean> readOnly,
             Consumer<Submission> onSubmit, SubmitPolicy policy, ReadableSignal<String> placeholder) {
@@ -105,7 +105,7 @@ public final class SceneTextField {
         private int hintWidth=-1;
         private long hintMetrics=-1;
         private TextPolicy hintPolicy;
-        // 以下仅为呈现缓存，不是草稿、输入所有权或另一份编辑状态。
+        // 以下缓存文字布局、光标呈现与局部视口，编辑事实由 state 持有。
         private TextLayout source, presented;
         private Snapshot presentation;
         private int width = -1;
@@ -178,7 +178,7 @@ public final class SceneTextField {
             float height = full.height;
             for (TextLayout.Line line : full.lines())
                 height = Math.max(height, SceneTextPresentation.bottom(line));
-            // 空文仍取真实字体的自然行高；M 只测度量，不进入字段的文字或命中计划。
+            // 空文用 M 取得真实字体自然行高，实际文字与命中仍使用空草稿。
             if (height <= 0)
                 height = text.layout("M", node.style(), Integer.MAX_VALUE, bodyPolicy(node)).height;
             return new MeasuredSize(full.width, (int) Math.ceil(height));
@@ -205,7 +205,7 @@ public final class SceneTextField {
                     || boundary.lineAt(full) < 0)) boundary = null;
             int maximum = Math.max(0, full.width - Math.max(0, innerWidth - 1));
             int nextOffset = Math.min(offset, maximum);
-            // 光标/草稿/组字或真实排版区域变化各消费一次显露意图，不在稳定帧追滚动。
+            // 光标、草稿、组字或正文区域变化后，各消费一次显露意图。
             if (reveal
                     || geometryChanged
                     || width != innerWidth
@@ -348,7 +348,7 @@ public final class SceneTextField {
             int position = fromDisplay(presentation, hit.position);
             Snapshot current = state.snapshot().get();
             position = Math.max(0, Math.min(current.text.length(), position));
-            // DOWN 起选，MOVE/UP 只沿父 owner 延伸；松开不会重选或再次请求焦点。
+            // DOWN 建立选区起点，MOVE/UP 沿原 owner 延伸选区。
             state.select(
                     event.kind == ScenePointerEvent.Kind.DOWN ? position : current.anchor,
                     position);
@@ -363,7 +363,7 @@ public final class SceneTextField {
 
         private void requestReveal() {
             reveal = true;
-            // 同UTF-16位置换视觉边也需要刷新，不依赖select是否发布新值。
+            // 相同 UTF-16 位置切换视觉边时，单独发布呈现修订。
             viewChanged.set(!viewChanged.get());
         }
 
@@ -377,7 +377,7 @@ public final class SceneTextField {
             int available=Math.max(0,e.box.width-node.padding()*2);
             club.heiqi.uilib.ui.scene.text.TextStyle style=node.style().withColor(theme.get().disabledText);
             TextPolicy policy=bodyPolicy(node);
-            // 空草稿也能单独换方向/语言；提示不能沿用另一份排版策略的缓存。
+            // 提示布局按当前方向与语言维护缓存，空草稿策略变化同样使其失效。
             if(hint==null||!label.equals(hintValue)||!style.equals(hintStyle)||hintWidth!=available||hintMetrics!=revision||!policy.equals(hintPolicy)) {
                 hint=text.layout(label,style,available,policy);
                 hintValue=label;hintStyle=style;hintWidth=available;hintMetrics=revision;hintPolicy=policy;

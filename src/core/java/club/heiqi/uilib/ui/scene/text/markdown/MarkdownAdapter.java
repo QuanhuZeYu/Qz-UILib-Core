@@ -65,7 +65,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 固定 CommonMark 节点到 UILib 声明的转换；不保存库节点或派生几何。 */
+/** 将固定 CommonMark 节点转换为 UILib 共同声明与来源。 */
 public final class MarkdownAdapter {
     private final TextInput input;
     private final String raw;
@@ -127,7 +127,7 @@ public final class MarkdownAdapter {
         return new DocumentContent(content, input, diagnostics);
     }
 
-    /** 每次 parse 独立串联不可变宏快照；只在源码顺序走到公式时推进，不预扫描定义。 */
+    /** 每次 parse 按源码公式顺序串联独立的不可变宏快照。 */
     private static final class DocumentMathContext {
         private MathMacros macros = MathMacros.empty();
 
@@ -931,7 +931,7 @@ public final class MarkdownAdapter {
             int pos = sp == null ? e : at(sp);
             String source = raw.substring(pos, e).replace((char) 0, (char) 0xfffd),
                     target = output[row];
-            // sourceSpans可省略空行；line index与literal行序共同确定来源，不find重复字面串。
+            // sourceSpans 可省略空行，按 line index 与 literal 行序共同确定来源。
             int suffix = 0;
             while (suffix < source.length()
                     && suffix < target.length()
@@ -952,7 +952,7 @@ public final class MarkdownAdapter {
                 if (raw.charAt(e) == '\r' && q < raw.length() && raw.charAt(q) == '\n') q++;
                 b.append("\n", e, q, CODE_STYLE, null);
             }
-            // parser合成的EOF终换行不伪造来源；代码可见原空白保持输入中实际行结束符。
+            // 可见代码保留输入的实际行结束符，parser 合成的 EOF 换行仅作解析哨兵。
         }
         return b.finish();
     }
@@ -1073,7 +1073,7 @@ public final class MarkdownAdapter {
         }
         StringBuilder s = new StringBuilder();
         for (Unit u : decoded) s.append(u.text);
-        // 成熟 parser 的 literal 是语义事实；源词法只重建对应范围，绝不定位搜索重复文本。
+        // 以成熟 parser 的 literal 核验语义，按原词法投影重建对应来源。
         if (!s.toString().equals(((Text) n).getLiteral()))
             throw new IllegalStateException("CommonMark Text 来源解码不一致: " + n.getSourceSpans());
         List<LinkSpan> autoLinks = new ArrayList<>();
@@ -1288,7 +1288,7 @@ public final class MarkdownAdapter {
         }
     }
 
-    /** 仅累积期可变，finish 发布同一共同文本中的不可变语义范围；不持有 HTML 树。 */
+    /** 在累积期记录语义范围，finish 发布共同文本中的不可变声明。 */
     private static final class SemanticRun {
         final int start;
         final TextSemanticSpan.Kind kind;

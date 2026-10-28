@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 文件信息只消费宿主路径与配置事实，不解析文件或创建监视器。 */
+/** 从宿主路径与配置事实构建文件信息。 */
 final class SettingsFileSection {
     static SceneNode build(SettingsUi ui, Runnable reload) {
         SceneEditState path =

@@ -34,7 +34,7 @@ final class SceneHudLayout {
         public void paint(SceneNode n, SceneGeometryView geometry, PaintPlanBuilder paint) {}
     }
 
-    /** 用户缩放只作上限；适配只改变当前呈现，不覆盖位置草稿或内容自然尺寸。 */
+    /** 以用户缩放为上限适配当前呈现，位置草稿与内容自然尺寸分别保留。 */
     static final class Content extends Layout {
         final ReadableSignal<Float> scale;
         final ReadableSignal<Integer> width, height;
@@ -126,14 +126,14 @@ final class SceneHudLayout {
         }
 
         // 限位和像素对齐只形成呈现事实。零有效位移保持原值；真正移动受限起点时
-        // 使用当前可见盒，否则沿原始小数增量，避免点击变脏或放下跳回。
+        // 使用当前可见盒，否则沿原始小数增量，使点击保持原草稿、放下延续实际位置。
         private static double offsetAfterDrop(double original, int delta, int current,
                 double base, int room, boolean wasClamped) {
             int destination = clamp(current + (double) delta, room);
             if (delta == 0 || destination == current) return original;
             double candidate = wasClamped ? destination - base : original + delta;
             // IEEE 加法可能把半像素边界下侧的小数舍入到边界。优先保留小数；若其
-            // 投影已偏离本次落点，就使用该像素的精确中心偏移，不用 epsilon 补偿。
+            // 投影偏离本次落点时，改用该像素的精确中心偏移。
             return clamp(base + candidate, room) == destination ? candidate : destination - base;
         }
     }

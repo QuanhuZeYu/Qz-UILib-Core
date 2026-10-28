@@ -740,7 +740,7 @@ final class SoftwareSceneScenario extends TestApplication {
 
     private void customPlacementSizes() {
         SoftwareHost host = new SoftwareHost();
-        // 审计的两轴40/200突破；另测无bounds的固定值、自然min与fill max，避免镜像参数乘积。
+        // 分别核验两轴 40/200 突破、无 bounds 固定值、自然 min 与 fill max。
         Size fixed = Size.fixed(120).bounds(80, 120);
         invalidPlacement(host, fixed, true, 40);
         invalidPlacement(host, fixed, true, 200);

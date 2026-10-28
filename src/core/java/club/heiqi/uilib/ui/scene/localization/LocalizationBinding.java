@@ -7,8 +7,8 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 
-/** 将独立语言事实递交现有状态域；独立业务可用自己的Owner，页面关闭不会连带释放它。
- * 所有读取/文案创建/关闭在域内，通知可跨线程递交；关闭后的排队通知不触碰已释放派生。 */
+/** 将独立语言事实递交所属状态域，独立业务可用自身 Owner 管理绑定。
+ * 读取、文案创建和关闭均限域内，跨线程通知递交后核验绑定仍有效。 */
 public final class LocalizationBinding implements AutoCloseable {
     private final ReactiveDomain domain;
     private final Owner scope;
@@ -38,8 +38,8 @@ public final class LocalizationBinding implements AutoCloseable {
                                 Objects.requireNonNull(next, "snapshot");
                                 Object token = new Object();
                                 delivery = token;
-                                // 外部通知可能先排队，而域内新通知立即生效；只递交最新批次，不能随后倒退。
-                                // token 表示通知事实，不以 snapshot 身份合并同实例的新通知。
+                                // 按通知代际发布最新事实，使域内即时通知与外部排队通知保持单调。
+                                // 每次通知使用独立 token，同实例的新发布也形成新代际。
                                 if (!closed)
                                     domain.execute(
                                             () -> {

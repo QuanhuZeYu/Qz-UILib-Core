@@ -8,7 +8,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.function.Predicate;
 
-/** 让位只驱动现有相对偏移；插槽从同批几何读取，不保存第二套布局。 */
+/** 从同批几何读取插槽，通过现有相对偏移呈现让位。 */
 final class SceneSortableFlights<T, K, C> {
     /** 轨迹持有自己的插槽基准；局部坐标去掉滚动，跨容器时再转回世界坐标。 */
     private static final class Flight {
@@ -116,11 +116,11 @@ final class SceneSortableFlights<T, K, C> {
         if (old.x != x || old.y != y)
             row.offset.set(x == 0 && y == 0 ? SceneSortableMotion.Offset.ZERO : new SceneSortableMotion.Offset(x, y));
     }
-    /** 临时几何仅为当前交互续接服务；静止后不保留节点和业务快照。 */
+    /** 静止后释放交互续接使用的临时几何引用。 */
     void forget() { previous.clear(); }
     void clear() {
         java.util.List<SceneSortableModel.RowEntry<T, K, C>> rows = new java.util.ArrayList<>(flights.keySet());
-        // 先脱离轨迹归属；一条偏移的外部观察者失败不保留旧轨迹，也不阻断其它行归零。
+        // 先释放轨迹登记，再逐行归零，外部观察者失败后继续处理其余行。
         flights.clear(); forget(); pending = null;
         Throwable failure = null;
         for (SceneSortableModel.RowEntry<T, K, C> row : rows) {

@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.runtime.MountHandle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 范围进入/返回使用真实声明、绑定、挂载和PaintPlan，不mock焦点策略。 */
+/** 通过真实声明、绑定、挂载与 PaintPlan 核验范围进入和返回。 */
 public final class FocusScopeScenario extends TestApplication {
     private final class Page {
         final ReactiveDomain domain = ReactiveDomain.direct();
@@ -247,7 +247,7 @@ public final class FocusScopeScenario extends TestApplication {
                                 p.runtime.preparePresentation();
                             });
                     p.expect(p.b);
-                    // 完全不结算进入选择的短范围也不能把空owner写回覆盖已有记录。
+                    // 短暂范围尚未选焦点便退出时，核验原合法恢复记录继续保留。
                     p.domain.execute(
                             () -> {
                                 MountHandle one =
@@ -369,7 +369,7 @@ public final class FocusScopeScenario extends TestApplication {
                                 p.aEnabled.set(true);
                                 p.runtime.preparePresentation();
                             });
-                    // 动态声明改变顺序；状态绑定自己驱动children，不从handler改树。
+                    // 通过状态绑定驱动 children 顺序变化。
                     p.domain.execute(
                             () -> {
                                 SceneNode c = new SceneNode().focusable(true).text("C");
@@ -452,7 +452,7 @@ public final class FocusScopeScenario extends TestApplication {
                                             .focusRouter()
                                             .request(p.runtime.captureMount(chosen[0]));
                                     if (clear) p.runtime.focusRouter().clear();
-                                    // 独立根不是所属内层；后台结束不能重新运行未变前台的进入策略。
+                                    // 独立后台根结束时，前台范围延续原焦点。
                                     p.outerHandle.detach();
                                     p.runtime.preparePresentation();
                                     require(

@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 源码只解析一次；内部 AST 不承诺为长期公开接口，布局与主题均不修改它。 */
+/** 一次解析源码并保存内部只读 AST，布局与主题从该声明派生。 */
 public final class MathContent {
     public final String source;
     public final List<MathLayout.Diagnostic> diagnostics;
@@ -69,7 +69,7 @@ public final class MathContent {
         }
     }
 
-    /** 字符 parser 的私有桥，不向业务发布展开索引；后续 Node payload 复制也由此统一出口。 */
+    /** 为字符解析器映射原文范围，并统一复制 Node payload。 */
     static final class ParserBridge {
         final String text;
         final int[] starts, ends;
@@ -87,7 +87,7 @@ public final class MathContent {
                     ss.add(token.sourceStart);
                     es.add(token.sourceEnd);
                 }
-                // 控制词和随后字母仍是两个 token，绝不能合成另一个控制词。
+                // 用分隔符保留控制词与随后字母的独立 token 身份。
                 if (tokenText.matches("\\\\[A-Za-z@]+")
                         && i + 1 < tokens.size()
                         && !tokens.get(i + 1).text.isEmpty()

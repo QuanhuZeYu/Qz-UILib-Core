@@ -14,8 +14,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 固定参照的不可变事实目录，供自有解析/宏能力消费；登记不代表生产支持或视觉验收。 数据和原始 MIT 许可位于 assets/qz_uilib/math/catalog；参照 renderer
- * 只存在于测试资料。 字符串宏保留完整源码，函数宏只保留名称、kind 与来源，不执行或携带 JavaScript 算法。
+ * 为自有解析与宏展开提供固定参照事实，生产能力与视觉结果由各自实现和验收确定。
+ * 数据与 MIT 许可位于 assets/qz_uilib/math/catalog，参照 renderer 归测试资料。
+ * 字符串宏保留完整源码，函数宏记录名称、kind 与来源。
  */
 public final class MathCommandCatalog {
     private MathCommandCatalog() {}
@@ -50,7 +51,7 @@ public final class MathCommandCatalog {
         return Commands.IMPLICIT;
     }
 
-    /** 固定版本/commit/hash 与 default.* 配置事实；不可变，布局不得从此推断生产能力。 */
+    /** 固定版本、commit、hash 与 default.* 配置的不可变参照事实。 */
     public static Map<String, String> reference() {
         return Reference.VALUES;
     }
@@ -63,7 +64,7 @@ public final class MathCommandCatalog {
     public static final class Source {
         public final String referenceVersion, commit, path, url;
 
-        /** 固定 bundle 的登记行号；不是 path 所指源码的行号。 */
+        /** 固定 bundle 中的登记行号，源码位置由 path 单独表达。 */
         public final int distLine;
 
         Source(String path, int distLine, String url) {
@@ -80,7 +81,7 @@ public final class MathCommandCatalog {
         public final int numArgs, numOptionalArgs;
         public final boolean allowedInArgument, allowedInText, allowedInMath, infix, primitive;
 
-        /** 空列表与未指定类型由 argTypesSpecified 区分，不能丢失 primitive/raw 等参数来源。 */
+        /** 用 argTypesSpecified 区分空列表与未指定类型，保留 primitive/raw 等参数声明。 */
         public final boolean argTypesSpecified;
 
         public final List<String> argTypes;
@@ -130,7 +131,7 @@ public final class MathCommandCatalog {
         /** string 宏是完整 expansion（包括 # 参数、空白与换行）；function 宏为 null。 */
         public final String expansion;
 
-        /** 保留 descriptor 接缝；此目录不携带 JS 实现，始终为 null，源实现定位见 source。 */
+        /** 保留值为 null 的 descriptor 接缝，源实现由 source 定位。 */
         public final String implementation;
 
         public final Source source;
@@ -227,7 +228,7 @@ public final class MathCommandCatalog {
         }
     }
 
-    // 同包符号目录复用此 UTF-8 TSV 解码；字段不 trim，反斜杠空格与宏空白具有语义。
+    // 同包符号目录共用 UTF-8 TSV 解码，字段保留有语义的反斜杠空格与宏空白。
     static List<String[]> readFacts(String file) {
         String path = "/assets/qz_uilib/math/catalog/" + file;
         InputStream stream = MathCommandCatalog.class.getResourceAsStream(path);

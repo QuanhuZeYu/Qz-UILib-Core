@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 声明对应关系与挂载订阅分离，旧声明不再取得已转移条目。 */
+/** 分别维护声明对应关系与挂载订阅，已转移条目由新归属管理。 */
 final class ChildrenBinding implements NodeBinding {
     private static final class State {
         final Set<SceneNode> associated =

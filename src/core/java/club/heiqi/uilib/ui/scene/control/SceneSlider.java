@@ -83,7 +83,7 @@ public final class SceneSlider {
         return node;
     }
     public static ReadableSignal<Preview> preview(SceneNode node){if(!(node.control() instanceof Control))throw new IllegalArgumentException("不是滑杆");Control control=(Control)node.control();return control.gesture.preview::get;}
-    /** 只读的有符号轨道形变，单位为 scene 像素；读取不会推进回弹。 */
+    /** 只读观察当前有符号轨道形变，单位为 scene 像素。 */
     public static ReadableSignal<Double> elasticOffset(SceneNode node){if(!(node.control() instanceof Control))throw new IllegalArgumentException("不是滑杆");Control control=(Control)node.control();return control.elastic.offset::get;}
     private static double clamp(double value,double min,double max){return Math.max(min,Math.min(max,value));}
     /** 声明、运行时入口与业务回调；手势和弹性各自持有临时状态。 */
@@ -252,13 +252,13 @@ public final class SceneSlider {
                     return true;
                 default: return false;
             }
-            // 原指针 owner 直到 UP/ESC 结束；期间范围键不插入第二个提交，也不结束其预览。
+            // 指针段保持原 owner 与预览至 UP/ESC，范围键在该段内结束消费。
             if (gesture.dragging) return true;
             changeAndCommit(next);
             return true;
         }
 
-        /** 键盘与语义单次改变共用量化和最终提交，不写另一份业务值。 */
+        /** 键盘与语义动作共用量化规则，并向原业务入口提交一次最终值。 */
         private void changeAndCommit(double next) {
             elastic.clear();
             gesture.resetPickup();
@@ -351,7 +351,7 @@ public final class SceneSlider {
             }
 
             void synchronize(Track current) {
-                // 几何未换基时保持拾取形变；窗口/主题重排只更新预览，不回写业务值。
+                // 几何未换基时延续拾取形变，窗口与主题重排只投影当前预览。
                 if (pickedTrack != null && pickedTrack.sameBase(current)) return;
                 pickedTrack = null;
                 double position = position();
@@ -505,7 +505,7 @@ public final class SceneSlider {
                 radius = Math.max(radius, (thickness + 1) / 2 + 1);
             }
             int baseLeft = box.x + inset, baseRight = box.x + box.width - inset;
-            // 回弹穿过零点时仍保留原边缘，不能把左端形变突然移到右端。
+            // 回弹穿过零点时继续按原边缘呈现。
             int left = baseLeft + (edge < 0 ? (int) Math.round(offset) : 0);
             int right = baseRight + (edge > 0 ? (int) Math.round(offset) : 0);
             return new Track(baseLeft, baseRight, left, right, box.y + box.height / 2, thickness, radius);

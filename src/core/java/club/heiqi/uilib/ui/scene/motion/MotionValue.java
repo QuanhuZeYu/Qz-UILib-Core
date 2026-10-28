@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.motion;
 
 import java.util.Objects;
 
-/** 框架拥有的一维轨迹；解析采样实际经过时间，无固定步长或补帧。读取不推进。 */
+/** 框架拥有的一维轨迹，按实际经过时间解析采样，读取复用当前值。 */
 public final class MotionValue {
     private MotionSpec spec = MotionSpec.instant();
     private double value, velocity, target, origin, initialVelocity, reversingStart;
@@ -76,7 +76,7 @@ public final class MotionValue {
                 if (!Double.isFinite(eased) || eased < 0 || eased > 1)
                     throw new IllegalArgumentException("动效曲线必须返回0到1之间的有限值");
                 value = origin + (target - origin) * eased;
-                // 有限曲线只承诺值续接；其速度不参与反向连续性合同。
+                // 有限曲线反向时从当前值续接，速度连续由弹簧策略提供。
                 velocity = 0;
                 break;
             case SPRING:
@@ -107,7 +107,7 @@ public final class MotionValue {
             sampleSpring(collision);
             double boundary = collisionBoundary;
             long hit = Math.min(now, started + Math.round(collision * 1_000_000_000.0));
-            // 撞界时结束朝外速度，按剩余实际时间继续；不把整帧停在边界，也不积存越界行程。
+            // 撞界时结束朝外速度，再按剩余实际时间继续采样合法轨迹。
             rebase(boundary, 0, target, hit);
             if (hit == now) return;
         }
@@ -155,7 +155,7 @@ public final class MotionValue {
         if (!below && value <= maximum) return Double.NaN;
         double boundary = below ? minimum : maximum; collisionBoundary = boundary;
         double low = start, high = end;
-        // 仅定位解析函数的根，不按帧积分；纳秒投影误差不随帧间隔累积。
+        // 用解析函数定位碰界时刻，纳秒投影只影响当前采样精度。
         for (int i = 0; i < 64; i++) {
             double middle = (low + high) * .5; sampleSpring(middle);
             if (below ? value < boundary : value > boundary) high = middle; else low = middle;
@@ -177,7 +177,7 @@ public final class MotionValue {
             x = envelope * (displacement + b * seconds);
             v = envelope * (initialVelocity - omega * b * seconds);
         } else {
-            // 慢特征根用倒数形式，避免大阻尼下相减消失。
+            // 慢特征根使用倒数形式，在大阻尼下保持有效精度。
             double root = Math.sqrt(zeta - 1) * Math.sqrt(zeta + 1);
             double fast = -omega * (zeta + root), slow = -omega / (zeta + root);
             double a = (initialVelocity - fast * displacement) / (slow - fast), b = displacement - a;

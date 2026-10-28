@@ -33,7 +33,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 正式视口与 PaintPlan 的反例：普通呈现不占用 300 Hz 的主动输入周期。 */
+/** 通过正式视口与 PaintPlan 核验普通呈现和 300 Hz 主动输入分别调度。 */
 public final class ScrollbarScenario extends TestApplication {
     private static final long INPUT_INTERVAL = (1_000_000_000L + 299) / 300;
     private static final int THUMB = 0xff123456;
@@ -217,7 +217,7 @@ public final class ScrollbarScenario extends TestApplication {
             f.page.frame();
 
             require(f.offset() == middle, "新按下没有沿全局滚动取消入口接管旧分页");
-            // 新分页单独验证策略续接，避免把已被真实DOWN接管的旧轨迹当作仍存活。
+            // 用新分页轨迹核验策略续接，原轨迹已在真实 DOWN 时结束。
             int destination = f.offset() + 100;
             f.clickTrack();
             f.setPolicy(MotionPolicy.REDUCED);

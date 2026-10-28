@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** 事件顺序、脏声明、几何准备与最终绘制由框架协调；状态无需帧提交。 */
+/** 协调有序输入、声明结算、共同几何与绘制；直接状态由状态域立即发布。 */
 public final class SceneFramePipeline implements AutoCloseable {
     private final SceneRuntime runtime;
     private final SceneHost host;
@@ -32,7 +32,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private enum InputKind { POINTER, NAVIGATION, EDIT, KEY, FOCUS_LOST, ESCAPE, SEMANTIC }
 
-    /** 后续动作在当前事件及其Effect结算后执行；对象本身不承担输入路由。 */
+    /** 描述当前事件及其 Effect 结算后的继续动作，由帧管线分派。 */
     private static final class FollowUp {
         enum Kind { HOST, NAVIGATION, KEY }
         final Kind kind;
@@ -212,7 +212,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    /** 宿主失焦与指针、编辑共享采集顺序，不能立即清焦点越过待结算输入。 */
+    /** 将宿主失焦排入指针、编辑共用的采集序列，按序取消手势与焦点。 */
     public void focusLost() {
         synchronized (inputs) {
             checkOpen();
@@ -220,7 +220,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    /** 与指针共享采集顺序；不从宿主另建焦点表。 */
+    /** 导航与指针共享采集顺序，目标由场景焦点路由器决定。 */
     public void navigation(SceneNavigationEvent event) {
         synchronized (inputs) {
             checkOpen();
@@ -241,7 +241,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    /** 控件未消费时在本事件结算后导航/激活，不将fallback重排到下一帧。 */
+    /** 控件让渡输入后，在当前事件结算后执行导航或激活。 */
     public void editOrNavigate(
             club.heiqi.uilib.ui.scene.input.SceneEditEvent event, SceneNavigationEvent fallback) {
         synchronized (inputs) {
@@ -265,7 +265,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         }
     }
 
-    /** 完整synthetic activation入口，不是DOWN；已有物理手势时吞掉，不绕过owner。 */
+    /** 递交完整 synthetic activation；空闲时按坐标激活，物理手势存续时由原 owner 吞掉。 */
     public void click(int x, int y) {
         pointer(ScenePointerEvent.syntheticActivation(x, y));
     }
@@ -277,7 +277,7 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     /**
      * 每事件独立domain.execute→prepare→route，前handler状态影响下一事件。
-     * handler失败时取消owner、仅记本批剩余物理尾部并外抛，不丢已采集的第二键。
+     * handler 失败时取消 owner、记录本批剩余物理尾部及第二键，并沿原通道报告失败。
      */
     public void frame() { frame(true); }
 
@@ -313,7 +313,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             checkOpen();
             long now = inspecting && inputGeometry != null ? preparedNanos : host.frameNanos();
             boolean advance = !inspecting && (!inputSampled || now - lastInputNanos >= INPUT_INTERVAL_NANOS);
-            // 连续采样可等到下个输入周期；边界事件带着完整前序立即结算，不合并MOVE或越序。
+            // 连续采样等到下个输入周期；边界事件携完整前序立即逐项结算。
             boolean boundary = !advance && inputs.stream().anyMatch(event -> event.kind != InputKind.POINTER
                     || event.pointer.kind != ScenePointerEvent.Kind.MOVE);
             if (advance || boundary || inspecting) while (!inputs.isEmpty()) events.add(inputs.remove());
@@ -378,10 +378,10 @@ public final class SceneFramePipeline implements AutoCloseable {
 
     private void followUp(InputBatch batch, QueuedInput event) {
         if (batch.failed || isClosed() || !runtime.alive() || event.consumed) return;
-        // 沿当前事件结算，不能重新排到下一帧而越过已采集的文字。
+        // 当前事件的继续动作先结算，后续已采集文字使用结算后的目标。
         switch (event.followUp.kind) {
             case KEY:
-                // Effect 可能改变范围；准备后仍由原按键续段核验，不转投新范围。
+                // Effect 可能改变范围；重新准备后核验原按键续段及其所属范围。
                 if (prepareInput(batch.frameNanos) != null) keyboard.afterEffects(event.key);
                 break;
             case HOST:
@@ -418,7 +418,7 @@ public final class SceneFramePipeline implements AutoCloseable {
             else if (failure != cleanupFailure && !java.util.Arrays.asList(cleanupFailure.getSuppressed()).contains(failure))
                 cleanupFailure.addSuppressed(failure);
         }
-        // captureLost 扩展可能失败；仍须登记完整物理尾部，避免丢 UP 或第二 DOWN。
+        // captureLost 失败后仍逐项登记物理尾部，保留 UP 与第二 DOWN 的事实。
         for (int tail = firstDiscard; tail < batch.events.size(); tail++) {
             try {
                 batch.events.get(tail).discard(router);
@@ -441,7 +441,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                     return;
                 }
                 if (replay) host.replay(current.paint);
-                // 只有检查批次覆盖了请求前序；更早已排队的普通回放不能完成后来请求。
+                // 检查批次覆盖请求的完整前序后，才交付该批绑定的检查结果。
                 if (!batch.inspectionRequests.isEmpty())
                     finishInspections(batch.inspectionRequests, runtime.inspect(current, metrics), null);
             } else if (!batch.failed) finishInspections(batch.inspectionRequests, club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot.CLOSED, null);
@@ -461,7 +461,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         synchronized (inputs) {
             checkOpen();
         }
-        // 读取当前呈现不推进几何动画；下一宿主frame才提供新的时间样本。
+        // 读取复用当前呈现时刻，下一宿主 frame 提供新的时间样本。
         ScenePresentation current = prepare(inputGeometry == null ? host.frameNanos() : preparedNanos);
         if (current == null) throw new IllegalStateException("页面已结束");
         return current;
@@ -480,8 +480,8 @@ public final class SceneFramePipeline implements AutoCloseable {
     }
 
     /**
-     * 页面关闭时丢弃未处理输入并取消owner，不执行frame或replay；不关闭业务runtime。
-     * 生命周期所有者随后关闭runtime；重复close安全，pending域任务也不再访问host。
+     * 页面关闭时丢弃待处理输入、记录物理尾部并取消 owner，重复关闭复用已结束状态。
+     * runtime 由其生命周期所有者随后关闭，迟到域任务按管线状态退出。
      */
     @Override
     public void close() {
@@ -497,7 +497,7 @@ public final class SceneFramePipeline implements AutoCloseable {
                         () -> {
                             keyboard.clear();
                             ScenePointerRouter router = runtime.pointerRouter();
-                            // close不执行业务，但不能丢掉已采集的第二键；另一管线仍共享该物理段。
+                            // 关闭只登记已采集的物理尾部；后续管线继续使用同一物理段。
                             Throwable failure = null;
                             for (QueuedInput event : pending) try { event.discard(router); }
                             catch (RuntimeException | Error next) { if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next); }
@@ -576,7 +576,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         } finally { runtime.inspectionEnd(success, generation); }
     }
 
-    /** 输入与可观察呈现共用环境、声明及几何；此处不收集整页绘制，也不通知外部宿主。 */
+    /** 为输入和呈现准备共同的环境、声明及几何，整页绘制与宿主通知在各自出口处理。 */
     private SceneGeometry prepareFacts(long frameNanos) {
         if (!available()) return null;
         preparedNanos = frameNanos;
@@ -605,7 +605,7 @@ public final class SceneFramePipeline implements AutoCloseable {
         return available() ? presentation : null;
     }
 
-    /** 声明、范围与主动显露使用同一收敛循环；不在绘制收集中补排版。 */
+    /** 声明、范围与主动显露在此收敛，绘制收集消费收敛后的共同几何。 */
     private SceneGeometry prepareGeometry(long frameNanos, int w, int h, long nextMetrics) {
         boolean geometryDirty = geometryDirty(w, h, nextMetrics);
         SceneGeometry prepared = geometryDirty ? null : inputGeometry;

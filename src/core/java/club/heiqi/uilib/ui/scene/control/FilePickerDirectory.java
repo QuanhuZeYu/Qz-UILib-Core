@@ -22,12 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 文件事实只在本次挂载的单一工作线程读取；不持有节点，也不跨请求累计整个目录。 */
+/** 在本次挂载的单一 worker 中读取文件事实，每次请求保留有界页结果。 */
 final class FilePickerDirectory implements AutoCloseable {
     static final int PAGE_SIZE = 64;
     private static final AtomicInteger WORKER_IDS = new AtomicInteger();
 
-    /** 当前请求范围；未决路径及相对基准只在同一worker解析，不把旧列表当新目标。 */
+    /** 当前请求范围，未决路径与相对基准由同一 worker 解析。 */
     static final class Scope {
         private enum Kind { DIRECTORY, PATH, ROOTS, PARENT }
         private final Kind kind;
@@ -40,7 +40,7 @@ final class FilePickerDirectory implements AutoCloseable {
         static Scope path(Scope base,Path path){
             if(path.isAbsolute()||base==null)return new Scope(Kind.PATH,path,null);
             long parents=0;
-            // 未领取的相对go替换同一基准上的待解析草稿，不把已取消草稿接成导航历史。
+            // 待领取的相对 go 替换同一基准上的路径草稿，导航历史只记录已执行范围。
             while(base.base!=null){
                 parents=base.kind==Kind.PARENT?addParents(parents,base.parentCount):0;
                 base=base.base;
@@ -130,7 +130,7 @@ final class FilePickerDirectory implements AutoCloseable {
             if(resolved.kind==Scope.Kind.DIRECTORY)return list(request,resolved.path,query,null);
             Path parent=resolved.path.getParent();
             if(parent==null)throw new IOException("文件没有可浏览的上级目录");
-            // 后续查询只采用定位得到的父范围，不重新选择先前请求的文件。
+            // 后续查询沿定位得到的父范围执行，文件选择仅由显式定位请求发布。
             FilePickerQuery actual=selectLocated
                     ?FilePickerQuery.around(entry(resolved.path,false)).filter(query.text,query.extensions).order(query.order):query;
             return list(request,parent,actual,selectLocated?resolved.path:null);
@@ -215,7 +215,7 @@ final class FilePickerDirectory implements AutoCloseable {
             return new Result(request,query.page,directory,roots,backwards?more:opposite,backwards?opposite:more,shown,selected,null,null,query);
         }
         private Result locatedResult(long request,Path directory,boolean roots,Path selected,List<Entry> following){
-            // 目标在页内保留其全局位置，不能以目标开头再冒用自然页号。
+            // 按目标全局索引补足页前缀，使结果与自然页号一致。
             List<Entry> prefix=new ArrayList<>(preceding);prefix.sort(order);
             int count=(int)(before%PAGE_SIZE),remaining=PAGE_SIZE-count;
             List<Entry> shown=new ArrayList<>(PAGE_SIZE);
@@ -237,7 +237,7 @@ final class FilePickerDirectory implements AutoCloseable {
             try {
                 Result result = read.run(); checkCancelled(); publish(result);
             } catch (CancellationException ignored) {
-                // 取消不发布错误，也不让旧目录恢复当前界面。
+                // 取消请求在此结束，当前界面继续使用新请求事实。
             } catch (IOException | SecurityException | IllegalArgumentException | DirectoryIteratorException failure) {
                 if (closed.get() || Thread.currentThread().isInterrupted()) return;
                 String reason = failure.getMessage();
@@ -252,7 +252,7 @@ final class FilePickerDirectory implements AutoCloseable {
     private void publish(Result result) {
         if (!closed.get()) completion.set(result);
     }
-    /** 只由宿主正式输入帧领取。direct 状态域不能把工作线程变成 UI 操作线程。 */
+    /** 宿主正式输入帧领取 worker 已完成的结果，再在所属域发布状态。 */
     Result take() {
         Result result = completion.getAndSet(null);
         return closed.get() ? null : result;
@@ -263,6 +263,6 @@ final class FilePickerDirectory implements AutoCloseable {
         if (latest != null) latest.cancel(true);
         latest = null;
         worker.shutdownNow();
-        // DirectoryStream 由工作调用的 try-with-resources 关闭；渲染线程不等待文件系统 I/O。
+        // worker 的 try-with-resources 负责关闭 DirectoryStream，宿主发出关闭信号后返回。
     }
 }

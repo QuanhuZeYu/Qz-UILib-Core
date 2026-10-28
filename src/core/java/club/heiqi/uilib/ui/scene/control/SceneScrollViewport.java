@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.BooleanSupplier;
 
-/** 某轴视口的中性端口；只适配已有位置所有者，不保存第二份偏移或范围。 */
+/** 适配已有位置所有者，提供某轴视口事实与位置意图。 */
 public final class SceneScrollViewport {
     /** 当批正式几何中的内容窗口与范围；null快照表示当前不具备该轴视口。 */
     public static final class Snapshot {
@@ -58,12 +58,12 @@ public final class SceneScrollViewport {
         Snapshot view = runtime.scrollSnapshot(node, current, geometry);
         return view == null ? null : new Snapshot(view.box, view.clip, view.offset, view.maximum, view.extent, current);
     }
-    /** 定位阶段只读原所有者的内容事实，不以尚未安装的输入几何判断层资格。 */
+    /** 定位阶段从原位置所有者与当批几何读取内容事实。 */
     Snapshot layoutSnapshot(SceneGeometryView geometry) {
         return enabled.getAsBoolean() ? runtime.scrollLayoutSnapshot(node, axis(), geometry) : null;
     }
     public int moveByPixels(int pixels) { return enabled.getAsBoolean() ? runtime.scrollByPixels(node, axis(), pixels) : 0; }
-    /** 绝对位置意图在原所有者处差分，多个条同批推进不重复累加旧几何偏移。 */
+    /** 将绝对位置意图交给原所有者，按其当前偏移求差。 */
     public int moveToPixels(int offset) { return enabled.getAsBoolean() ? runtime.scrollToPixels(node, axis(), offset) : 0; }
     public AutoCloseable observe(Consumer<Snapshot> changed) { return runtime.observeScroll(this, changed); }
 }

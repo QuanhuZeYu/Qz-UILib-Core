@@ -29,7 +29,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** editing spec 2：正式无平台页面来源隔离；不声称真实 SDL 或原生 IME 验收。 */
+/** 通过正式无平台页面核验编辑规格第 2 节的组字来源隔离。 */
 public final class CompositionIdentityScenario extends TestApplication {
     /** 只提供无native的字体边界事实；没有光标、选区、历史或编辑算法。真实字体另在GPU应用验收。 */
     private static final class PlainHost implements SceneHost, SceneTextMeasurer {

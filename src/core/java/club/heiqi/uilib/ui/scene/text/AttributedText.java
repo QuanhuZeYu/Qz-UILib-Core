@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 无宿主依赖的属性文本；普通文本不推断§。 */
+/** 保存中性属性文本、来源与样式；普通文本保留 § 字面内容。 */
 public final class AttributedText {
     public final TextInput input;
     public final String originalText;
@@ -114,14 +114,14 @@ public final class AttributedText {
         return diagnostics;
     }
 
-    /** 完整定位身份排除前景色；供已有请求缓存复用，不改变本声明的身份相等语义。 */
+    /** 提供排除前景色的完整定位键，供请求缓存复用；声明本身保留实例身份。 */
     public PositionKey positionKey() {
         PositionKey known = positionKey;
         if (known == null) positionKey = known = new PositionKey(this);
         return known;
     }
 
-    /** 值键包含所有来源事实；颜色归当前声明，不能靠旧颜色数值猜测继承。 */
+    /** 值键保留完整来源与定位事实，前景色由当前声明提供。 */
     public static final class PositionKey {
         final List<Object> facts = new ArrayList<Object>();
 
@@ -154,7 +154,7 @@ public final class AttributedText {
         @Override public int hashCode() { return facts.hashCode(); }
     }
 
-    /** 来源用紧凑值快照，不能把同文的 byte/UTF16 或语法范围混为一项。 */
+    /** 用紧凑快照区分原输入单位、解码映射与语法范围。 */
     private static final class InputKey {
         final TextInput input;
         final int[] offsets, segments, invalid;

@@ -10,12 +10,12 @@ public interface FontFace extends AutoCloseable {
 
     int glyphIndex(int codePoint);
 
-    /** 实际 face 的脚本布局能力；不以 cmap/来源提示代替。未知后端保守返回 false，仍须核验完整范围的 shape。 */
+    /** 查询实际 face 的脚本布局能力，未知后端返回 false；完整范围仍由 shape 核验。 */
     default boolean supportsScript(String script) {
         return false;
     }
 
-    /** 同一实际 glyph 的彩色呈现事实；只读格式/布局数据，不光栅、不生成或复制像素。 */
+    /** 从实际 glyph 的只读格式与布局数据查询彩色呈现能力。 */
     default boolean hasColorGlyph(int glyphId) {
         return false;
     }
@@ -74,7 +74,7 @@ public interface FontFace extends AutoCloseable {
         return Float.NaN;
     }
 
-    /** 数学能力属于同一 face；不支持的后端保持显式边界。 */
+    /** 查询同一 face 的真实数学能力。 */
     default boolean hasMathData() {
         return false;
     }
@@ -84,12 +84,12 @@ public interface FontFace extends AutoCloseable {
         throw new UnsupportedOperationException("字体后端不支持 OpenType MATH");
     }
 
-    /** 真正竖向变体的不可变副本；verticalAdvance 不能作为横向字宽。 */
+    /** 返回真实竖向变体的不可变副本，verticalAdvance 仅表示竖向范围。 */
     default java.util.List<MathData.Variant> mathVariants(int glyphId) {
         throw new UnsupportedOperationException("字体后端不支持 OpenType MATH variants");
     }
 
-    /** 按指定轴返回完整变体；旧后端竖向入口继续有效。 */
+    /** 按指定轴返回完整变体；默认实现转交竖向请求，横向请求报告能力缺失。 */
     default java.util.List<MathData.Variant> mathVariants(
             int glyphId, club.heiqi.uilib.ui.scene.text.math.MathAxis axis) {
         java.util.Objects.requireNonNull(axis, "axis");
@@ -98,7 +98,7 @@ public interface FontFace extends AutoCloseable {
         throw new UnsupportedOperationException("字体后端不支持横向 OpenType MATH variants");
     }
 
-    /** 竖向部件按底到顶排列；无构建能力返回 null，快照不持有 native 地址。 */
+    /** 返回底到顶排列的竖向部件值快照，缺少构建能力时为 null。 */
     default MathData.Assembly mathAssembly(int glyphId) {
         return null;
     }

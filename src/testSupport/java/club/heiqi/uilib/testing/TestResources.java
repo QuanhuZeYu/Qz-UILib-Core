@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/** 复用输入/输出路径和资源读取，不预加载字体，也不解释任何生产资源语义。 */
+/** 提供测试输入、输出路径及原始资源字节读取。 */
 public final class TestResources {
     private TestResources() {}
 

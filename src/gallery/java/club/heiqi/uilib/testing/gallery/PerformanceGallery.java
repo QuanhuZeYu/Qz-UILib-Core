@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-/** 测试侧共享压测声明与有界运行。计时边界和验收见性能压测规格，不进入正式发行。 */
+/** 独立测试产物中的共享压测声明与有界运行，计时边界和验收见性能压测规格。 */
 public final class PerformanceGallery implements ScenePage {
     public enum Load {
         IDLE("静止列表"),
@@ -294,7 +294,7 @@ public final class PerformanceGallery implements ScenePage {
         SceneNode viewport =
                 new SceneNode().size(Size.fill(1), Size.fill(1)).scrollable(true).clip(true).gap(5);
         viewport.bind(NodeBinding.value(width, (node, size) -> node.size(size, Size.fill(1))));
-        // 预留外层滚轮命中留白，自动驱动不会在嵌套表格水平视口上停止纵向负载。
+        // 预留外层滚轮命中留白，使纵向负载沿外层视口推进。
         viewport.padding(12);
         StringBuilder markdown = new StringBuilder("# 压测交接记录\n\n");
         for (int i = 0; i < count; i++) {
@@ -436,7 +436,8 @@ public final class PerformanceGallery implements ScenePage {
         previousText = null;
     }
 
-    /** 在宿主计时区外只读取已经应用的事实，不调用pipeline.current或制造额外prepare。 只预热时操作不能冒充稳定负载；往返滚回零位、删除到原长度也保留真实变化证据。 */
+    /** 在计时区外读取已应用事实，采样窗口内按实际变化记录负载证据。
+     * 往返滚动或内容恢复原长度时，仍累计中间已发生的变化。 */
     private void observe(boolean sampled) {
         boolean changed = false;
         if (load == Load.SCROLL || load == Load.DOCUMENT) {

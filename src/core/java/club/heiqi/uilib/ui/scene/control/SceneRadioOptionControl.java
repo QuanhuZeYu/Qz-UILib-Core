@@ -48,7 +48,7 @@ final class SceneRadioOptionControl extends SceneSymbolControl {
     }
     @Override int labelGap(SceneControlMetrics metrics) { return segmented() ? 0 : super.labelGap(metrics); }
     @Override void installFeedback(SceneNode node) {
-        // 目标在挂载期求值；两种外观共享原填色通道，不保留未参与呈现的第二条轨迹。
+        // 挂载期按当前外观选择目标，两种外观共用原填色通道。
         motion.install(node, () -> theme.get().feedbackMotion,
                 self -> segmented() ? surface.fill(self) : SceneControlMotion.target(self, theme.get()));
     }
@@ -100,7 +100,7 @@ final class SceneRadioOptionControl extends SceneSymbolControl {
         if (!segmented()) { super.paint(node, geometry, paint); return; }
         SceneGeometryView.Entry entry = geometry.get(node);
         if (entry == null) return;
-        // 分段只画这一套圆角表面与focus，不调用传统胶囊背景、直角focus或圆点。
+        // 分段外观独立绘制圆角表面与 focus。
         surface.paint(node, geometry, paint, motion.color(surface.fill(node)));
         LayoutBox inner = SceneControlPaint.inner(entry.box, node.padding());
         LayoutBox clip = policy == SceneTextPolicy.OVERFLOW ? entry.clip

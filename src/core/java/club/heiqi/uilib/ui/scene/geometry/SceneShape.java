@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.geometry;
 
 import java.util.Objects;
 
-/** 按当前节点外盒解析的纯值形状；可适应分配尺寸，不读回布局或保留绘制回调。 */
+/** 按当前分配外盒与像素精度解析纯值形状。 */
 public final class SceneShape {
     private enum Kind { ELLIPSE, ROUND_RECT, PATH, FIXED, VECTOR }
     private final Kind kind;private final ScenePath path;private final double width,height,radius;

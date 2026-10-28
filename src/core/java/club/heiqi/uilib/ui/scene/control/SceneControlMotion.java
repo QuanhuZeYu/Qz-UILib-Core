@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import java.util.Objects;
 import java.util.function.ToIntFunction;
 
-/** 标准控件共享有限呈现通道，只订阅真实状态/交互投影和主题，不永久 tick 或重测文本。 */
+/** 标准控件共用有限动效通道，订阅实际状态、交互投影与主题。 */
 final class SceneControlMotion {
     private Signal<Integer> color;
     void install(SceneNode node, ReadableSignal<MotionSpec> spec, ToIntFunction<SceneNode> target) { install(node, spec, target, "control.fill"); }
@@ -27,7 +27,7 @@ final class SceneControlMotion {
                     channel, (n, value) -> { color.set(value); runtime.invalidatePaint(); }).activate(runtime, self, owner);
         });
     }
-    /** 只读呈现投影复用原轨迹；初挂/重挂读当前目标，卸载不保留旧进度或绑定。
+    /** 只读投影复用原轨迹，初挂或重挂从当前目标开始，卸载释放轨迹与绑定。
      * spatial仅分类用户动效限制；显式feedbackMotion仍优先覆盖该控件的全部标准反馈。 */
     static ReadableSignal<Float> progress(SceneNode node, ReadableSignal<SceneTheme> theme,
             ReadableSignal<Float> target, boolean spatial) {

@@ -37,7 +37,7 @@ public final class SceneLayer {
             this.participation = Objects.requireNonNull(participation, "participation");
         }
     }
-    /** 只声明本层最终位置，不能替换测量尺寸或来源。 */
+    /** 从已测尺寸与来源声明本层最终位置。 */
     @FunctionalInterface public interface Placement {
         LayoutBox place(SceneNode node, LayoutBox sourceBox, LayoutBox viewport, MeasuredSize size);
     }

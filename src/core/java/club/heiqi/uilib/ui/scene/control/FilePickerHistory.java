@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Locale;
 
-/** 有限浏览位置及转移；不读文件系统，不发布选择或编辑状态。 */
+/** 管理有限浏览位置与转移，目录读取、选择和编辑各归所属模型。 */
 final class FilePickerHistory {
     static final class Location {
         final Path directory, selected;

@@ -32,8 +32,8 @@ final class GfmSyntax {
     private GfmSyntax() {}
 
     /**
-     * 固定 CommonMark GFM 0.21 的成熟 factory/split 接缝：该版接受分隔列多于表头； 此处仅校验成熟 split
-     * 的数量，不另写表格词法。升级至严格匹配版本后删除反射。
+     * 接入固定 CommonMark GFM 0.21 的 factory/split，按成熟 split 结果补充表头与分隔列数校验。
+     * 升级至严格匹配版本后删除反射。
      */
     static Extension extension() {
         return (Parser.ParserExtension)

@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.media;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Prepared/回放持有的有限提交联系；不拥有像素或 native，关闭后解除本次持有。 */
+/** Prepared 与回放持有的有限提交联系，关闭时解除本次持有；像素归媒体帧持有。 */
 public final class MediaFrameLease implements AutoCloseable {
     public final MediaFrameKey key;
     private final MediaSession session;

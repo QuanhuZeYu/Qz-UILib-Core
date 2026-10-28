@@ -65,7 +65,7 @@ public final class SceneVideo implements SceneControl {
         int w = size.width, h = size.height;
         if (w > 0 && h > 0) {
             if (node.width().mode != Size.Mode.NATURAL && node.height().mode == Size.Mode.NATURAL) {
-                // 正文约束已由layout扣padding并应用外层bounds，不能再次读FIXED原值。
+                // 直接使用 layout 已扣除 padding 并应用 bounds 的正文约束。
                 w = constraints.availableWidth;
                 h = round((double) w * size.height / size.width);
             } else if (node.width().mode == Size.Mode.NATURAL && node.height().mode != Size.Mode.NATURAL && constraints.availableHeight != Integer.MAX_VALUE) {

@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 import java.util.*;
 
-/** 原场景的只读检查消费者；手动或F8更新，不观察面板自身触发连续准备。 */
+/** 以只读快照检查原场景，手动或 F8 请求更新。 */
 public final class InspectionPage {
     private InspectionPage() {}
 
@@ -432,7 +432,7 @@ public final class InspectionPage {
         return String.format(Locale.ROOT, "%.2f", n);
     }
 
-    /** 独立图示只投影快照mesh；不重新解析裁剪或参与被检查对象的命中。 */
+    /** 将检查快照 mesh 投影为独立图示。 */
     private static final class GeometryPreview implements SceneControl {
         final View view;
 

@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** 正式准备边界的不可变检查值；挂载关系沿原opaque ID，不持有活节点或执行入口。 */
+/** 正式准备边界的不可变检查值，节点关系使用原 opaque 挂载 ID。 */
 public final class SceneInspectionSnapshot {
     public enum Status { READY, CLOSED }
     public enum Source { AUTHOR, CONTROL_DEFAULT, INITIAL }
@@ -53,7 +53,7 @@ public final class SceneInspectionSnapshot {
         public final int scrollOffset, scrollMaximum, padding, gap;
         public final TextStyle style;
         public final Source styleSource, paddingSource, gapSource;
-        /** -1表示普通控件；未实例化逻辑项不会为检查而构造。 */
+        /** -1 表示普通控件，计数直接读取当前逻辑与实例事实。 */
         public final int logicalItemCount, instantiatedItemCount;
         public Entry(SceneSemanticId id, UUID nodeId, SceneSemanticId parent, SceneSemanticId layer, SceneSemanticId scope,
                 boolean visible, boolean enabled, boolean interactive, String controlType, String name, SceneSemantics.Role role,

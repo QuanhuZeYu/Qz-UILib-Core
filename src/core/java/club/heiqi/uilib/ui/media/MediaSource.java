@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** 来源只是不可变值；分轨共享媒体时间线，构造和读取均不加载适配或 native。 */
+/** 保存不可变媒体来源与请求头，分轨来源共用媒体时间线。 */
 public final class MediaSource {
     public final URI uri;
     public final Map<String,String> headers;

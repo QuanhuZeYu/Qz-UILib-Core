@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 装饰及动画状态。bold/italic 是 TextStyle 从 FontStyle 派生的遗留视图；字体选择不读取它们。 */
+/** 装饰与动画状态，bold/italic 为 TextStyle 从 FontStyle 派生的兼容视图，字体选择使用 FontStyle。 */
 public final class TextEffects {
     public static final TextEffects NORMAL =
             new TextEffects(false, false, false, false, false, 0, 0);

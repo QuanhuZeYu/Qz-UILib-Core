@@ -42,7 +42,7 @@ final class DocumentCodeViewport implements SceneControl {
     public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer children) {
         if (children.flowChildren().isEmpty()) return new ChildPlacements(Collections.emptyList());
         SceneNode content = children.flowChildren().get(0);
-        // 普通容器在最终外盒排列；文字投影不再为子布局保存跨阶段prepared。
+        // 普通容器按最终外盒排列，文字投影只负责正文定位。
         int width = Math.max(0, box.width - node.padding() * 2);
         MeasuredSize measured = children.measureChild(
                 content, new Constraints(Integer.MAX_VALUE, Integer.MAX_VALUE));

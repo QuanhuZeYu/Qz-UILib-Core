@@ -29,7 +29,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/** 只创建当前面板，标签条共享选择导航；业务状态不归属于面板挂载。 */
+/** 按活动键创建当前面板，标签条共用选择导航；业务状态由调用方独立持有。 */
 public final class SceneTabs<K> {
     public enum Variant { UNDERLINE, SEGMENTED }
 
@@ -93,7 +93,7 @@ public final class SceneTabs<K> {
                     colors.get().muted, value.tooltip, value.tooltipText);
         });
         SceneNode indicator = SceneTabsHeader.indicator(labels);
-        // repeat 拥有容器的完整子树；被动底片与标签必须进入同一归属集合，不能混入静态子项。
+        // repeat 拥有完整子树，被动底片与标签放入同一归属集合。
         ReadableSignal<List<HeaderEntry<K>>> headers = page.domain().computed(owner, () -> {
             List<HeaderEntry<K>> result = new ArrayList<>();
             result.add(new HeaderEntry<>(null));
@@ -128,7 +128,7 @@ public final class SceneTabs<K> {
                 () -> new SceneScrollArea.Options().axes(SceneScrollArea.Axes.HORIZONTAL), theme);
         scroll.node().size(Size.fill(1), Size.natural());
         headerViewport = SceneScrollViewport.of(page, scroll.viewport(SceneNode.Axis.ROW), SceneNode.Axis.ROW);
-        // 显式横条也属于这个逻辑停靠边界；不能在条与内容之间插入新的Tab目标。
+        // 标签条与显式横向滚动条共用单个逻辑停靠边界。
         SceneNode bar = new SceneNode().size(Size.fill(1), Size.natural()).control(navigation).add(scroll.node());
         bar.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TAB_LIST)
                 .count(tabs.get().size()).actions().build()));
@@ -138,7 +138,7 @@ public final class SceneTabs<K> {
             return Collections.emptyList();
         });
         SceneNode panel = new SceneNode().size(Size.fill(1), Size.fill(1));
-        // 与前端key一致：新的声明对象和普通数据更新不重置同一活动面板，重置由新key明确表达。
+        // 同键声明与普通数据更新延续当前面板，换键建立新面板。
         panel.bind(NodeBinding.repeat(active, tab -> tab.key, current -> Objects.requireNonNull(current.get().content.get(), "标签内容产物")));
         panel.bind(NodeBinding.semantics(() -> {
             page.runtime().interactionRevision().get();
@@ -179,7 +179,7 @@ public final class SceneTabs<K> {
         }
         return false;
     }
-    /** 下划线跟随已分配按钮宽度，不能用自然宽容器中的FILL子项反过来撑宽标题。 */
+    /** 按按钮已分配宽度定位下划线，标题自然宽由正文测量决定。 */
     private static final class Label implements SceneControl {
         private final SceneNode button;
         private final ReadableSignal<SceneTheme> theme;
@@ -192,7 +192,7 @@ public final class SceneTabs<K> {
             surface = new SceneAppearance.Surface(colors, SceneAppearance.Role.GHOST, button, () -> false) {
                 @Override int fill(SceneNode node) {
                     if (variant.get() != Variant.SEGMENTED || super.fill(node) == 0) return 0;
-                    // 底片在标签下方滑动；反馈只作透明叠色，不能用不透明 hover 或禁用底色截断轨迹。
+                    // 底片在标签下方滑动，hover 与禁用反馈使用透明叠色保留底片轨迹。
                     return (colors.get().text & 0x00ffffff) | 0x14000000;
                 }
             };

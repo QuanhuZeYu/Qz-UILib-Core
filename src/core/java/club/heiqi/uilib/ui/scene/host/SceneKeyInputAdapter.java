@@ -9,7 +9,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /** 唯一宿主消费者递交中性键与物理事实；复用原编辑门的可用性/历史释放规则。
- * 每键登记按压段早于IME和命令资格；repeat进入编辑但不能重新执行应用命令。 */
+ * 每键先登记物理按压，再核验 IME 和命令资格；repeat 沿编辑续段处理。 */
 public final class SceneKeyInputAdapter {
     private final SceneEditInputAdapter edits = new SceneEditInputAdapter();
     private final Set<SceneKey> held = EnumSet.noneOf(SceneKey.class);
@@ -31,7 +31,7 @@ public final class SceneKeyInputAdapter {
                     event.primary, event.shift, event.alt, event.extra, false, event.clipboard, SceneKeyEvent.Phase.UP));
             return;
         }
-        // 没有已接收起手的repeat不建立按压；后续repeat也不能自行转为有效起手。
+        // repeat 仅延续已接收起手的按压段。
         if (event.repeat && !previous) return;
         held.add(event.key);
         if (!accepted) return;
@@ -41,7 +41,7 @@ public final class SceneKeyInputAdapter {
                 repeated, event.clipboard, SceneKeyEvent.Phase.DOWN));
     }
 
-    /** 只能在原生历史耗尽后提供真实物理集合，不旁读或消费队列。 */
+    /** 唯一原生消费者耗尽历史后，递交真实物理集合以确认释放。 */
     public void historyDrained(Set<SceneKey> physical) {
         Objects.requireNonNull(physical, "physical");
         Set<Integer> encoded = new HashSet<>(); for (SceneKey key : physical) encoded.add(key.ordinal());

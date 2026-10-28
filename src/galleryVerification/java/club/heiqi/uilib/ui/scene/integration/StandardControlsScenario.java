@@ -498,7 +498,7 @@ public final class StandardControlsScenario extends TestApplication {
     private void legacyBoundedText() {
         ReactiveDomain domain = ReactiveDomain.direct();
         TextHost host = new TextHost();
-        // 只实现最初的三参入口；默认四参方法只能接收 NORMAL，不能据此假定新策略能力。
+        // 三参实现通过默认四参入口仅接受 NORMAL 策略。
         SceneTextMeasurer legacy = (text, style, width) -> host.layout(text, style, width);
         SceneNode[] label = new SceneNode[1];
         ScenePageSession session = ScenePageSession.open(domain, host, legacy, ctx -> {
@@ -573,7 +573,7 @@ public final class StandardControlsScenario extends TestApplication {
                     require(ellipsis(e.text), "受限换行缺少真实省略glyph");
                     require(LONG.equals(e.text.originalText), "正文计划丢完整源文");
                 });
-        // 初始范围默认已选首个按钮；清焦点后单独验证hover提示不改变owner。
+        // 清除初始焦点后，单独核验 hover 提示与 owner 各自状态。
         domain.execute(() -> session.runtime().focusRouter().clear());
         session.frame();
         PaintPlan[] plain = {host.last};
@@ -791,7 +791,7 @@ public final class StandardControlsScenario extends TestApplication {
                     require(
                             a.lines().size() == 1 && ellipsis(a) && LONG.equals(a.originalText),
                             "单行策略未省略保留源文");
-                    // 末行边界改变后必须让字体服务看到最终文字，原字形裁片不能代表新连接形式。
+                    // 末行边界变化后，核验最终文字重新交给字体服务整形。
                     require(host.requests.stream().anyMatch(r -> r.text.length() > 1 && r.text.endsWith("…")),
                             "省略后的最终文字没有交回共同字体布局");
                     TextLayout.Line line = a.lines().get(0);

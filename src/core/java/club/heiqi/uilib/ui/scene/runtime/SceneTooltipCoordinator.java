@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-/** 页面唯一提示：所属注册、当前触发与有限期限；不拥有点击/焦点/媒体等业务状态。 */
+/** 管理页面唯一提示的挂载注册、当前触发与有限期限。 */
 final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseable {
     static final class Entry {
         final SceneNode node;
@@ -102,7 +102,7 @@ final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseab
         boolean focusEntered=focus!=null&&focus!=previousFocus;
         boolean hoverEntered=hover!=null&&hover!=previousHover;
         long pointer=runtime.pointerRouter().positionRevision();
-        // 同批新键盘焦点优先；纯重排不能抢走仍有效的当前提示。
+        // 优先选择同批新键盘焦点，纯重排延续当前有效提示。
         Entry requested=focusEntered?focus:hoverEntered&&(pointer!=lastPointer||current==null&&pending==null)?hover:null;
         if(requested!=null){
             if(requested==suppressed)suppressed=null;
@@ -149,7 +149,7 @@ final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseab
     boolean dismiss(){
         if(closed||current==null&&pending==null)return false;
         suppressed=current==null?pending:current;
-        // ESC可在关闭前启用键盘线索；吸收同来源的本次变化，避免下一帧当成新进入而重开。
+        // ESC 可能启用键盘线索，同来源变化记为本次已观察触发。
         SceneNode focused=runtime.focusRouter().focused().get();
         if(focused!=null&&runtime.focusRouter().focusVisible(focused)
                 &&(focused==suppressed.node||explicit(focused)==suppressed)) previousFocus=suppressed;

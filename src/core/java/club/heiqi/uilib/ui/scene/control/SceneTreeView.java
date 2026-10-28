@@ -115,7 +115,7 @@ public final class SceneTreeView<T, K> {
             page.runtime().interactionRevision().get();
             return content.focusable() && content.enabled() && content.visible();
         }, (self, useContent) -> {
-            // 此绑定观察交互修订；同值写入会使其它行反复失效，不能再发布相同资格。
+            // 绑定读取交互修订，资格实际变化时才写回，使其余行保持稳定。
             if (self.focusable() != !useContent) self.focusable(!useContent);
             targets.put(key, useContent ? content : self);
         }));
@@ -157,7 +157,7 @@ public final class SceneTreeView<T, K> {
                 Objects.requireNonNull(parent, "父键"), Objects.requireNonNull(expanded, "展开来源"), Objects.requireNonNull(expansion, "展开意图"),
                 Objects.requireNonNull(factory, "行工厂"), Objects.requireNonNull(options, "选项"), Objects.requireNonNull(theme, "主题"), null, Collections::emptySet);
     }
-    /** 名称来自逻辑数据，字符跳转不依赖屏外行已经构造；旧工厂入口仍可直接使用。 */
+    /** 按逻辑数据名称定位字符跳转目标，再按需准备屏外行。 */
     public static <T, K> SceneTreeView<T, K> create(ScenePageContext page, ReadableSignal<List<T>> source,
             Function<T, K> key, Function<T, K> parent, ReadableSignal<Set<K>> expanded, Consumer<Expansion<K>> expansion,
             Function<T, String> textValue, Function<ReadableSignal<Entry<T, K>>, SceneNode> factory) {
@@ -173,7 +173,7 @@ public final class SceneTreeView<T, K> {
                 Objects.requireNonNull(factory, "行工厂"), Objects.requireNonNull(options, "选项"), Objects.requireNonNull(theme, "主题"),
                 Objects.requireNonNull(textValue, "条目名称"), Collections::emptySet);
     }
-    /** 条目资格独立于内容工厂，禁用项仍显示而不参与主项导航。 */
+    /** 条目资格独立于工厂，禁用项继续显示，导航从可用主项中选择。 */
     public static <T, K> SceneTreeView<T, K> create(ScenePageContext page, ReadableSignal<List<T>> source,
             Function<T, K> key, Function<T, K> parent, ReadableSignal<Set<K>> expanded, Consumer<Expansion<K>> expansion,
             ReadableSignal<Set<K>> disabledKeys, Function<T, String> textValue, Function<ReadableSignal<Entry<T, K>>, SceneNode> factory) {
@@ -327,7 +327,7 @@ public final class SceneTreeView<T, K> {
                 case ACTIVATE:
                     SceneNode primary = targets.get(key);
                     if (primary == null || primary.runtime() != page.runtime() || !page.runtime().interactive(primary) || primary.clickAction() == null) return false;
-                    // 当前语义handler已受原routing保护，直接发布同一主项动作，不能重入输入分发。
+                    // 当前语义 handler 已在 routing 边界内，直接执行同一主项动作。
                     primary.clickAction().run(); return true;
                 default: return false;
             }

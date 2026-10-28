@@ -12,7 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 常用区域排列；消费同批约束，不读回布局结果。合同见通用界面组合规格。 */
+/** 按同批约束排列常用区域，合同见通用界面组合规格。 */
 public final class SceneLayouts {
     private SceneLayouts() {}
 
@@ -36,7 +36,7 @@ public final class SceneLayouts {
         return wrap(() -> gap);
     }
 
-    /** 按真实子内容求自然宽，再居中各行；不会用 FILL 子项把自然宽反馈成父宽。 */
+    /** 按真实子内容求自然宽，再以共同中线排列各行。 */
     public static SceneNode centeredColumn(ReadableSignal<Integer> gap) {
         return new SceneNode().size(Size.natural(), Size.natural())
                 .control(new CenteredColumn(Objects.requireNonNull(gap, "列间距")));
@@ -219,7 +219,7 @@ public final class SceneLayouts {
                 measured.add(new int[] {size.width, size.height});
             }
             int gaps = Math.max(0, nodes.size() - 1) * spacing;
-            // 有限高度必须先分配FILL再测自然宽，图像等比例内容不能沿用无界高度的宽度。
+            // 有限高度先分配 FILL，再按该高度测量图像等比例内容的自然宽。
             int[] heights = limits.availableHeight == Integer.MAX_VALUE ? null
                     : SceneFlowLayout.allocate(children, nodes, measured, Math.max(0, limits.availableHeight - gaps), false);
             int width = 0, height = gaps;

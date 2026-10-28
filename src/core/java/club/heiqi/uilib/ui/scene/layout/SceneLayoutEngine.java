@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 先测内容，再按声明分配；固定尺寸不因父空间不足被缩小。 */
+/** 先测内容再按声明分配，固定尺寸保留自身边界约束后的大小，父空间不足时允许溢出。 */
 public final class SceneLayoutEngine {
     private final SceneTextMeasurer text;
     private SceneLayoutPresentation presentation;
@@ -36,7 +36,7 @@ public final class SceneLayoutEngine {
     private long metricsRevision, measureRevision;
     private int measuredWidth, measuredHeight;
     private Runnable measuredWork, arrangedWork;
-    /** 只报告实际执行；旧独立布局入口不要求装配检查器。 */
+    /** 按需报告实际测量与排列工作。 */
     public void inspectionWork(Runnable measured, Runnable arranged) { measuredWork = measured; arrangedWork = arranged; }
 
     private BatchTextMeasurer textFor(SceneNode node) {
@@ -87,7 +87,7 @@ public final class SceneLayoutEngine {
         this.nodeMeasureRevision = nodeMeasureRevision;
     }
 
-    /** 帧管线结束后释放跨批文字与本批事实，不持续持有已退出页面。 */
+    /** 帧管线结束时释放跨批文字缓存与本批几何事实。 */
     public void clearCaches() {
         batchText.clear();
         allocatedBoxes.clear();
@@ -101,11 +101,11 @@ public final class SceneLayoutEngine {
         metricsKnown = false;
     }
 
-    // 跨批寿命按完整挂载树：READY图像的隐藏备用仍会在主布局后独立捕获，不能按本批测量集合修剪。
+    // 按完整挂载树保留跨批缓存，READY 图像的隐藏备用仍需在主布局后独立捕获。
     private void retainMounted(List<SceneNode> roots) {
         Set<SceneNode> mounted = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         for (SceneNode root : roots) collectMounted(root, mounted);
-        // 主几何省略 READY 图像的备用子树；生命周期必须按完整挂载树判定。
+        // 子测量依赖同样按完整挂载树维护。
         if (nodeMeasureRevision == null) measureDependencies.clear();
         else if (measureDependencies.update(mounted, presentation, nodeMeasureRevision))
             measureDependencies.resetMeasurements();
@@ -125,7 +125,7 @@ public final class SceneLayoutEngine {
     public SceneGeometry layout(List<SceneNode> roots, int width, int height) {
         presentation = null;
         measureDependencies.clear();
-        // 无度量代际的旧入口不能假定字体资源稳定。
+        // 此入口逐次清理文字缓存，以当前字体资源重新测量。
         batchText.clear();
         metricsKnown = false;
         return arrangeRoots(roots, width, height);
@@ -145,7 +145,7 @@ public final class SceneLayoutEngine {
         else if (measureRevision != nextMeasure
                 || measuredWidth != width
                 || measuredHeight != height) {
-            // 先清旧请求再重新测量，不跨声明代际积累动态文字或任意宽度。
+            // 代际变化时先清理旧文字请求，再以当前内容和约束测量。
             measureDependencies.resetMeasurements();
             for (BatchTextMeasurer batch : batchText.values()) batch.resetRequests();
             batchText.clear();
@@ -190,7 +190,7 @@ public final class SceneLayoutEngine {
         }
     }
 
-    /** 纯绘制投影只能读取定位阶段已消费的子度量，不得偷偷触发新测量。 */
+    /** 为纯绘制投影提供定位阶段已记录的直属子度量。 */
     private SceneChildMeasurer positionedChildrenFor(SceneNode parent) {
         SceneChildMeasurer measured = childrenFor(parent);
         return new SceneChildMeasurer() {
@@ -205,7 +205,7 @@ public final class SceneLayoutEngine {
         };
     }
 
-    /** 纯绘制样式沿正式内容投影刷新，不调用控件measure/arrange；分类与SceneNode一致。 */
+    /** 沿正式内容投影刷新纯绘制样式，复用已有测量和排列。 */
     public SceneGeometry refreshTextStyles(SceneGeometry geometry) {
         Map<SceneNode, TextLayout> updated = new IdentityHashMap<>();
         try {
@@ -329,7 +329,7 @@ public final class SceneLayoutEngine {
                         ? size(node, SceneNode.Axis.ROW).constrain(size(node, SceneNode.Axis.ROW).value)
                         : size(node, SceneNode.Axis.ROW).constrain(availableWidth);
         int contentWidth = Math.max(0, measuredWidth - node.padding() * 2);
-        // 自然高度尚未分配，不把父空间冒充自身高度；固定/fill 则携带真实有限约束。
+        // 自然高度以无界正文测量，固定或 fill 高度携带当次真实有限约束。
         int measuredHeight =
                 size(node, SceneNode.Axis.COLUMN).mode == Size.Mode.FIXED
                         ? size(node, SceneNode.Axis.COLUMN).constrain(size(node, SceneNode.Axis.COLUMN).value)
@@ -375,7 +375,8 @@ public final class SceneLayoutEngine {
         };
     }
 
-    /** 在既定父区域捕获已挂载占位子树，沿生产排列，不发布输入几何或改live节点。 仅根的框架hidden被忽略；后代显隐/滚动/裁剪仍走同一规则。静态帧复用呈现计划。 */
+    /** 在分配区域内按生产排列捕获已挂载占位子树，仅供绘制消费。
+     * 捕获根按可见处理，后代继续使用当前显隐、滚动与裁剪；静态帧复用计划。 */
     public SceneGeometry captureSubtree(
             SceneNode root, LayoutBox allocated, LayoutBox ancestorClip, LayoutBox viewport) {
         return captureSubtree(root, allocated, ancestorClip, viewport,
@@ -398,7 +399,7 @@ public final class SceneLayoutEngine {
         rejectContentLayers(root, root, "paint capture");
         allocatedBoxes.clear();
         arrangementViewport = viewport;
-        // 晚期备用捕获仅结算实际访问的节点，不能清掉其它主树节点的测量请求。
+        // 晚期备用捕获只结算实际访问的节点，其余主树度量继续保留。
         activeText.clear();
         try {
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
@@ -459,7 +460,7 @@ public final class SceneLayoutEngine {
                 :requireControlResult(node,"arrange",node.control().arrange(node,box,childrenFor(node),
                         allocatedBoxes.get(node.parent()), arrangementViewport));
     }
-    /** 先验证整个排列再进入子节点；任何失败都不能发布一部分正式几何。 */
+    /** 整体排列验证成功后再进入子节点，正式几何在完整求解后发布。 */
     private long validateArrangement(SceneNode node,List<ChildPlacements.Entry> placements) {
         java.util.Set<SceneNode> placed=java.util.Collections.newSetFromMap(new IdentityHashMap<SceneNode,Boolean>());
         boolean row=node.axis()==SceneNode.Axis.ROW;

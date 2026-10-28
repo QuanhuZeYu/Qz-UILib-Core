@@ -32,7 +32,7 @@ public final class MailboxPage {
         MailboxModel model=new MailboxModel(p.domain(),MailSamples.showcase());
         return create(p,theme,mode,model,true,onBack,onThemePreview,labels).own(model);
     }
-    /** 外部模型由调用方拥有，页面不关闭共享业务状态。 */
+    /** 借用调用方持有的业务模型，页面只管理自身声明。 */
     public static SceneNode create(ScenePageContext p, ReadableSignal<SceneTheme> base, MailboxModel model) {
         return create(p,base,model,true);
     }
@@ -53,7 +53,7 @@ public final class MailboxPage {
                 SceneShortcut.primary(SceneKey.F,search.focus)));
         root.add(MailChrome.header(p,view,mode,search.node,onBack,onThemePreview));
         root.add(MailBody.create(view,MailChrome.navigation(p,view,model),MailWorkspace.create(p,view,model,paged,labels)));
-        // 稳定反馈槽由声明表达，不因收取/归档推动列表视口。
+        // 保留稳定反馈槽，使收取与归档沿用原列表视口分配。
         SceneNode feedback=MailStyle.surface(view.theme,() -> 0,0,false).axis(SceneNode.Axis.ROW)
                 .size(Size.fill(1),Size.natural()).padding(4);
         feedback.add(MailStyle.label(p,() -> model.feedback.get().isEmpty()?" ":model.feedback.get(),view.theme,.85f,true));

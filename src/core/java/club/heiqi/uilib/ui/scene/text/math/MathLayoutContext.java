@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 final class MathLayoutContext {
     final MathStyle style;
     final String alphabet;
-    // 文字 literal SPACE 与 glyph 共享 native run；不以数学 em 间距替代其真实整形度量。
+    // 文字 literal SPACE 与 glyph 共用 native run，使用真实整形度量。
     final boolean cramped, display, textMode;
     final TextStyle textStyle;
     final float em, sizeEm, scriptPercent, scriptScriptPercent;
@@ -68,7 +68,7 @@ final class MathLayoutContext {
                         scope.fontStyle);
     }
 
-    // 自动 frac/script 派生保留数学字族与 cramped；显式声明按 fixed styling 解除两者，不重置普通字体作用域。
+    // 自动 frac/script 继承数学字族与 cramped，显式 fixed styling 解除二者并保留普通字体作用域。
     MathLayoutContext style(MathStyle value) {
         return copy(value, alphabet, cramped, textStyle, sizeEm);
     }

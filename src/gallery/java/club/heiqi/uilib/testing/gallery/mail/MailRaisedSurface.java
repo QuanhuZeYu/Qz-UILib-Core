@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.Arrays;
 import java.util.List;
 
-/** 搜索聚焦与主动作悬停只声明背景和阴影目标，不改变父布局或命中。 */
+/** 将搜索焦点与主动作悬停投影为背景、阴影目标，父布局与命中沿用正式几何。 */
 class MailRaisedSurface extends MailSurface {
     private final ReadableSignal<SceneTheme> theme;
     private final ReadableSignal<Integer> color;

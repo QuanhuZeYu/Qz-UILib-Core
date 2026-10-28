@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** baseline相对几何；flags统一在TextEffects，不在此处建立第二套状态。 */
+/** 保存相对 baseline 的装饰几何，启用状态由 TextEffects 声明。 */
 public final class TextDecoration {
     public static final TextDecoration NONE = new TextDecoration(0, 0, 0, 0, 0);
     private final boolean underlineFromEm, strikeFromEm;

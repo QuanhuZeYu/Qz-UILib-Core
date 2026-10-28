@@ -74,8 +74,8 @@ final class SceneEditRangePaint {
             TextLayout.Line line = lines.get(i);
             int y = underline ? (int) Math.floor(line.baseline + line.descent) : line.y;
             int endY = y + (underline ? 1 : (int) Math.ceil(line.lineHeight));
-            // Line.y 已由生产排版取整；相邻行共享下一行起点，不各自 ceil 后重叠一行像素。
-            // 下划线仍取原基线位置，不能被行槽截掉或改成整行背景。
+            // Line.y 已由生产排版取整，相邻选区直接共用下一行起点。
+            // 下划线沿原基线单独绘制。
             if (!underline && i + 1 < lines.size()) endY = Math.min(endY, lines.get(i + 1).y);
             int rowTop = Math.max(top, originY + y), rowBottom = Math.min(bottom, originY + endY);
             if (rowBottom <= rowTop) continue;
@@ -90,8 +90,8 @@ final class SceneEditRangePaint {
                 if (cluster.sourceEnd <= start || cluster.sourceStart >= end || cluster.advance <= 0) continue;
                 span(originX + (int) Math.floor(cluster.x), originX + (int) Math.ceil(cluster.x + cluster.advance));
             }
-            // LF 没有簇；与本行选区一起求并集，避免文字尾部与换行延展再次覆盖同一像素。
-            // 延展从段落方向的视觉末端开始；混排的逻辑末端可能位于行中，不能涂过未选文字。
+            // LF 的延展与本行选区先求并集，使每个像素只覆盖一次。
+            // 换行延展从段落方向的视觉末端开始，混排正文仍按各簇选区覆盖。
             if (hardBreaks && line.sourceEnd >= start && line.sourceEnd < end
                     && line.sourceEnd < text.originalText.length() && hardBreak(text.originalText.charAt(line.sourceEnd))) {
                 int x = (int) Math.floor(visualEnd);
@@ -99,7 +99,7 @@ final class SceneEditRangePaint {
                 else span(originX + x, originX + Math.max(x + 1, width));
             }
             if (spanCount == 0) continue;
-            // source 顺序不能当视觉顺序；只合并相交/相邻区间，保留 Bidi 选区之间的真实空洞。
+            // 按视觉位置合并相交或相邻区间，保留 Bidi 选区间的真实空洞。
             Arrays.sort(spans, 0, spanCount);
             int from = (int) (spans[0] >> 32), to = (int) spans[0];
             for (int j = 1; j < spanCount; j++) {

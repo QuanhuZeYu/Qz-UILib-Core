@@ -53,7 +53,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 状态来自业务；通过正式键盘管线验证单停靠、同组续段和离组不可复活。 */
+/** 使用业务状态与正式键盘管线核验单停靠、同组续段及离组后原段结束。 */
 public final class StateControlsScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("开关拒绝不伪造状态且每次动作即时读取", this::switchIntent);

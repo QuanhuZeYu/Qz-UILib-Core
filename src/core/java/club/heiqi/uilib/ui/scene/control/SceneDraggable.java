@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** 单内容的临时拖动；原槽不变，正式排列或独立被动层发布唯一几何。 */
+/** 为单个内容提供临时拖动，保留原槽，由正式排列或独立被动层发布几何。 */
 public final class SceneDraggable {
     public enum Axis { BOTH, X, Y }
     public enum Bounds { NONE, VIEWPORT, PARENT }
@@ -96,7 +96,7 @@ public final class SceneDraggable {
         SceneDragSupport.Observer observer() { return observer; }
         SceneNode sourceAnchor() { return sourceAnchor; }
         Options sourceAnchor(SceneNode anchor) { Options next = new Options(this); next.sourceAnchor = Objects.requireNonNull(anchor, "anchor"); return next; }
-        /** 额外呈现包装不改变实际内容的输入资格。 */
+        /** 指定包装内实际参与输入资格核验的内容。 */
         Options sourceContent(SceneNode content) { Options next = new Options(this); next.sourceContent = Objects.requireNonNull(content, "content"); return next; }
         /** 排序保留容器分配的当前插槽，拖动反馈由所属层呈现。 */
         Options preserveSlot() { Options next = new Options(this); next.preserveSlot = true; return next; }
@@ -116,12 +116,12 @@ public final class SceneDraggable {
         final int x, y;
         Offset(int x, int y) { this.x = x; this.y = y; }
     }
-    /** 一个 State 对应一个声明；外部只读观察，不持有节点或布局结果。 */
+    /** 一个 State 对应一个拖动声明，对外发布只读状态快照。 */
     public static final class State {
         private static final Snapshot INACTIVE = new Snapshot(false, false, 0, 0);
         private final ReactiveDomain domain;
         private final Signal<Snapshot> snapshot;
-        // 输入意图与公开有效位移分开；边缘限位后的反馈不能反过来成为下一次排列输入。
+        // 输入意图与限位后的公开位移分别保存，排列始终消费原意图。
         private final Signal<Offset> preferred;
         private final ReadableSignal<Snapshot> view;
         private boolean bound, keyboard, delayAllowed;
@@ -245,7 +245,7 @@ public final class SceneDraggable {
                 observer.configure(node, next);
                 return;
             }
-            // scope/key 切换先取消旧手势；新注册不能继承旧 capture 尾部。
+            // scope/key 切换先取消旧手势，再按新身份注册。
             state.end();
             if (observer != null) observer.detach(node);
             observer = null;
@@ -293,7 +293,7 @@ public final class SceneDraggable {
             }
             void observeContent(LayoutBox box, ChildPlacements ordinary, Options current) {
                 if (current.overlay != null) return;
-                // 预览的最终范围由所属层提供，普通内容不得覆盖或撤销该轨迹约束。
+                // 所属层负责预览最终范围，普通内容仅更新自身范围。
                 for (ChildPlacements.Entry entry : ordinary.entries()) {
                     if (entry.child != content) continue;
                     LayoutBox child = entry.relativeBox;
@@ -410,7 +410,7 @@ public final class SceneDraggable {
             LayoutBox box = feedbackBox(node, geometry);
             SceneGeometryView.Entry slot = geometry.get(node);
             if (box == null || slot == null) return;
-            // 反馈和接收只消费框架已发布的最终盒，不在这里重做所属层限位。
+            // 反馈与接收消费框架已限位并发布的最终盒。
             state.publish(true, false, SceneDragSupport.integer((long) box.x - slot.box.x - node.padding()),
                     SceneDragSupport.integer((long) box.y - slot.box.y - node.padding()));
             if (observer != null) notifyObserver(node, geometry, state.keyboard, box,
@@ -523,7 +523,7 @@ public final class SceneDraggable {
                 MotionSpec strategy = current.releaseStrategy();
                 if (strategy != null && !current.preserveSlot)
                     release.release(value.deltaX, value.deltaY, strategy, releaseEventTime);
-                // 两种会话均已清理；回调抛错及迟到 UP 都不能重新提交。
+                // 业务回调前已结束两种会话，本次放下仅提交一次。
                 if (receiving != null) receiving.run();
                 if (action != null) action.accept(placement.legalDrop(node, geometry, value, box));
             }
@@ -676,7 +676,7 @@ public final class SceneDraggable {
                     club.heiqi.uilib.ui.scene.geometry.SceneMesh.rectangle(target.x, target.y, target.width, target.height).transformed(inverse));
         }
         private SceneGeometryView dragFrame(SceneNode node, SceneGeometryView geometry) {
-            // 通用排序只发布世界预览意图，来源在合法迁移中换父，不能继承新父frame的旧grab。
+            // 通用排序沿世界坐标发布预览意图，使跨父迁移延续原拾取关系。
             if (options().preserveSlot && observer != null) return geometry.world();
             // wrapper保留原槽，移动的是它的content；自身分配frame包含用户变换而不含预览位移。
             return geometry.world().asControl(node);
@@ -713,7 +713,7 @@ public final class SceneDraggable {
             if (!state.keyboard && options.autoScroll)
                 state.scrolling.advance(runtime, scrollSource, geometry, state.pointerX, state.pointerY, now,
                         options.axis != Axis.Y, options.axis != Axis.X, options.autoScrollSpeed);
-            // 滚动已使正式几何失效；候选不能在旧 clip/box 上推算，由重排后的几何同步更新。
+            // 滚动使正式几何失效，候选在重排后的几何同步中更新。
         }
         @Override public void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) {
             geometry = dragFrame(node, geometry); remapPointer(geometry);

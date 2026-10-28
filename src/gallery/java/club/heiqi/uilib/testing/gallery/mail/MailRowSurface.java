@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.util.Arrays;
 import java.util.List;
 
-/** 行背景消费既有叶目标事实；关联画面不改变hover/pressed输入权威。 */
+/** 按叶目标已发布的 hover/pressed 事实呈现关联行背景。 */
 final class MailRowSurface extends MailSurface {
     private final ReadableSignal<MailPalette> palette;
     private final ReadableSignal<Boolean> checked,read,opened;

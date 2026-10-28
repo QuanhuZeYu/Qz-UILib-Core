@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.motion.MotionValue;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 一次轨道翻页的有限位置意图；运动不占主动输入帧，位置仍回原视口限位。 */
+/** 用呈现调度推进一次有限翻页意图，位置交原视口限位。 */
 final class SceneScrollPage {
     private static final MotionSpec MOTION = MotionSpec.tween(160_000_000L,
             value -> 1 - Math.pow(1 - value, 3));

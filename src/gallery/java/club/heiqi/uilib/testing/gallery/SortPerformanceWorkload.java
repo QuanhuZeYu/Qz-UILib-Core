@@ -106,7 +106,7 @@ public final class SortPerformanceWorkload implements ScenePage {
     public int commits() { return commits; }
     public int lastMovedNumber() { return lastMovedNumber; }
     public int rowFactoryCalls() { return rowFactoryCalls; }
-    /** 运行边界记录并在drop后校验；不每帧重建序列或集合。 */
+    /** 在运行边界记录身份，drop 后核验。 */
     public void captureIdentity() { for (Nodes row : nodes.values()) row.parent = row.content.parent(); }
     public boolean identityPreserved() {
         if (nodes.size() != scale || rowFactoryCalls != scale) return false;

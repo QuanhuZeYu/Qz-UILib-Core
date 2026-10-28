@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text.font.nativefont;
 
-/** 可跨线程共享的工厂；构造工厂不初始化native。session必须在实际使用线程创建。 */
+/** 可跨线程共享的延迟工厂；调用方在实际使用线程创建并持有 native session。 */
 public interface FontEngine {
     FontSession openSession();
 }

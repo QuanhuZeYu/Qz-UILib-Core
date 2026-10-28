@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.control;
 
 import java.util.Comparator;
 
-/** 目录始终优先；自然名称比较不解析为固定宽度数字，也不改变实际Path身份。 */
+/** 目录优先，按数字片段长度与字面值自然排序名称，Path 保留原身份。 */
 final class FilePickerOrder implements Comparator<FilePickerDirectory.Entry> {
     static final FilePickerOrder NAME=new FilePickerOrder(0,false,"名称 ↑"),NAME_DESC=new FilePickerOrder(0,true,"名称 ↓"),SIZE=new FilePickerOrder(1,false,"大小 ↑"),SIZE_DESC=new FilePickerOrder(1,true,"大小 ↓"),MODIFIED=new FilePickerOrder(2,false,"修改时间 ↑"),MODIFIED_DESC=new FilePickerOrder(2,true,"修改时间 ↓"),TYPE=new FilePickerOrder(3,false,"类型 ↑");
     static final FilePickerOrder[] VALUES={NAME,NAME_DESC,TYPE,SIZE,SIZE_DESC,MODIFIED_DESC,MODIFIED};

@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 
 import java.util.Arrays;
 
-/** 同一份页面密度来源驱动真实控件；局部尺寸角色不改写业务状态或外层布局。 */
+/** 用统一页面密度驱动真实控件，局部尺寸角色只调整所属控件度量。 */
 public final class DensityPage {
     private DensityPage() {}
 

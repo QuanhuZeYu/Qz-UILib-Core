@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.settings;
 import club.heiqi.uilib.ui.scene.control.*;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 宿主提供选项才装配；不将 Minecraft 类型或默认值带入共享配置核心。 */
+/** 按宿主提供的中性选项装配 Minecraft 设置区域。 */
 final class SettingsMinecraftSection {
     static SceneNode build(SettingsUi ui) {
         return ui.stack(20)

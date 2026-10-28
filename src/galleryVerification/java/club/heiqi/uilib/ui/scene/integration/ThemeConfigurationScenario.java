@@ -18,7 +18,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 
-/** 真实YAML重启与跨页面域绑定；覆盖同值、迟到通知及关闭，不依赖MC或GPU。 */
+/** 以真实 YAML 重启与跨页面域绑定核验同值、迟到通知和关闭。 */
 public final class ThemeConfigurationScenario extends TestApplication {
     private static final class App implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();

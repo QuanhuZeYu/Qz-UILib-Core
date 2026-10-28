@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 
-/** 捕获调用者的采样需求；核心不读取GUI或world状态。 */
+/** 保存调用者声明的采样密度与修订。 */
 public final class RasterSampling {
     public static final RasterSampling LOGICAL = new RasterSampling(1, 0);
     public final float pixelsPerLayoutUnit;

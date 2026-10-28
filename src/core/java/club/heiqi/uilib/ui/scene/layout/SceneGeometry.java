@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.geometry.SceneMesh;
 import club.heiqi.uilib.ui.scene.geometry.SceneTransform;
 import club.heiqi.uilib.ui.scene.geometry.SceneClipRegion;
 
-/** 已发布的几何条目不会被下次求解修改。 */
+/** 发布同批不可变几何，供绘制、输入与导航共同消费。 */
 public final class SceneGeometry implements SceneGeometryView {
     private final List<Entry> entries;
     private final List<Entry> sourceEntries;
@@ -51,7 +51,7 @@ public final class SceneGeometry implements SceneGeometryView {
             ordered.add(entry);
         }
         this.entries = Collections.unmodifiableList(ordered);
-        // 只保留已发布的同一 Entry 引用；不重新量排，也不把已过滤所属层带回捕获。
+        // 来源顺序仅引用本批已发布 Entry，捕获沿用相同的所属层过滤结果。
         List<Entry> source = new ArrayList<>();
         for (Entry entry : sourceOrdered) if (map.get(entry.node) == entry) source.add(entry);
         this.sourceEntries = Collections.unmodifiableList(source);
@@ -103,7 +103,7 @@ public final class SceneGeometry implements SceneGeometryView {
         return index.get(node);
     }
 
-    /** 导航显露的纯几何运算，不持有滚动状态、不执行布局或交互命令。 */
+    /** 按同批外盒和内边距求导航显露窗口。 */
     private static LayoutBox innerBox(SceneGeometryView.Entry entry) {
         int padding = entry.node.padding();
         return new LayoutBox(
@@ -113,7 +113,7 @@ public final class SceneGeometry implements SceneGeometryView {
                 (int) Math.max(0L, (long) entry.box.height - 2L * padding));
     }
 
-    /** 原显露包络与同批可平移内容；subject不包含当前滚动祖先及更外层裁剪。 */
+    /** 显露包络及同批可平移内容；subject 仅包含滚动祖先内侧的裁剪。 */
     public static final class RevealRegion {
         public final LayoutBox box;
         public final SceneMesh subject;
@@ -154,7 +154,7 @@ public final class SceneGeometry implements SceneGeometryView {
                 subject = subject.intersection(oversizedX && oversizedY ? focusShape : rectangle(region));
             }
         }
-        // 下层裁剪随内容一起移动；不使用已被当前祖先mask裁空的visibleRegion。
+        // 使用随内容平移的下层裁剪，当前祖先 mask 留给显露窗口处理。
         for (SceneNode node = target.parent(); node != ancestor; node = node.parent()) {
             if (node == null) return null;
             SceneGeometryView.Entry clip = geometry.get(node);
@@ -188,7 +188,7 @@ public final class SceneGeometry implements SceneGeometryView {
         LayoutBox window = innerBox(geometry.get(ancestor));
         boolean movableX = false, movableY = false;
         SceneNode boundary = geometry.layerBoundary(ancestor);
-        // 所属层从页面视口开始呈现；显露同样止于该层，不能重叠来源祖先的裁剪或滚动轴。
+        // 所属层从页面视口开始呈现，显露只遍历至该层边界。
         for (SceneNode node = ancestor == boundary ? null : ancestor.parent();
                 node != null; node = node == boundary ? null : node.parent()) {
             // 外层只能修复自身滚动轴的遮挡；正交轴仍需约束内层窗口。

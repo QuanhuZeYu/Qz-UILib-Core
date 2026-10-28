@@ -32,7 +32,7 @@ public final class SceneFocusGeometry {
         }
     }
 
-    /** 输入为逻辑顺序，稳定排序保留等分先后；裁剪不删除滚动正文。 */
+    /** 按几何评分稳定排序逻辑候选，滚动正文沿原候选集合参与。 */
     public static List<SceneNode> ordered(SceneGeometryView geometry, LayoutBox origin,
             SceneNavigationEvent direction, Iterable<SceneNode> nodes) {
         if (!direction.directional()) throw new IllegalArgumentException("需要四方向意图");

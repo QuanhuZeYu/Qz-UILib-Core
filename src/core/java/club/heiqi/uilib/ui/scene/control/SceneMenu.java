@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.List;
 import java.util.Objects;
 
-/** 共享命令的动作菜单；菜单不复制可执行资格或动作。 */
+/** 动作菜单直接消费共享命令的条件与动作。 */
 public final class SceneMenu {
     private SceneMenu() { }
     public static final class Item<K> {

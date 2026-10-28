@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 某轴内容视口的可组合滚动条；消费中性端口，不接管内容位置或领域显露。 */
+/** 通过中性端口组合某轴滚动条，内容位置与显露由原视口维护。 */
 public final class SceneScrollbar {
     /** 条自身的不可变策略；布局、绘制与时间分别在挂载期投影。 */
     public static final class Options {
@@ -70,7 +70,7 @@ public final class SceneScrollbar {
         Objects.requireNonNull(viewport, "viewport");
         return create(context, SceneScrollViewport.of(context, viewport), () -> new Options(), context.theme());
     }
-    /** 既有Area配置入口作为适配保留；独立条不依赖容器配置。 */
+    /** 将 Area 配置适配为独立滚动条策略。 */
     public static SceneNode create(ScenePageContext context, SceneNode viewport, ReadableSignal<SceneScrollArea.Options> options) {
         return create(context, viewport, options, context.theme());
     }

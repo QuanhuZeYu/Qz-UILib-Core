@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.Objects;
 
-/** 通用 HUD 声明；输入、缩放与裁剪共用正式几何，不持久化位置。 */
+/** 组合通用 HUD，输入、缩放与裁剪共用正式几何，位置持久化归业务。 */
 public final class SceneHud {
     public enum Fit { CLIP, CONTAIN }
     private SceneHud() {}

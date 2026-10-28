@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** 自有 token 展开器。固定参照只提供行为事实，生产不执行 JS 或访问文件。 */
+/** 以固定参照事实与文档宏上下文展开公式 token。 */
 public final class MathMacroExpander {
     public static final int MAX_EXPAND = 1000;
 
@@ -41,7 +41,7 @@ public final class MathMacroExpander {
         }
     }
 
-    /** 行标签定位使用环境起始原范围和行序号，不暴露展开串索引。 */
+    /** 以环境原文起点与行序号定位行标签。 */
     public static final class RowTag {
         public final String environment;
         public final int environmentStart, environmentOrdinal, row, sourceStart, sourceEnd;
@@ -67,7 +67,7 @@ public final class MathMacroExpander {
         }
     }
 
-    /** 宏读取发生时的逐环境事实；Task4 按 environmentOrdinal 验证值并构造 AST。 */
+    /** 捕获宏读取时的环境事实，解析器按 environmentOrdinal 核验并构造 AST。 */
     public static final class EnvironmentHeader {
         public final String environment, arrayStretchText;
         public final int environmentOrdinal;
@@ -161,7 +161,7 @@ public final class MathMacroExpander {
                         : cursor.environmentHeaders);
     }
 
-    /** Task4 可按 parser 参数模式拉取 token，位置始终是原文范围。 */
+    /** 供解析器按参数模式拉取 token，位置始终映射原文范围。 */
     public static final class Cursor {
         private final MathExpansionBudget budget = new MathExpansionBudget();
         private Deque<Token> input = new ArrayDeque<Token>();
@@ -303,7 +303,7 @@ public final class MathMacroExpander {
                         "Too many expansions: infinite loop or need to increase maxExpand setting");
         }
 
-        /** 不展开参数；定界参数允许空串，且只在同组深度匹配。 */
+        /** 读取原参数 token，定界参数允许空串，并按同组深度匹配。 */
         public List<Token> consumeArg() {
             return consumeArg(Collections.<String>emptyList());
         }
@@ -378,7 +378,7 @@ public final class MathMacroExpander {
             return body;
         }
 
-        /** 先计算引用数、文本复制成本并验证占位符；这一阶段不复制实参。 */
+        /** 复制实参前，核验占位符并预留引用数、文本与生成预算。 */
         private int reserveSubstitution(Definition d, List<List<Token>> values, Token call) {
             budget.work(d.body.size(), call);
             long[] argumentCosts = new long[values.size()];
@@ -403,7 +403,7 @@ public final class MathMacroExpander {
                     cost += MathExpansionBudget.weight(token);
                 }
             }
-            // 替换参数可以倍增，必须先预留完整生成体，不能在 addAll 扩容后才计次数。
+            // 替换参数可倍增，addAll 前先预留完整生成体与累计工作预算。
             budget.generate(size, call);
             budget.work(cost, call);
             return (int) size;
@@ -600,7 +600,7 @@ public final class MathMacroExpander {
                     : -1;
         }
 
-        /** primitive assignment 由宏层统一处理，Task4 不重复修改 namespace。 */
+        /** 统一处理 primitive assignment，namespace 变更归宏层。 */
         public boolean assignment(Token token) {
             return assignment(token, false);
         }
@@ -725,7 +725,7 @@ public final class MathMacroExpander {
                     while (!input.isEmpty())
                         if (!expandOnce(true)) {
                             Token token = popToken();
-                            // noexpand 临时保护与 let 永久快照不能混同。
+                            // 结束 noexpand 的临时保护，保留 let 快照的持久含义。
                             append(out, token.treatAsRelax ? token.flags(false, false) : token);
                         }
                     count(out.size(), active == null ? eof : active);
@@ -861,7 +861,7 @@ public final class MathMacroExpander {
             } while (!token.text.equals("]"));
         }
 
-        /** 只管理宏namespace，环境节点与列数语义由 Task4 消费。 */
+        /** 维护环境的宏 namespace，环境节点与列数语义交给解析器。 */
         private boolean environmentBoundary(Token token, List<Token> out) {
             if (token.text.equals("\\begin") || token.text.equals("\\end")) {
                 int declarationAt = out.size();
@@ -1155,7 +1155,7 @@ public final class MathMacroExpander {
             boolean present = c.argumentTokens(type, optional, token, out);
             if (optional) optionalPresent = present;
         }
-        // 固定 parser 只有 color（非 textcolor）产生 current@color 宏；验证/节点仍归 Task4。
+        // 固定 parser 的 color 产生 current@color 宏，参数校验与节点构造归解析器。
         if (token.text.equals("\\color") && out.size() > colorArgumentAt + 1) {
             c.budget.work(out.size() - colorArgumentAt - 2, token);
             List<Token> body =

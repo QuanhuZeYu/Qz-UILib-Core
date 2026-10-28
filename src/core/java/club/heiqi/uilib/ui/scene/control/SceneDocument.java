@@ -120,7 +120,7 @@ public final class SceneDocument {
         return root;
     }
 
-    /** 文档表格的列语义沿共同段落呈现，不在绘制端维护另一套命中位置。 */
+    /** 将文档表格列对齐语义交给共同段落呈现。 */
     static void alignParagraph(
             SceneNode node, club.heiqi.uilib.ui.scene.text.TableContent.Alignment alignment) {
         if (node.control() instanceof Paragraph) ((Paragraph) node.control()).alignment = alignment;
@@ -170,7 +170,7 @@ public final class SceneDocument {
                 .alt(item.alt);
     }
 
-    /** 同一声明与基础样式的纯内容派生只归段落一处，父测量和子主题共享；不持节点或租约。 */
+    /** 缓存同一声明与基础样式的纯内容派生，供父测量与子主题共同读取。 */
     private static final class ScopedResolved {
         final ReadableSignal<TextContent> source;
         final ReadableSignal<SceneTheme> theme;
@@ -223,7 +223,7 @@ public final class SceneDocument {
         }
     }
 
-    /** 最近一次字体请求：同值度量复用文字身份，不保存布局宽度或最终排列。 */
+    /** 保存最近一次字体请求的文字与内联度量，同值请求复用文字身份。 */
     private static final class ParagraphRequest {
         final TextContent.Resolved resolved;
         final List<MeasuredInline> inline;
@@ -261,7 +261,7 @@ public final class SceneDocument {
         club.heiqi.uilib.ui.scene.text.TableContent.Alignment alignment =
                 club.heiqi.uilib.ui.scene.text.TableContent.Alignment.DEFAULT;
         TextContent declaration;
-        // 只表示当前声明已解析且可检查链接身份，不代表最后一次布局宽度或呈现。
+        // 当前已解析的交互声明，供链接身份核验；布局与呈现另按当次请求准备。
         TextContent interactionDeclaration;
         final ScopedResolved shared;
         TextContent.Resolved resolved;
@@ -367,7 +367,7 @@ public final class SceneDocument {
             List<ChildPlacements.Entry> arranged = new ArrayList<>();
             Map<Integer, MeasuredInline> offsets = new HashMap<>();
             for (MeasuredInline measured : inline) offsets.put(measured.box.offset, measured);
-            // 视觉簇可因双向文字重排；按逻辑offset关联，一次遍历，不假定视觉顺序。
+            // 按逻辑 offset 关联内联对象与视觉簇，支持双向重排。
             for (TextLayout.Line line : layout.lines())
                 for (TextLayout.Cluster cluster : line.clusters()) {
                     MeasuredInline measured = offsets.get(cluster.logicalStart);
@@ -375,8 +375,7 @@ public final class SceneDocument {
                         continue;
                     InlineBox box = measured.box;
                     float x = cluster.x, y = line.baseline + cluster.style.baselineShift - box.baseline;
-                    // 位置来自同代簇；整数像素位置不能把正式子测量尺寸再扩成包络，
-                    // 否则居中/基线的半像素会破坏图像fixed/min/max声明。
+                    // 按同代簇定位后保留正式子测量尺寸，使半像素取整仍遵守 fixed/min/max。
                     int left = (int) Math.floor(x), top = (int) Math.floor(y);
                     arranged.add(
                             new ChildPlacements.Entry(
@@ -390,7 +389,7 @@ public final class SceneDocument {
             return arranged;
         }
 
-        /** 正式组合呈现入口；旧 presentText 保留 SceneControl 原样返回 full 的兼容行为。 */
+        /** 复合入口按同批子测量定位内容，单独文本入口沿 SceneControl 默认返回 full。 */
         @Override
         public TextLayout presentText(
                 SceneNode node,
@@ -406,7 +405,7 @@ public final class SceneDocument {
         private TextLayout presentParagraph(
                 TextLayout full, int width, SceneChildMeasurer children) {
             resolveContent();
-            // 每次呈现以本次full定位，即使引擎命中另一宽度的文字缓存，也不消费最后一次排列。
+            // 每次按当前 full 与子测量重新确定本次呈现位置。
             placements = place(full, measureInline(resolved, children, width));
             return full;
         }
@@ -437,7 +436,7 @@ public final class SceneDocument {
                 right = Math.max(right, SceneTextPresentation.right(line));
                 bottom = Math.max(bottom, SceneTextPresentation.bottom(line));
             }
-            // 测量外沿是本次请求的局部值，不覆盖最终呈现的placements。
+            // 本次测量局部计算外沿，最终 placements 由呈现入口确定。
             for (ChildPlacements.Entry placed : place(layout, fontRequest.inline)) {
                 right = Math.max(right, placed.relativeBox.x + placed.relativeBox.width);
                 bottom = Math.max(bottom, placed.relativeBox.y + placed.relativeBox.height);
@@ -485,7 +484,7 @@ public final class SceneDocument {
                     || interactionDeclaration != declaration
                     || resolved == null
                     || entry.clip != null && !entry.clip.contains(x, y)) return null;
-            // 显式行高允许对象超出行带：对象链接消费正式子几何，不能只用文字行高判断资格。
+            // 显式行高允许对象超出行带，对象链接按正式子几何判断命中资格。
             List<InlineContent> inline = resolved.inlineContents();
             for (int i = inline.size() - 1; i >= 0; i--) {
                 InlineContent item = inline.get(i);

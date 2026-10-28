@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 
-/** 用独立有理数期望与有限距离往返保护拾取曲线，不依赖宿主或墙钟。 */
+/** 用独立有理数期望与有限距离往返核验拾取曲线。 */
 public final class ElasticMappingChecks extends TestApplication {
     private static final MathContext ORACLE_PRECISION = new MathContext(80, RoundingMode.HALF_EVEN);
     private static final BigDecimal ORACLE_RESISTANCE = new BigDecimal(.55);
@@ -20,7 +20,7 @@ public final class ElasticMappingChecks extends TestApplication {
 
     private void knownPairs() {
         ElasticOptions options = new ElasticOptions(32, MotionSpec.instant());
-        // 期望来自有理数 352/27、352/19、1056/49 与 88/15，不由被测曲线生成。
+        // 独立期望取自有理数 352/27、352/19、1056/49 与 88/15。
         pair(options, MotionPolicy.NORMAL, 40, 13.037037037037037);
         pair(options, MotionPolicy.NORMAL, 80, 18.526315789473684);
         pair(options, MotionPolicy.NORMAL, 120, 21.551020408163265);
@@ -79,7 +79,7 @@ public final class ElasticMappingChecks extends TestApplication {
     private static double forwardOracle(double maximum, double raw, MotionPolicy policy) {
         BigDecimal limit = oracleLimit(maximum, policy);
         if (limit.signum() == 0) return 0;
-        // 用无限指数范围直接计算原有理式，不经过生产代码的比例缩放或往返结果。
+        // 用 BigDecimal 的独立有理式计算期望，覆盖极大与极小输入。
         BigDecimal scaled = new BigDecimal(Math.abs(raw)).multiply(ORACLE_RESISTANCE);
         double amount = limit.multiply(scaled).divide(limit.add(scaled), ORACLE_PRECISION).doubleValue();
         return Math.copySign(amount, raw);
@@ -96,7 +96,7 @@ public final class ElasticMappingChecks extends TestApplication {
     }
 
     private static void oracleNear(double actual, double expected, String message) {
-        // 不能以正反求同时归零的自洽结果跳过；只有独立 oracle 的最终舍入为零才允许零。
+        // 按独立 oracle 的最终舍入核验零值，非零期望要求实际结果同样非零。
         require(expected == 0 ? actual == 0 : actual != 0, message + ": actual=" + actual + ", expected=" + expected);
         near(actual, expected, message);
     }

@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 
-/** 只解析SFNT事实，不依赖AWT、宿主或文件名。范围错误交给字体资源入口诊断。 */
+/** 从 SFNT 读取字族、样式与轴事实，范围错误交给字体资源入口诊断。 */
 public final class FontMetadata {
     public final String family, subfamily;
     public final FontStyle style;
@@ -97,7 +97,7 @@ public final class FontMetadata {
                     language = u16(b, p + 4),
                     id = u16(b, p + 6);
             if (id != 1 && id != 2 && id != 16 && id != 17) continue;
-            // 选择同一种稳定语言，避免本机显示语言变化把同family拆开；typographic names优先。
+            // 优先选择稳定语言的 typographic names，使同字族身份与本机显示语言解耦。
             int priority =
                     (platform == 3 ? 20 : platform == 0 ? 10 : 0) + (language == 0x409 ? 2 : 0);
             if (!priorities.containsKey(id) || priority > priorities.get(id)) {

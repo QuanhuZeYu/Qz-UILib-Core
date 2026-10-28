@@ -63,7 +63,7 @@ public final class SceneSwitch {
         @Override int symbolWidth(SceneNode node) { return Math.round(symbolSize(node) * 1.8f); }
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, checked); }
         @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color, boolean enabled) {
-            // 可用资格是事实输入，不能从正常/禁用文字颜色是否相等反推。
+            // 直接按可用资格选择轨道颜色，主题色仅负责呈现。
             ScenePaintShapes.rounded(target, box, clip, track.color(trackColor(enabled)), box.height / 2);
             int inset = Math.max(1, box.height / 7), diameter = Math.max(0, Math.min(box.height - inset * 2, box.width - inset * 2));
             float fraction = Math.max(0, Math.min(1, position.get()));

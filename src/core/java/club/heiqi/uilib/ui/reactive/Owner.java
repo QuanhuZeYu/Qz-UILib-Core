@@ -47,7 +47,7 @@ public final class Owner implements AutoCloseable {
     }
 
     private void checkAlive() {
-        // 生命周期命令沿状态域的共同纯阶段边界，不影响读取或内部依赖缓存。
+        // 生命周期变更通过状态域的写入边界校验。
         domain.checkWrite();
         if (disposed) throw new IllegalStateException("作用域已释放");
     }

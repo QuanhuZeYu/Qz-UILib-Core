@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.text.font.FontTextService;
 
-/** 页面作者的实际接入反例：新增自有导航项只提供语义来源和动作，不复制布局/动效机械代码。 */
+/** 以语义来源与动作新增导航项，核验页面作者的正式扩展路径。 */
 public final class MailNavigationDeclaration {
     private MailNavigationDeclaration() {}
     public static void verify(FontTextService fonts) {

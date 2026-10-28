@@ -15,7 +15,7 @@ public final class SceneSemantics {
         SLIDER, SCROLLBAR, LIST, LIST_ITEM, TABLE, ROW, COLUMN_HEADER, CELL, TREE, TREE_ITEM, TAB_LIST, TAB, TAB_PANEL,
         SELECT, LISTBOX, OPTION, MENU, MENU_ITEM }
     public enum Action { FOCUS, ACTIVATE, SET_TEXT, SUBMIT, INCREMENT, DECREMENT, SET_VALUE, EXPAND, COLLAPSE, SELECT }
-    /** 名称和值等纯数据可安全保留在旧快照，不含动作闭包。null表示这一项未声明。 */
+    /** 快照可保留的名称与状态纯值，null 表示该项未声明；动作交给请求入口执行。 */
     public static final class Values {
         public final Role role;
         public final String name, description, value;

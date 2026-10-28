@@ -102,7 +102,7 @@ public final class SceneImage implements SceneControl {
         return create(service, source, options, null);
     }
 
-    /** 自定义占位是正规逻辑子树；尺寸仍由图像声明/占位意图分配，不要求业务回写布局。 */
+    /** 将自定义占位作为逻辑子树接入，尺寸由图像声明与占位意图分配。 */
     public static SceneNode create(
             ImageService service,
             ReadableSignal<ImageSource> source,
@@ -178,7 +178,7 @@ public final class SceneImage implements SceneControl {
         return node;
     }
 
-    /** 后续Markdown解析器使用此入口；当前只实现图像消费者，不解析Markdown全文。 */
+    /** 供文档转换后的图像引用接入正式图像来源与呈现。 */
     public static SceneNode documentImage(
             ImageService service,
             ReadableSignal<ImageSource> source,
@@ -200,7 +200,7 @@ public final class SceneImage implements SceneControl {
         int width = ready ? state.content.width : options.placeholderWidth,
                 height = ready ? state.content.height : options.placeholderHeight;
         Size w = node.width(), h = node.height();
-        // 先求明确单边及比例，随后分别约束边界；未知内容从不借占位比例推导。
+        // 按已知自然比例补齐明确单边，再分别约束边界；未知来源尺寸使用占位意图。
         if (ready) {
             if (w.mode != Size.Mode.NATURAL && h.mode == Size.Mode.NATURAL) {
                 int specified = w.mode == Size.Mode.FIXED ? w.value : constraints.availableWidth;
@@ -250,7 +250,7 @@ public final class SceneImage implements SceneControl {
         return options.tooltip;
     }
 
-    /** 只缓存最近事实/当前样式/空间/度量代际；hover与其他paint变化不重新resolve或整形。 */
+    /** 按最近图像事实、样式、空间与度量代际缓存文字结果，纯绘制变化复用当前请求。 */
     @Override
     public void preparePaint(
             SceneNode node,
@@ -273,7 +273,7 @@ public final class SceneImage implements SceneControl {
     }
 
     /** 数量随最终适配图像缩放。数学脚本只缩小图像盒，不改节点的主题字号；
-     * 用字号上限和真实墨迹约束覆盖层，不能让完整行高吞掉小图标。 */
+     * 覆盖层按字号上限与真实墨迹适配小图标。 */
     private void prepareQuantity(
             club.heiqi.uilib.ui.scene.image.ItemImageFacts facts,
             TextStyle style,

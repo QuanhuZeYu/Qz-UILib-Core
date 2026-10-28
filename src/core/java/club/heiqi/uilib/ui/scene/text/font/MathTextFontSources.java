@@ -67,7 +67,7 @@ public final class MathTextFontSources {
 
     private static FontSource resource(ClassLoader loader, String id, long revision, String path) {
         // Latin 以及 Noto 的 Greek/Cyrillic 已由 MathTextFontScenario 真实 FT/HB 核验。
-        // 复杂脚本能力不从 cmap 覆盖推断；其候选仅来自显式配置 tail。
+        // 复杂脚本候选由显式配置 tail 提供，实际能力由字体管线核验。
         try {
             return FontSource.resource(id, revision, loader, BASE + path, false,
                     new java.util.LinkedHashSet<>(path.startsWith("mono/")

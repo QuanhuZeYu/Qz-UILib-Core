@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 离散结果的挂载期呈现期限；与数值过渡共用有限Step，不执行业务动作。 */
+/** 管理离散结果的挂载期呈现期限，与数值过渡共用有限 Step 调度。 */
 final class TransientBinding<T> implements NodeBinding {
     private final ReadableSignal<T> source;
     private final long duration;
@@ -59,7 +59,7 @@ final class TransientBinding<T> implements NodeBinding {
 
         @Override public boolean advance(long now) {
             if (closed) return false;
-            // 帧先推进再结算来源；失效期间不能用旧期限清掉新结果。
+            // 帧先推进再结算来源，来源失效期间先等待新结果重新起期。
             if (invalidated) return true;
             if (now - started < duration) return true;
             shown = false;

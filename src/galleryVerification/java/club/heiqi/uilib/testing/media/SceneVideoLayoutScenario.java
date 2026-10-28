@@ -91,7 +91,7 @@ public final class SceneVideoLayoutScenario extends TestApplication {
                 }
                 require(service.presented(published,System.nanoTime())!=null,"正式回执没有记录已发布帧");
                 media.play();await(()->!media.snapshot().video.key.equals(published));media.pause();
-                // 不泵新帧，模拟原片后台选帧已前进但宿主仍在重放缓存plan的真实窗口。
+                // 保留当前视图，模拟后台选帧前进时宿主仍回放缓存 plan 的窗口。
                 try(club.heiqi.uilib.ui.media.MediaFrameLease replay=service.retainPresentation(published)) {
                     require(replay!=null&&replay.active(),"挂载视图的已呈现帧在后台前移后失去提交联系");
                 }

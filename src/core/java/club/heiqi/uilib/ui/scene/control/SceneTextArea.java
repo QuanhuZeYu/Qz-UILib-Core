@@ -37,7 +37,7 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 /**
  * 正式多行字段，草稿、历史及提交全部由业务持有的 MULTI_LINE 状态管理。
  * 默认宽填充、高自然；正文视口应由父页面明确声明 height 为 fill 或 fixed，边界仍用 Size 的 min/max。
- * 字段自身滚动正文，不需要也不应为正文声明 node.scrollable。
+ * 字段自行管理正文滚动视口，滚动意图通过其视口端口递交。
  * 行为合同见 UILib editing spec 1.1.2；焦点、capture、MountScope 和 callback guard 沿核心管线。
  */
 public final class SceneTextArea {
@@ -80,7 +80,7 @@ public final class SceneTextArea {
         return create(context,state,theme,readOnly,onSubmit,policy,tabMode,true);
     }
 
-    /** 外层表面负责装饰时关闭本体边框；编辑、选择、组字与滚动语义不变。 */
+    /** 将表面装饰交给外层，正文继续使用原编辑、选择、组字与滚动流程。 */
     public static SceneNode create(ScenePageContext context,SceneEditState state,
             ReadableSignal<SceneTheme> theme,ReadableSignal<Boolean> readOnly,Consumer<Submission> onSubmit,
             SubmitPolicy policy,ReadableSignal<TabMode> tabMode,boolean framed) {
@@ -110,7 +110,7 @@ public final class SceneTextArea {
         private final SceneFieldPaint decoration;
         private final SceneEditRangePaint ranges = new SceneEditRangePaint(true);
         private final SceneEditCommands commands;
-        // 只通知呈现归属变化；不保存草稿、选区、会话或焦点权威。
+        // 发布呈现归属修订，草稿、选区和会话由 SceneEditState 持有。
         private final Signal<Boolean> viewChanged;
         private TextLayout source, presented;
         private SceneTextAreaGeometry editing;

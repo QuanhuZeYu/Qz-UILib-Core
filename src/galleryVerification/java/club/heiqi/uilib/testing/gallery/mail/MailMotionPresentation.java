@@ -29,7 +29,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 
-/** 原邮箱控件及正式页面会话的确定时刻回归，不依赖 sleep 或源码结构。 */
+/** 在确定时刻采样原邮箱控件与正式页面会话的呈现。 */
 final class MailMotionPresentation {
     private MailMotionPresentation() {}
 
@@ -236,7 +236,7 @@ final class MailMotionPresentation {
             frame();
         }
         SceneSemanticId semanticId(SceneNode node) {
-            // 字段提示属于description；沿公共检查快照取挂载ID，不把提示误当语义名称。
+            // 按字段 description 从公共检查快照取得挂载 ID。
             SceneSemanticId id = page.inspect().join().entries.stream()
                     .filter(e -> node.id().equals(e.nodeId)).findFirst().get().id;
             require(host.semantics.get(id) != null, "实际控件没有当前可达语义");

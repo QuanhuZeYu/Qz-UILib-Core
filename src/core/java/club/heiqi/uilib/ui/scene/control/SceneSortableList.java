@@ -73,7 +73,7 @@ public final class SceneSortableList {
             control.version.get();
             return control.session != null && control.session.active ? Collections.singletonList(control.session) : Collections.<Session<T, K>>emptyList();
         }, value -> value, source -> Objects.requireNonNull(previewFactory.apply(source.get().row.value), "preview")));
-        // repeat 是根的唯一孩子声明。私有层条目与业务键隔离，flowChildren 正式排除它，不污染 gap/自然高。
+        // repeat 统一拥有业务行与私有层，私有层使用独立键并由 flowChildren 排除普通流占位。
         Object layerKey = new Object();
         root.bind(NodeBinding.repeat(() -> {
             List<Item<T, K>> values = new ArrayList<>();
@@ -183,7 +183,7 @@ public final class SceneSortableList {
         }
         void pending(Session<T, K> current, long now) {
             double distance = Math.hypot(current.worldX - current.worldStartX, current.worldY - current.worldStartY);
-            // 默认排序是距离或延时；距离先达到就已激活，不保留不可达的容差失效态。
+            // 距离或等待期限任一达到时激活排序。
             if (distance >= 5 || now - current.pressed >= 200_000_000L) activate(current, now);
         }
         void refresh(Session<T, K> current, SceneGeometryView geometry, SceneDragSupport.AutoScroll.Shift shift) {
@@ -206,7 +206,7 @@ public final class SceneSortableList {
             } else {
                 current.overlayY = SceneDragSupport.integer((long) current.pointerY - current.grabY);
                 current.slot = others.size(); current.beforeKey = null;
-                // 原行保持原槽，以当前真实变高行的中点求插入槽，不以等高索引估算。
+                // 原行保留原槽，按当前各行实际中点确定插入槽。
                 for (int i = 0; i < others.size(); i++) {
                     LayoutBox box = geometry.get(others.get(i).node).box;
                     if (current.pointerY < (double) box.y + shift.y + box.height / 2.0) {
@@ -229,8 +229,8 @@ public final class SceneSortableList {
                 if (sourceFound) { successor = identity; break; }
                 if (Objects.equals(identity, row.key)) sourceFound = true;
             }
-            cancel(row); // 先结束再执行业务，回调失败或迟到 UP 都不能再次提交。
-            // handle 的点击同样即时拾取；槽位未变只结束手势，不制造无操作的业务排序。
+            cancel(row); // 先结束会话，再交付本次唯一业务移动。
+            // handle 点击即时拾取，仅在最终槽位变化时发布业务排序。
             if (sourceFound && !Objects.equals(successor, move.beforeKey)) onMove.accept(move);
         }
         void step(Session<T, K> current, int amount, SceneGeometryView geometry) {

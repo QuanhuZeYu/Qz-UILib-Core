@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 /** 可直启的状态和挂载合同场景；生命周期共享正式页面入口，反例直接观察原runtime。 */
 public final class SceneCoreLoopTest extends TestApplication {
-    /** 成品隔离也调用此真实公共消费；空文字不引入替代字形度量的证据。 */
+    /** 供隔离成品实际调用公共入口，空文字场景仅核验结构与输入。 */
     public static void publicGridConsumer() {
         ReactiveDomain domain = ReactiveDomain.direct();
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
@@ -66,7 +66,7 @@ public final class SceneCoreLoopTest extends TestApplication {
         System.out.println("CORE_GRID publicFactory=true frame=true input=true externalPolicyAlive=true");
     }
 
-    /** null-parent 成品消费者也实际调用所属层工厂；空文案只验结构与输入，不冒称字体证据。 */
+    /** null-parent 成品消费者实际调用所属层工厂，以空文案核验结构与输入。 */
     public static void publicLayerConsumer() {
         ReactiveDomain domain = ReactiveDomain.direct();
         SoftwareSceneScenario.SoftwareHost host = new SoftwareSceneScenario.SoftwareHost();
@@ -156,7 +156,7 @@ public final class SceneCoreLoopTest extends TestApplication {
         System.out.println("CORE_SYMBOL publicFactory=true frame=true input=true dynamicSymbol=true graphicPassive=true externalStateAlive=true");
     }
 
-    /** null-parent制品消费者实际调用提示/无边框重载，提示不成为输入文字。 */
+    /** null-parent 成品消费者实际调用提示与无边框重载，核验提示仅作呈现。 */
     public static void publicFieldPresentationConsumer() {
         ReactiveDomain domain=ReactiveDomain.direct();SoftwareSceneScenario.SoftwareHost host=new SoftwareSceneScenario.SoftwareHost();
         host.width=360;host.height=100;SceneNode[] field=new SceneNode[1];
@@ -547,7 +547,7 @@ public final class SceneCoreLoopTest extends TestApplication {
                     require(handle.active() && detached.runtime() == null && !mounted.destroyed(),
                             "拒绝结构命令保留原挂载和节点生命");
                 }
-                // 纯阶段仍可读取和更新派生内部缓存，不将求值误当生命周期命令。
+                // 纯阶段沿只读状态求值，派生内部缓存按需更新。
                 cacheSource.set(5);
                 require(domain.readOnly(cached::get) == 10, "只读阶段允许失效派生按当前来源重新求值");
                 runtime.dispatchClick(mounted);

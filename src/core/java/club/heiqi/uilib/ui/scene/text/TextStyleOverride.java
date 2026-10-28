@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 稳定的属性意图；未声明的属性在 resolve 时继承当前基础样式，不冻结字体资源。 */
+/** 保存稳定属性意图，resolve 时从当前基础样式继承未声明属性。 */
 public final class TextStyleOverride {
     public static final TextStyleOverride INHERIT = builder().build();
     private final Integer color, weight;
@@ -115,7 +115,7 @@ public final class TextStyleOverride {
             decorationFromEm = s.decorationFromEm;
         }
 
-        /** 显式名称在每次resolve后由字体服务动态映射；不沿用覆盖其他族的base候选。 */
+        /** 显式名称由字体服务动态映射，替换基础样式的候选覆盖。 */
         public Builder font(String value) {
             font = Objects.requireNonNull(value, "font");
             if (font.isEmpty()) throw new IllegalArgumentException("字体名称不能为空");

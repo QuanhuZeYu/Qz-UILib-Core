@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.image;
 import java.net.URI;
 import java.util.Objects;
 
-/** 业务来源描述；MC物品由专用宿主子类提供快照，不转为位图。 */
+/** 声明业务图像来源，MC 物品由宿主子类提供专用快照。 */
 public class ImageSource {
     public enum Kind {
         RESOURCE,
@@ -74,7 +74,7 @@ public class ImageSource {
         return new ImageSource(Kind.HTTP, uri.toString(), null, null);
     }
 
-    /** 文档图片的正式来源解析；item URI交给宿主解析器，不在核心解析ItemStack。 */
+    /** 解析文档图像来源，item URI 委托宿主解析器。 */
     public static ImageSource parse(
             String uri, java.util.function.Function<String, ImageSource> items) {
         try {

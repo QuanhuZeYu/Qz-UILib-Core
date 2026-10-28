@@ -23,7 +23,7 @@ final class SettingsHudHost implements SceneHost, SceneTextMeasurer {
     public void replay(PaintPlan value) { plan = value; replays++; }
     public void semanticsChanged(SceneSemanticSnapshot value) { semantics = value; }
 
-    /** 只采样矩形命令，独立核对缩放与裁剪后的实际像素；不声称验证字形或 GPU。 */
+    /** 采样矩形命令，独立核验缩放与裁剪后的实际软件像素。 */
     int rectanglePixel(double x, double y) {
         int color = 0;
         for (PaintCommand command : plan.commands()) {

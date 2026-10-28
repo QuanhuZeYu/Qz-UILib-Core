@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.reactive;
 
 import club.heiqi.uilib.testing.TestApplication;
 
-/** 同包检查真实依赖边，保证关闭后的回调不再持有长寿命来源；不依赖GC时序。 */
+/** 在同包中核验真实依赖边，关闭后直接检查长寿命来源的订阅释放。 */
 public final class ReactiveLifecycleScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("Effect自身关闭后继续读取不重新订阅来源", this::effectClosesDuringRead);

@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.media;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-/** 左上原点、紧密排列的 RGBA8。发布时复制，旧 PaintPlan 不受 decoder 后续写入影响。 */
+/** 左上原点、紧密排列的 RGBA8，发布时复制为独立不可变像素。 */
 public final class MediaVideoFrame {
     public final MediaFrameKey key;
     public final long presentationNanos, durationNanos;

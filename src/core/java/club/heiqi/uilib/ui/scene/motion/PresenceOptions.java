@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.motion;
 
 import java.util.Objects;
 
-/** 显式进出场的有限保留策略；预算属于同一个拥有声明，普通结构不消费它。 */
+/** 为显式进出场声明有限保留策略，预算归所属结构声明。 */
 public final class PresenceOptions {
     public final MotionSpec enter, exit;
     public final boolean initialEnter;

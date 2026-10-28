@@ -36,7 +36,7 @@ public final class SceneChoiceDialog {
         Objects.requireNonNull(choose);
         Objects.requireNonNull(selected);
         SceneAppearance style = new SceneAppearance(page, theme);
-        // 一个业务代际只投影一次选项，避免布局重读临时列表不断刷新虚拟行身份。
+        // 选项按业务来源代际投影，布局复用同一列表与稳定行身份。
         ReadableSignal<List<SceneSelect.Option<K>>> projected =
                 page.domain().computed(style.scope, items::get);
         SceneNode list =

@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.media.spi;
 
-/** 全部方法只在音频 owner 线程使用，不触碰宿主全局 context 或音量。 */
+/** 音频 owner 线程专用输出，设备、context 与增益限本播放流。 */
 public interface MediaAudioSink extends AutoCloseable {
     boolean queue(MediaPcm pcm) throws Exception;
     void playing(boolean playing) throws Exception;

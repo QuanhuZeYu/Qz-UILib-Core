@@ -6,7 +6,7 @@ import { stripTypeScriptTypes, createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-// 固定扩展和锁依赖实际运行，只替代设置读取与本地化，不由生产代码生成期望。
+// 实际运行固定扩展与锁定依赖，仅为设置读取和本地化提供测试入口。
 const root = new URL('../../../../../', import.meta.url);
 const cache = new URL('build/frontmatter-oracle/', root);
 const output = new URL('./frontmatter-corpus.json', import.meta.url);

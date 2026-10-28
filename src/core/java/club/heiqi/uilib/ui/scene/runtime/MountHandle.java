@@ -22,7 +22,7 @@ public final class MountHandle {
         return runtime == candidate;
     }
 
-    /** 当前仍是同一次挂载；UUID或同节点重挂载不能使旧句柄恢复。域内读取。 */
+    /** 在所属域内核验原挂载 token，重挂使用新 token。 */
     public boolean active() {
         return runtime.isCurrentMount(node, token);
     }

@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
-/** 正式通知区、PageSession 和真实路由；显式推进统一帧时间，不使用 sleep。 */
+/** 通过正式通知区、PageSession 与真实路由核验显式统一时间下的通知。 */
 public final class NotificationsScenario extends TestApplication {
     private static final class Fixture implements AutoCloseable {
         final ReactiveDomain domain = ReactiveDomain.direct();

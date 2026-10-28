@@ -12,7 +12,7 @@ import java.util.Objects;
 /**
  * 业务持有的单行/多行编辑状态；合同见 UILib editing spec 1.1、1.3。
  * 构造和写命令必须在所属域内执行，外部异步完成经 domain.execute 递交。
- * 不持有控件、宿主或业务权威值；焦点切换由调用方调用 breakHistoryGroup。
+ * 业务权威值由调用方持有，焦点切换时调用方通过 breakHistoryGroup 结束历史分组。
  */
 public final class SceneEditState {
     public enum Mode {
@@ -93,7 +93,7 @@ public final class SceneEditState {
         }
     }
 
-    // 128 是局部历史容量，影响可逆步数，不影响业务提交合同。
+    // 局部容量限制可逆历史步数，业务提交独立处理。
     private static final int HISTORY_LIMIT = 128;
 
     private enum Kind {
@@ -163,7 +163,7 @@ public final class SceneEditState {
         this.baseline = normalize(baseline);
         int end = this.baseline.length();
         value = domain.signal(new Snapshot(this.baseline, "", null, end, end, false, false, 0));
-        // 缓存独立只读视图，不把可强转为 Signal 的写入口暴露给控件。
+        // 控件读取独立只读视图，写入统一经过编辑命令。
         snapshotView = value::get;
         textView = () -> value.get().text;
     }
@@ -284,7 +284,7 @@ public final class SceneEditState {
         if (!group) groupKind = Kind.NONE;
     }
 
-    /** 整字段原子替换；保留原选区作为撤销起点，不更换业务基线或清除既有历史。 */
+    /** 整字段原子替换，保留业务基线与历史，并以原选区作为撤销起点。 */
     public void replaceAll(String text) {
         domain.checkWrite();
         String insertion = normalize(text);
@@ -331,7 +331,7 @@ public final class SceneEditState {
         String next = s.text.substring(0, start) + insertion + s.text.substring(end);
         if (next.equals(s.text)) {
             if (kind == Kind.NONE || kind != groupKind) groupKind = Kind.NONE;
-            // 同文替换也完成选区折叠；沿 select 保留组字、错误及会话，不伪造文本修订或历史。
+            // 同文替换仅折叠选区，保留组字、错误、会话及原文本修订与历史。
             int caret = ceiling(rules.boundaries(next), start + insertion.length());
             if (s != value.get() || s.anchor != caret || s.caret != caret)
                 value.set(new Snapshot(s.text, s.composition, s.error, caret, caret,
@@ -399,13 +399,13 @@ public final class SceneEditState {
         refreshUnicodeRules();
     }
 
-    /** 取消组字只清除 preedit，不取消草稿会话；提交文本使用 replaceSelection(text,false)。 */
+    /** 更新或清除 preedit，草稿会话独立保留；提交文本使用 replaceSelection(text,false)。 */
     public void composition(String text, boolean composing) {
         domain.checkWrite();
         String preedit = composing ? normalize(text) : "";
         Snapshot s = aligned(value.get(), profile());
         groupKind = Kind.NONE;
-        if (composing && !s.composing) generation++; // 新组字也不能被此前请求的完成结果清掉。
+        if (composing && !s.composing) generation++; // 新组字开启新代际，提交结果按原代际核验。
         if (!preedit.equals(s.composition) || composing != s.composing || s != value.get())
             value.set(
                     new Snapshot(
@@ -419,7 +419,7 @@ public final class SceneEditState {
                             s.revision));
     }
 
-    /** 输入路由捕获业务基线身份；普通编辑不更换，reset/cancel 永不复活旧联系。 */
+    /** 输入路由按基线身份捕获联系，普通编辑延续身份，reset/cancel 建立新身份。 */
     public Object inputBaseline() {
         domain.checkAccess();
         return inputBaseline;
@@ -476,7 +476,7 @@ public final class SceneEditState {
         return submission;
     }
 
-    /** 返回是否影响当前草稿；旧请求仍记录结果，重复 resolve 返回 false 且不改任何结果。 */
+    /** 请求首次接受时记录结果，仅当前请求更新草稿；返回是否影响当前草稿，重复完成返回 false。 */
     public boolean accept(Submission submission, String normalized) {
         domain.checkWrite();
         requireOwn(submission);
@@ -484,11 +484,11 @@ public final class SceneEditState {
         String next = normalize(normalized);
         Snapshot s = value.get();
         boolean current = isCurrent(submission, s);
-        // 先占用一次性完成权；Snapshot 失效通知可同步重入，不能重复改写业务结果。
+        // 通知前先取得一次性完成权，使同步重入读取已完成状态。
         submission.resolved = true;
         if (current) {
             boolean changed = !next.equals(s.text);
-            // 同文本确认保留当前选区；不同文本只夹取当前选区并向左对齐，不恢复请求时旧选区。
+            // 同文本确认保留当前选区，规范化变化时将当前选区夹取并向左对齐。
             int[] bounds = profile().boundaries(next);
             int anchor = floor(bounds, s.anchor);
             int caret = floor(bounds, s.caret);
@@ -516,7 +516,7 @@ public final class SceneEditState {
                 && history.get(historyPosition - 1).after.text.equals(s.text)) {
             Change last = history.get(historyPosition - 1);
             last.after = after;
-            // 例如输入多余空格又被规范化删掉，不留下只会再次触发同一修正的空步骤。
+            // 规范化使前后文本相同时移除该历史步骤。
             if (last.before.text.equals(after.text)) {
                 history.remove(--historyPosition);
             }
@@ -530,7 +530,7 @@ public final class SceneEditState {
         Objects.requireNonNull(reason, "reason");
         Snapshot s = value.get();
         boolean current = isCurrent(submission, s);
-        // 先占用一次性完成权；Snapshot 失效通知可同步重入，不能重复改写业务结果。
+        // 通知前先取得一次性完成权，使同步重入读取已完成状态。
         submission.resolved = true;
         if (current)
             value.set(
@@ -567,7 +567,7 @@ public final class SceneEditState {
                 : text.replace("\r", "").replace("\n", "");
     }
 
-    /** 每次字素操作取得一个不可变规则快照；不依赖实际字体与整形簇。 */
+    /** 每次字素操作使用同一不可变 Unicode 规则快照。 */
     private UnicodeGraphemes.Profile observedProfile;
 
     private UnicodeGraphemes.Profile profile() {
@@ -579,7 +579,7 @@ public final class SceneEditState {
         return rules;
     }
 
-    /** 规则换代只使位置归位，不修改草稿或清空历史；调用方与字体刷新在同一域协调。 */
+    /** 调用方在所属域协调规则与字体换代，本入口按新边界对齐位置并保留草稿与历史。 */
     public void refreshUnicodeRules() {
         domain.checkWrite();
         Snapshot current = value.get(), next = aligned(current, profile());

@@ -11,9 +11,9 @@ import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.List;
 
-/** 字段装饰只由一个表面持有；编辑身份、作者主题与内距不随组合转移。 */
+/** 统一持有字段表面装饰，编辑节点继续持有自身身份、作者主题与内距。 */
 final class SceneFieldPaint {
-    /** 仅正式单多行控件参与声明期装饰交接，不成为新的公共控件协议。 */
+    /** 在声明期协调正式单多行控件的内部装饰交接。 */
     interface Source {
         SceneFieldPaint fieldDecoration();
     }
@@ -52,7 +52,7 @@ final class SceneFieldPaint {
 
     private boolean owns(SceneNode node) {
         SceneNode candidate = surface == null ? null : surface.get();
-        // move/卸载不延续旧装饰归属；只读取当前唯一逻辑树和挂载事实，不补建另一套归属状态。
+        // 按当前逻辑树与挂载事实确定装饰归属，move 或卸载后使用新归属。
         return contains(candidate, editor) ? node == candidate : node == editor;
     }
 
@@ -152,7 +152,7 @@ final class SceneFieldPaint {
                 for (int x = 1; x <= r; x++) {
                     int next = x == r ? 0 : sampled(fill, edge, innerCorner[y * r + x], ringCorner[y * r + x]);
                     if (x == r || next != color) {
-                        // 同色内区合并为行段，避免圆角内部展开成逐像素命令。
+                        // 将同色内区合并成行段，收敛圆角绘制命令量。
                         rect(target, clip, color, b.x + start, b.y + y, x - start, 1);
                         rect(target, clip, color, b.x + b.width - x, b.y + y, x - start, 1);
                         rect(target, clip, color, b.x + start, b.y + b.height - y - 1, x - start, 1);

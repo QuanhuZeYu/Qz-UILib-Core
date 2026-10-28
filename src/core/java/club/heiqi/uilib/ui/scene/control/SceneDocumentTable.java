@@ -29,7 +29,7 @@ import java.util.function.Consumer;
 final class SceneDocumentTable implements SceneControl {
     private final ReadableSignal<DocumentContent.Block> source;
     private int offset, maximum;
-    // 仅在本次测量到排列之间复用；arrange后及卸载时释放，不保活旧测量批次。
+    // 仅在本次测量至排列间复用，arrange 后及卸载时释放。
     private GridRequest request;
 
     private SceneDocumentTable(ReadableSignal<DocumentContent.Block> source) {
@@ -185,7 +185,7 @@ final class SceneDocumentTable implements SceneControl {
         int[] widths = minimum.clone();
         if (naturalTotal <= budget && count > 0) {
             widths = natural.clone();
-            // 表格视口占据父分配宽度；余宽分给各列，不绘制裸露的网格背景。
+            // 视口占据父分配宽度，余宽分配给各列，使网格覆盖视口。
             long remaining = budget - naturalTotal;
             for (int col = 0; col < count; col++)
                 widths[col] += (int) (remaining / count + (col < remaining % count ? 1 : 0));
@@ -231,7 +231,7 @@ final class SceneDocumentTable implements SceneControl {
             SceneTextMeasurer text,
             SceneChildMeasurer children) {
         Grid grid = grid(node, limits.availableWidth, children);
-        // 返回视口宽度，不让内容自然宽度撑大整篇；网格宽度只用于同代排列及滚动范围。
+        // 返回分配视口宽度，网格自然宽度仅供同代排列与内部滚动范围使用。
         return new MeasuredSize(Math.min(limits.availableWidth, grid.width), grid.height);
     }
 
@@ -302,7 +302,7 @@ final class SceneDocumentTable implements SceneControl {
             return scrollResult(node, event, geometry).consumed;
         }
 
-    /** 单元格聚合实际子内容宽度，不用fill声明掩盖不可拆分原子项的最小宽度。 */
+    /** 按实际子内容聚合单元格宽度，保留不可拆分原子项的最小宽度。 */
     private static final class Cell implements SceneControl {
 
         @Override

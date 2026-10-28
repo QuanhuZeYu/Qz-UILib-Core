@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 import java.util.*;
 
-/** 只负责具名区域分配；测量不写信号、不读取上一帧几何。 */
+/** 按当批约束与子内容测量分配具名区域。 */
 final class SettingsLayout {
     private SettingsLayout() {}
 
@@ -85,7 +85,7 @@ final class SettingsLayout {
         }
     }
 
-    /** 操作区先按宿主空间分配；短窗的文档溢出由正式视口承接，不把页脚推到客户端外。 */
+    /** 优先按宿主空间分配操作区，短窗的文档溢出由正式视口承接。 */
     private static final class TemplateWorkspace extends Arrangement {
         final ReadableSignal<SceneAppearance.Palette> colors;
         final ReadableSignal<Boolean> compact;
@@ -124,7 +124,7 @@ final class SettingsLayout {
         }
     }
 
-    /** 保留普通窗口的头部/分类/正文排列，低窗按内容范围滚动而不压坏固定高度控件。 */
+    /** 排列头部、分类与正文，低窗保留固定控件高度并按内容范围滚动。 */
     private static final class TemplateDocument extends Arrangement {
         final ReadableSignal<SceneAppearance.Palette> colors;
         final ReadableSignal<Boolean> compact;
@@ -151,7 +151,7 @@ final class SettingsLayout {
             int bodyHeight = Math.max(Math.round(em * 10), limits.availableHeight - bodyY);
             List<ChildPlacements.Entry> placed = new ArrayList<>();
             place(placed, toolbar, 0, 0, limits.availableWidth, toolbarHeight);
-            // rail 与正文共享可滚动文档的内容预算，不能被短视口压成永久空裁剪区。
+            // rail 与正文共用可滚动文档的内容预算，在短视口中保留可达内容范围。
             int navHeight = narrow ? navigationHeight : Math.max(0, bodyY + bodyHeight - start);
             int navWidth = narrow ? limits.availableWidth : rail;
             children.measureChild(navigation, new Constraints(navWidth, navHeight));

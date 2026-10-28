@@ -55,7 +55,7 @@ public final class ReactiveDomain {
     }
 
     /** 递交独立操作，并在该操作或其结束时Effect结算失败后于域内通知清理者。
-     * 同步和外部executor使用同一边界；通知不吞原异常，不重试业务操作。
+     * 同步和外部 executor 共用失败边界，原操作失败后通知清理者一次。
      * 清理失败追加为suppressed，原始Throwable仍交既有executor错误通道。 */
     public void execute(Runnable action, Consumer<Throwable> failed) {
         execute(
@@ -150,8 +150,8 @@ public final class ReactiveDomain {
         }
     }
 
-    /** 生命周期释放延后到当前最外层操作和Effect结束，失败也执行；不推进后续业务队列。
-     * 域外按普通操作递交；域内只登记清理，不能在输入handler/routing中直接卸载。 */
+    /** 生命周期清理在当前最外层操作和 Effect 结束后执行，失败时仍尝试清理。
+     * 域外经普通操作递交，域内登记到清理队列，使输入路由先完成当前操作。 */
     public void deferCleanup(Runnable cleanup) {
         Objects.requireNonNull(cleanup, "cleanup");
         if (CURRENT.get() != this) {
@@ -186,8 +186,8 @@ public final class ReactiveDomain {
         operation(() -> invalidate(Objects.requireNonNull(action, "action")));
     }
 
-    /** 先完成全部依赖失效，再同步通知呈现观察者；批次内跨键派生不能暴露旧缓存。
-     * 回调错误不阻断其余观察者，已发布状态不撤销；沿原调用通道保留首错。 */
+    /** 全部依赖失效后再同步通知呈现观察者，使跨键派生读取当前批次。
+     * 回调失败后继续通知其余观察者，保留已发布状态并沿原通道报告首错。 */
     void invalidate(Runnable action) {
         Throwable primary = null;
         invalidationDepth++;
@@ -267,7 +267,7 @@ public final class ReactiveDomain {
         return new Owner(this);
     }
 
-    /** 宿主可从域外递交命令；域内纯派生/测量阶段不得藉排队改变生命周期。 */
+    /** 宿主从域外递交命令；域内递交先通过写入阶段校验。 */
     public void checkDispatch() {
         if (CURRENT.get() == this) checkWrite();
     }
@@ -286,7 +286,7 @@ public final class ReactiveDomain {
         }
     }
 
-    /** 校验域内受控写命令；测量、绘制和纯派生阶段不能改变交互或业务权威。 */
+    /** 写命令须处于所属域的可写阶段，测量、绘制和纯派生使用只读边界。 */
     public void checkWrite() {
         checkAccess();
         if (readOnlyDepth != 0) throw new IllegalStateException("测量或绘制不能写业务状态");

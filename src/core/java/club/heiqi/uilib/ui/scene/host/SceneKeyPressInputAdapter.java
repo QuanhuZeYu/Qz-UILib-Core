@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.host;
 import java.util.Objects;
 
 /** 唯一原生消费者递交单键历史事件；一段按压发一次意图。
- * 失焦/开屏持键等待历史耗尽及物理释放，repeat不重发；不持有范围或页面权威。 */
+ * 失焦或开屏持键须等历史耗尽并确认物理释放；范围和页面资格由路由器核验。 */
 public class SceneKeyPressInputAdapter {
     private final Runnable sink;
     private boolean available, suspended = true, held;

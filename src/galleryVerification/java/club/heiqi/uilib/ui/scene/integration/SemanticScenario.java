@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.scene.text.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-/** 语义读取和定向动作走正式Session、共同几何及真实控件，不替换路由。 */
+/** 通过正式 Session、共同几何与真实控件核验语义读取和定向动作。 */
 public final class SemanticScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("名称关系与纯描述更新复用布局绘制且旧快照不可变",this::descriptions);
@@ -106,7 +106,7 @@ public final class SemanticScenario extends TestApplication {
         ScenePresentation[] before=new ScenePresentation[1];f.domain.execute(()->before[0]=f.session.pipeline().current());
         SceneSemanticId field=f.entry(SceneSemantics.Role.TEXT_FIELD,"seed").id;int changes=f.host.changes,measures=f.host.measures;
         f.domain.execute(()->f.accessible.set("输入批次中的新邮箱名称"));
-        // 输入准备已通知host不能替代正式呈现缓存更新；同目标MOVE本身不应强制重收绘制。
+        // 输入准备通知 host 后，正式呈现缓存仍按同批语义更新，稳定 MOVE 复用绘制。
         f.session.pipeline().pointer(ScenePointerEvent.move(f.host.width()-2,f.host.height()-1));f.session.frame();
         ScenePresentation[] after=new ScenePresentation[1];f.domain.execute(()->after[0]=f.session.pipeline().current());
         require("输入批次中的新邮箱名称".equals(after[0].semantics.get(field).values.name)

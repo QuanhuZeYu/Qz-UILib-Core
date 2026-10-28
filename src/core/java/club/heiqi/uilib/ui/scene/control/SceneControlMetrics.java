@@ -6,7 +6,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 控件度量的一次纯解析；布局条件只包含实际占位，不包含配色、动效和圆角。 */
+/** 纯解析控件占位度量，配色、动效与圆角由绘制声明维护。 */
 public final class SceneControlMetrics {
     public enum Kind { LABEL, BUTTON, MODERN_BUTTON, FIELD, SYMBOL, SLIDER, SCROLLBAR, TOOLTIP,
         TABS, POPUP, TREE, TABLE, VIRTUAL, CARD, PANEL }

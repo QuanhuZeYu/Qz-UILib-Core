@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 平台适配提供来源事实；resolve 是可取消的后台读取，不操作媒体会话或 UI。 */
+/** 在可取消的后台读取中解析平台来源事实，会话与 UI 由调用方协调。 */
 public interface MediaResolver {
     boolean supports(String address);
     Result resolve(Request request,MediaCancellation cancellation) throws Exception;

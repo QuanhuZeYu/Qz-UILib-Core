@@ -10,9 +10,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 度量与绘制共享的不可变定位。int 尺寸为真实浮点边界向上取整，不把 advance 逐字取整。 */
+/** 度量与绘制共享不可变定位，保留浮点 advance，int 尺寸按整体边界向上取整。 */
 public final class TextLayout {
-    /** 沿字形内一列原覆盖度延长；只改变绘制，不改变原glyph资源身份或stem轮廓。 */
+    /** 沿字形内一列原覆盖度延长绘制，保留原 glyph 资源身份与 stem 轮廓。 */
     public static final class GlyphXExtension {
         public final float splitX, extraWidth;
 
@@ -382,7 +382,7 @@ public final class TextLayout {
     }
 
     public static final class Line {
-        /** 仍为源文逻辑顺序，控制符可视化不写回此字段。 */
+        /** 源文逻辑顺序文本，控制符可视化由绘制投影提供。 */
         public final String text;
 
         public final int x, y, logicalStart, logicalEnd, sourceStart, sourceEnd;
@@ -665,7 +665,7 @@ public final class TextLayout {
         return lines;
     }
 
-    /** 正式字体产出的实际排版请求；旧构造器未声明此事实时为 null。 */
+    /** 字体产出的实际排版请求，构造时省略该事实则为 null。 */
     public TextPolicy policy() {
         return policy;
     }
@@ -681,7 +681,7 @@ public final class TextLayout {
         return diagnostics;
     }
 
-    /** 颜色变化只替换样式，不重走匹配、整形及光栅。 */
+    /** 将绘制色重绑定到已有几何与字体资源。 */
     public TextLayout withStyle(TextStyle style) {
         Objects.requireNonNull(style, "style");
         if (style.equals(this.style)) return this;
@@ -690,7 +690,7 @@ public final class TextLayout {
         return withColors(style, offset -> style.color);
     }
 
-    /** 按逻辑安全簇绑定当前前景色，调用方只提供颜色，不能改变定位或资源事实。 */
+    /** 按逻辑安全簇绑定当前前景色，复用原定位与资源事实。 */
     public TextLayout withColors(int baseColor, java.util.function.IntUnaryOperator colorAt) {
         return withColors(style.color == baseColor ? style : style.withColor(baseColor), colorAt);
     }
@@ -700,7 +700,7 @@ public final class TextLayout {
         return withColors(baseStyle, colorAt, value -> value);
     }
 
-    /** 只投影绘制 alpha，富文本前景与高亮分别保持原颜色，不重新整形。 */
+    /** 投影绘制 alpha，富文本前景与高亮保留原颜色，几何复用原布局。 */
     public TextLayout withOpacity(float opacity) {
         if (opacity == 1) return this;
         java.util.NavigableMap<Integer, Integer> colors = new java.util.TreeMap<>();

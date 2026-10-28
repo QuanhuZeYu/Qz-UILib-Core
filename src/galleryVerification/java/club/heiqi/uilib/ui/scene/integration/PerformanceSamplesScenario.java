@@ -6,7 +6,7 @@ import club.heiqi.uilib.testing.gallery.PerformanceSamples.Summary;
 
 import java.util.Arrays;
 
-/** 固定数值验收复用测试应用；期望取自独立输入，不在测试中重写统计算法。 */
+/** 在共同测试应用中按独立固定输入核验统计结果。 */
 public final class PerformanceSamplesScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {
@@ -22,7 +22,7 @@ public final class PerformanceSamplesScenario extends TestApplication {
 
     private void knownPercentiles() {
         PerformanceSamples samples = new PerformanceSamples(100);
-        // frame 输入为 100..1 ms，interval 为 201..300 ms，两口径不能串用。
+        // frame 输入为 100..1 ms，interval 为 201..300 ms，分别核验两种统计口径。
         for (int index = 0; index < 100; index++) {
             samples.add((100L - index) * 1_000_000L, (201L + index) * 1_000_000L);
         }

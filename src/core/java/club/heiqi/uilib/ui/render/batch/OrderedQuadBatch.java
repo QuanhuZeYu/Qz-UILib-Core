@@ -9,16 +9,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 有序提交段。软件与GL消费者共用载荷；资源版本由资源服务持有，不暴露GL纹理ID。 */
+/** 软件与 GL 共用的有序提交值，资源服务按中性身份与版本解析资源。 */
 public final class OrderedQuadBatch {
-    /** 四个真实顶点及各自UV；bbox仅保守剔除，旧UV端点保留兼容元数据。 */
+    /** 保存四顶点及各自 UV，bbox 供保守剔除，UV 端点保留轴对齐读取语义。 */
     public static final class Quad {
         public final float x0, y0, x1, y1, x2, y2, x3, y3;
         public final float x, y, width, height, u0, v0, u1, v1;
         public final float s0, t0, s1, t1, s2, t2, s3, t3;
         public final int layer, color;
 
-        /** 保留轴对齐构造，既有文字/图像及调用方无需改变。 */
+        /** 从轴对齐区域生成四顶点。 */
         public Quad(
                 float x,
                 float y,
@@ -66,7 +66,7 @@ public final class OrderedQuadBatch {
                     u0, v0, u1, v0, u1, v1, u0, v1, layer, color);
         }
 
-        /** 裁剪后的各顶点保留独立线性采样；旧端点字段对应顶点0与2。 */
+        /** 裁剪后各顶点保留独立线性采样，端点字段对应顶点 0 与 2。 */
         public Quad(
                 float x0, float y0, float x1, float y1,
                 float x2, float y2, float x3, float y3,
@@ -160,11 +160,11 @@ public final class OrderedQuadBatch {
     public static final class State {
         public final long resource, generation;
         public final int material;
-        /** 旧字段仍在本图元局部坐标中；单位变换保持原scissor含义。 */
+        /** 图元局部矩形裁剪，单位变换下直接作为 scissor。 */
         public final LayoutBox clip;
         public final SceneTransform transform;
         public final SceneClipRegion shapeClip;
-        // 输入纯值不可变，交集随当前 State 有界保留，不建立跨帧历史索引。
+        // 纯值交集缓存归当前 State，随该状态一并释放。
         private volatile SceneClipRegion effectiveClip;
 
         public State(int material, long resource, long generation, LayoutBox clip) {
@@ -181,7 +181,7 @@ public final class OrderedQuadBatch {
             this.shapeClip = Objects.requireNonNull(externalWorldClip, "世界裁剪");
         }
 
-        /** 局部矩形也须随原图元变换，旋转后不能只用其包络替代精确裁剪。 */
+        /** 将局部矩形随图元变换后，与世界形状裁剪求精确交集。 */
         public SceneClipRegion effectiveClip() {
             SceneClipRegion cached = effectiveClip;
             if (cached == null) {
@@ -255,7 +255,7 @@ public final class OrderedQuadBatch {
         return draws;
     }
 
-    /** 固定EBO的容量模板；只在建立或扩容时调用，不在每帧重复生成。 */
+    /** 建立或扩容时生成固定 EBO 的容量模板。 */
     public static int[] quadIndices(int capacity) {
         if (capacity <= 0 || capacity > Integer.MAX_VALUE / 6)
             throw new IllegalArgumentException("无效索引容量");

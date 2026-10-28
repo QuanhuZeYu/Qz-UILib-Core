@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.reactive;
 
 import java.util.function.Supplier;
 
-/** 纯派生按需求当前值；首次读取不返回占位，也不推进 Effect。 */
+/** 读取时按当前来源求值并缓存；副作用由状态域单独调度。 */
 public final class Computed<T> extends Tracker implements ReadableSignal<T>, AutoCloseable {
     private final Supplier<T> derivation;
     private boolean dirty = true;

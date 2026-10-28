@@ -21,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 
-/** 共同播放权威。两个 owner 线程不进入 UI domain；native 调用不持有状态锁。 */
+/** 维护共同播放状态，解码与音频 owner 在 UI domain 外工作，native 调用在状态锁外执行。 */
 public final class MediaSession implements AutoCloseable {
     private final Object lock=new Object();
     private final MediaService service;
@@ -89,7 +89,7 @@ public final class MediaSession implements AutoCloseable {
     }
     public void play() {synchronized(lock){
         ensureOpen();
-        // 在途刷新可能在意图改成play以后才返回；保留暂停位置，资格确认前不恢复真实输出。
+        // 恢复时保留原暂停位置，待在途刷新确认其仍在有效范围后再恢复输出。
         if(!playIntent&&failure==null&&!seeking&&info.durationNanos<0&&info.seekable!=null)resumePositionNanos=position;
         playIntent=true;lock.notifyAll();
     }}
@@ -133,7 +133,7 @@ public final class MediaSession implements AutoCloseable {
     }
     private void decodeLoop(){new DecoderOwner().run();}
 
-    /** 锁内捕获的一次操作身份；不是另一份可写播放状态，迟到结果仍由 valid 裁决。 */
+    /** 锁内捕获本次操作身份，迟到结果通过 valid 核验原操作。 */
     private final class DecodeOperation {
         final long gen=generation,seekTarget=target,version=sourceVersion;
         final MediaSource selected=source;
@@ -169,7 +169,7 @@ public final class MediaSession implements AutoCloseable {
             catch(Throwable error){
                 refreshFailed=true;
                 synchronized(lock){
-                    // 同来源定位只更换输出代际；旧刷新失败不能取消后来的操作。
+                    // 同来源定位更换输出代际，刷新结果按原操作身份结算。
                     if(valid(work.gen,work.operation)&&sourceVersion==work.version&&!work.lifetime.cancelled)
                         fail(work.selected,"source-refresh",error);
                 }
@@ -320,7 +320,7 @@ public final class MediaSession implements AutoCloseable {
                 ||aheadNanos+item.durationNanos>budget.deferredDecodedNanos)
             throw new IllegalStateException("顺序decoder忽略轨道需求，raw延后存储超过明确预算: bytes="
                     +(aheadBytes+item.data.remaining())+" items="+(decodedAhead.size()+1)+" nanos="+(aheadNanos+item.durationNanos));
-        // 顺序SPI可复用借用数组；下一次read之前必须复制，不能把只读视图当所有权。
+        // 顺序 SPI 可复用借用数组，在下一次 read 前复制为 core 自有不可变数据。
         byte[] copy=new byte[item.data.remaining()];item.data.duplicate().get(copy);
         MediaDecoded frozen=item.video?MediaDecoded.video(item.presentationNanos,item.durationNanos,item.width,item.height,ByteBuffer.wrap(copy))
                 :MediaDecoded.audio(item.presentationNanos,item.sampleRate,item.channels,ByteBuffer.wrap(copy));
@@ -329,7 +329,7 @@ public final class MediaSession implements AutoCloseable {
     }
     private boolean hasDeferredTrack(boolean video){for(MediaDecoded item:decodedAhead)if(item.video==video)return true;return false;}
     private boolean hasDeferredAudio(){return hasDeferredTrack(false);}
-    /** 已知/动态尺寸在需求资格处同样校验，避免等一个预算永远容不下的首帧。 */
+    /** 按已知或动态尺寸核验帧需求预算，超出预算时立即报告。 */
     private long qualifyVideo(MediaInfo facts){
         if(!facts.hasVideo||facts.width==0||facts.height==0)return 0;
         long pixels=(long)facts.width*facts.height;
@@ -340,7 +340,7 @@ public final class MediaSession implements AutoCloseable {
             throw new IllegalStateException("动态视频帧与当前展示共存超过预算");
         return bytes;
     }
-    /** VFR返回项进入延后后，以实际待入队头帧计算资格及唤醒，不能继续沿上一帧估算。 */
+    /** VFR 返回项暂缓后，按实际待入队头帧计算资格与唤醒时刻。 */
     private long nextVideoDuration(){
         for(MediaDecoded item:decodedAhead)if(item.video)return item.durationNanos;
         return lastVideoDuration;
@@ -423,7 +423,7 @@ public final class MediaSession implements AutoCloseable {
                             if(videoTimeBlocked&&videoTimeAvailable(nextVideoDuration()))lock.notifyAll();
                             while(!videos.isEmpty()&&(videos.peek().presentationNanos<=position||(current==null&&!playIntent)))select(videos.remove());
                             settlePlayback(tail,now);
-                            // 时间线、选帧、状态和等待保持原有连续锁区间，不发布中间结果。
+                            // 时间线、选帧、状态与等待在同一锁区间内完成。
                             waitForChange(nextWait(now));
                         }
                     }catch(Throwable error){synchronized(lock){if(!closed&&generation==gen)fail(source,"audio/output",error);}}
@@ -453,7 +453,7 @@ public final class MediaSession implements AutoCloseable {
             if(!refresh)return true;
             measured=sink.position();
             boolean queued=queueAudio(gen);
-            // 设备open/queue可阻塞；播放前成对重读意图和增益，不能把旧gain配上新play。
+            // 设备 open/queue 返回后，播放前成对重读当前意图与增益。
             synchronized(lock){if(closed||generation!=gen)return false;desired=outputPlay();gain=muted?0:volume;}
             if(gain!=appliedGain){sink.gain(gain);appliedGain=gain;}
             if(desired!=appliedPlay||desired&&(queued||!measured.playing&&measured.queuedBuffers>0))sink.playing(desired);
@@ -503,13 +503,13 @@ public final class MediaSession implements AutoCloseable {
         private void settlePlayback(boolean tail,long now){
             boolean audioActive=!info.hasAudio||audioPosition!=null&&audioPosition.playing||tail;
             boolean drainedAudio=!info.hasAudio||audioPosition!=null&&audioPosition.queuedBuffers==0&&audioPosition.positionNanos>=audioPosition.queuedEndNanos;
-            // 已接受的闭区间末端可以没有目标画面；EOF不伪造提交或定位恢复。
+            // 闭区间末端的定位允许直接到 EOF，提交与恢复仍以真实输出为准。
             boolean endpoint=eof&&seeking&&videos.isEmpty()&&current==null&&info.seekable!=null&&target==info.seekable.endNanos;
             boolean drainedVideo=!info.hasVideo||endpoint||videos.isEmpty()&&current!=null&&position>=current.presentationNanos+current.durationNanos;
             // 暂停定位结算本代已准备且停止的输出；播放定位仍以真实设备消费为准。
             boolean seekAudioReady=playIntent?audioActive:!info.hasAudio||audioPosition!=null
                     &&!audioPosition.playing&&(audioPosition.queuedBuffers>0||tail);
-            // 换来源并定位时轨道尚未发现；UNKNOWN不能按“没有音视频”提前完成本代定位。
+            // 换源定位先等待实际轨道信息，再判断本代定位所需的音视频输出。
             if(seeking&&info.ready&&(!info.hasVideo||seekPresented)&&seekAudioReady)seeking=false;
             expirePresentations(now);
             if(eof&&drainedAudio&&drainedVideo){state=MediaState.ENDED;seeking=false;}
@@ -538,7 +538,7 @@ public final class MediaSession implements AutoCloseable {
         records.put(next.key,new PresentationRecord(next.presentationNanos,next.durationNanos,System.nanoTime()));
         expirePresentations(System.nanoTime());lock.notifyAll();
     }
-    /** 正式 Prepared 应取得租约并在 finally 释放，避免最新选帧前移使已提交身份消失。 */
+    /** Prepared 取得租约并在 finally 中释放，租期内保留精确提交身份供回放确认。 */
     public MediaFrameLease retainPresentation(MediaFrameKey key){
         synchronized(lock){
             PresentationRecord record=records.get(key);
@@ -561,7 +561,7 @@ public final class MediaSession implements AutoCloseable {
             java.util.Map.Entry<MediaFrameKey,PresentationRecord> entry=iterator.next();PresentationRecord r=entry.getValue();
             boolean isCurrent=current!=null&&current.key.equals(entry.getKey());
             boolean finished=eof&&videos.isEmpty()&&position>=r.pts+r.duration;
-            // 未持有的提交联系只保留有限数量和1s宽限；租约内的GPU提交不按最新帧裁掉。
+            // 未持有的联系按数量和 1s 宽限限制，租约内的提交身份保留至释放。
             if(r.pins==0&&((r.presented&&!isCurrent)||records.size()>budget.presentationRecords
                     ||((!isCurrent||finished)&&!r.presented&&now-r.selectedNanos>1_000_000_000L))){if(!r.presented)stats[3]++;iterator.remove();}
         }

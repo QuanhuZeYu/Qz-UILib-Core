@@ -32,7 +32,7 @@ public final class SceneSelect {
             Consumer<K> change, ReadableSignal<String> placeholder, ReadableSignal<SceneTheme> theme) {
         return create(page, options, selected, change, placeholder, theme, true);
     }
-    /** framed 只控制触发框；弹层始终消费完整主题，不借透明编辑主题推断配色。 */
+    /** framed 控制触发框装饰，弹层始终使用完整主题。 */
     public static <K> SceneNode create(ScenePageContext page, ReadableSignal<List<Option<K>>> options, ReadableSignal<K> selected,
             Consumer<K> change, ReadableSignal<String> placeholder, ReadableSignal<SceneTheme> theme, boolean framed) {
         Objects.requireNonNull(page, "page").domain().checkWrite(); Objects.requireNonNull(selected, "选中来源");

@@ -16,7 +16,7 @@ public final class GalleryCompositeLabels {
         this.nextPage = Objects.requireNonNull(nextPage);
     }
 
-    /** 旧字面入口的明确默认；没有隐式语言源、文件读取或全局订阅。 */
+    /** 提供显式默认字面文案，语言绑定由 from 入口接入。 */
     public static GalleryCompositeLabels defaults() {
         return new GalleryCompositeLabels(() -> "清空搜索", () -> "取消选择", () -> "上一页", () -> "下一页");
     }

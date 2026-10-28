@@ -7,7 +7,7 @@ import org.commonmark.node.SourceSpan;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 成熟 AST 消耗后的字符视图；仅投影来源，不解释实体或 Markdown 词法。 */
+/** 将成熟 AST 的 source span 投影为带原文范围的字符视图。 */
 final class SourceProjection {
     final String text;
     private final int[] starts, ends;
@@ -36,7 +36,7 @@ final class SourceProjection {
                         lines[previous.getLineIndex()]
                                 + previous.getColumnIndex()
                                 + previous.getLength();
-                // 换行来自上一 span 后的真实 CRLF；容器前缀不进入虚拟正文。
+                // 在相邻 span 间保留真实行结束符，容器前缀由 span 边界排除。
                 builder.range(end, newlineEnd(raw, end));
             }
             builder.range(begin, begin + span.getLength());

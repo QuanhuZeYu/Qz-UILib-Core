@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 滚动声明自带框架装饰；只在挂载/声明通知后装配，不扫描静止页面。 */
+/** 在挂载或声明通知后，按滚动声明装配框架装饰。 */
 final class SceneScrollDecorations {
     private final SceneRuntime runtime;
     private final Map<SceneNode, List<SceneNode>> defaults = new IdentityHashMap<>();

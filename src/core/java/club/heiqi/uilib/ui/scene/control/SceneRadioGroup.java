@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 public final class SceneRadioGroup<K> {
     public enum Variant { RADIO, SEGMENTED }
 
-    /** 外观声明不改变单选语义与选择来源。 */
+    /** 声明单选外观，选择与导航继续使用共同来源。 */
     public static final class Options {
         final Variant variant;
         public Options() { this(Variant.RADIO); }

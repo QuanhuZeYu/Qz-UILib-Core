@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text.math;
 
-/** 中性内联盒；非法外部尺寸由公式布局定位并整式降级，不在绑定构造时丢失来源。 */
+/** 保存中性内联盒度量，非法尺寸由公式布局连同来源定位并整式降级。 */
 public final class MathEmbedMetrics {
     public final float widthEm, heightEm, baselineEm;
 

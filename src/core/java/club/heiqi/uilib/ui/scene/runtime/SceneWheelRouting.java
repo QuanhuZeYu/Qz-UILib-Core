@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 唯一指针路由的滚轮协作者：连续输入保持实际消费者，只向祖先交接，不因内容移入指针而深入。 */
+/** 为指针路由维护连续滚轮消费者，续段仅沿原消费路径向祖先交接。 */
 final class SceneWheelRouting {
     private static final long PAUSE_NANOS = 400_000_000L;
     private static final int MOVE_TOLERANCE = 8;
@@ -47,13 +47,13 @@ final class SceneWheelRouting {
     private MountHandle consume(SceneNode start, SceneNode boundary, ScenePointerEvent event, SceneGeometryView geometry) {
         for (SceneNode node = start; node != null; node = node == boundary ? null : node.parent()) {
             if (!runtime.interactive(node) || !geometry.contains(node, event.x, event.y)) continue;
-            // 控件可在回调中改变资格或树；消费前记录挂载，不能把迟到结果附到新挂载上。
+            // 消费前捕获挂载身份，回调改变资格或树后按原挂载核验结果。
             MountHandle consumer = runtime.captureMount(node);
             if (runtime.dispatchControlScroll(node, event, geometry).consumed || runtime.tryDispatchScroll(node, event.delta)) {
                 return consumer;
             }
         }
-        // 未有祖先消费时由调用者保留原起点，反向不重新掉回子区。
+        // 祖先均让渡时保留原起点，反向续段仍沿该路径处理。
         return null;
     }
 

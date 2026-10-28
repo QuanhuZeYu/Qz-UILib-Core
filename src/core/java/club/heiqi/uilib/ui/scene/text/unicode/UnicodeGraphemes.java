@@ -6,7 +6,7 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.TreeSet;
 
-/** 纯 Unicode 字素规则：ICU76/Unicode16 与 Emoji17 RGI 补充；不依赖字体或宿主。 */
+/** 以 ICU76/Unicode16 和 Emoji17 RGI 补充提供纯 Unicode 字素边界。 */
 public final class UnicodeGraphemes {
     private UnicodeGraphemes() {}
 

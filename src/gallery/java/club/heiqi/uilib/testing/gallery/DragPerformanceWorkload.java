@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.host.ScenePageContext;
 import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 独立拖拽压测声明；使用正式长列表和Draggable，不扩充原性能广场的全负载集合。 */
+/** 以正式长列表与 Draggable 组合独立拖拽压测。 */
 public final class DragPerformanceWorkload implements ScenePage {
     private final int scale;
     private SceneDraggable.State state;

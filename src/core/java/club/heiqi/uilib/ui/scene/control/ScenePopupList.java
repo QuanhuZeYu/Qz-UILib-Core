@@ -89,7 +89,7 @@ final class ScenePopupList<T, K> {
                 () -> SceneIconButton.Symbol.CHEVRON_DOWN, menu);
         button.bind(NodeBinding.value(metrics, (self, value) -> self.defaultStyle(value.textStyle)
                 .defaultPadding(value.padding).defaultGap(value.iconGap)));
-        // SELECT的名称归外层字段标签，内部按钮只表达打开动作，不把选中显示当成字段名称。
+        // SELECT 名称归外层字段标签，内部按钮仅声明打开动作，当前值单独呈现。
         button.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.BUTTON)
                 .name(menu ? title.get() : "打开选项").expanded(opening.get() != null).build()));
         button.bind(NodeBinding.repeat(() -> opening.get() == null ? Collections.emptyList() : Collections.singletonList(opening.get()),

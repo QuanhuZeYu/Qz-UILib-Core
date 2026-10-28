@@ -2,12 +2,12 @@ package club.heiqi.uilib.ui.scene.paint;
 
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 
-/** 纯装饰沿普通 RECT 展开；角点的像素 coverage 不改变布局或裁剪事实。 */
+/** 将纯装饰展开为普通 RECT，角点 coverage 仅作用于绘制。 */
 public final class ScenePaintShapes {
     private static final int SAMPLES=4;
     private ScenePaintShapes() {}
 
-    /** 一逻辑像素的独立圆角轮廓；同一像素只输出一次，不依赖内部背景的不透明度。 */
+    /** 输出一逻辑像素圆角轮廓，每个像素独立计算一次 coverage。 */
     public static void roundedOutline(PaintPlanBuilder paint, LayoutBox box, LayoutBox clip, int color, int requested) {
         if (box.width <= 0 || box.height <= 0 || (color >>> 24) == 0) return;
         if (clip != null) {

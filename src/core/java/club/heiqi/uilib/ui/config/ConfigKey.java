@@ -24,7 +24,7 @@ public final class ConfigKey<T> {
     public String name() { return name; }
     public ConfigCodec<T> codec() { return codec; }
     public T defaultValue() { return defaultValue; }
-    /** 声明阶段添加说明并返回同一 key；保存不会覆盖已加载节点的用户注释。 */
+    /** 为同一 key 添加首次生成时使用的说明，已加载节点保留用户注释。 */
     public ConfigKey<T> withComment(String comment) { this.comment = Objects.requireNonNull(comment, "comment"); return this; }
     public String comment() { return comment; }
 

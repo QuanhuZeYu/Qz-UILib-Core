@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 页面拥有的有限通知区；接到持续来源的直属孩子，不维护业务历史。
+/** 页面拥有的有限通知区，声明为持续来源的直属孩子。
  * Toast 与 Notification 的输入合同见通用界面组合规格第4.1节。 */
 public final class SceneNotifications {
     public enum Mode { TOAST, NOTIFICATION }
@@ -41,7 +41,7 @@ public final class SceneNotifications {
         }
     }
 
-    /** 独立通知身份；关闭幂等，不影响同一批中的其他条目。 */
+    /** 独立通知身份，关闭只结束自身条目且支持重复调用。 */
     public final class Handle {
         private final ReadableSignal<SceneNotice.Message> message;
         private final ReadableSignal<String> actionText;
@@ -128,12 +128,12 @@ public final class SceneNotifications {
     public SceneNode node() { return node; }
 
     /** 追加独立消息；零时长保持，正时长沿挂载期统一时间结束。
-     * 内容变化不重启期限；连续追加不要求页面手动推进帧。 */
+     * 期限从挂载起按统一时间推进，内容更新沿用原期限。 */
     public Handle show(ReadableSignal<SceneNotice.Message> message, long durationNanos) {
         return show(message, durationNanos, null, null);
     }
 
-    /** 附属操作复用标准命令；执行前撤下当前通知，业务异常不恢复通知。
+    /** 附属操作共用标准命令，获准后先撤下当前通知，再执行业务动作。
      * @param actionText 与 action 同时提供；Toast 不接受操作。
      * @return 可独立关闭的消息身份。 */
     public Handle show(ReadableSignal<SceneNotice.Message> message, long durationNanos,
@@ -148,7 +148,7 @@ public final class SceneNotifications {
         List<Handle> active = visible();
         if (active.size() == capacity) active.remove(0).dismiss();
         active.add(next);
-        // 已结束条目在下次追加时一并释放；保留列表始终不超过容量。
+        // 追加时释放已结束条目，将保留列表限制在声明容量内。
         entries.set(Collections.unmodifiableList(active));
         return next;
     }

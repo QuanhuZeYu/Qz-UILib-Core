@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** 集合选择的不可变逻辑值；业务持有它，焦点及行视图不成为选择权威。
+/** 业务持有的不可变集合选择，焦点与行视图单独管理。
  * 行为见 specs/scene/2026-10-18-uilib-virtual-collection-spec.md 第5节。 */
 public final class SceneSelection<K> {
     public enum Mode { REPLACE, TOGGLE, RANGE }
@@ -28,7 +28,7 @@ public final class SceneSelection<K> {
     public K active() { return active; }
     public K anchor() { return anchor; }
 
-    /** 已不在当前顺序中的迟到意图不改变选择；RANGE按当前顺序替换区间，不隐含追加。 */
+    /** 对当前顺序内的键应用选择意图，RANGE 按当前顺序替换区间。 */
     public SceneSelection<K> select(K key, Mode mode, List<K> order) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(mode, "mode");
@@ -50,7 +50,7 @@ public final class SceneSelection<K> {
         return new SceneSelection<>(next, key, nextAnchor);
     }
 
-    /** 仅显式调用时限制业务状态；过滤或离屏本身不会调用它。 */
+    /** 由业务显式将选择限制到给定键集合。 */
     public SceneSelection<K> retain(Set<K> keys) {
         Objects.requireNonNull(keys, "keys");
         Set<K> next = new LinkedHashSet<>(selected);

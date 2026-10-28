@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 有序字号/上下标意图；真实字号与基线由当前字体度量解析，绝对字号不丢失外层基线。 */
+/** 有序字号与上下标意图，按真实字体度量解析字号及累计基线。 */
 public final class TextScript {
     public static final TextScript NONE = new TextScript(Collections.<Step>emptyList());
     public static final class Step {

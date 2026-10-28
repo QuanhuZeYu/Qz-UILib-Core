@@ -56,7 +56,7 @@ public final class SceneMath implements SceneControl {
     private final MathLayoutEngine engine = new MathLayoutEngine();
     private MathContent content, cachedContent;
     private TextStyle cachedStyle;
-    // 弱引用只比较本批次身份，不把 BatchTextMeasurer 及其宿主资源带到后续批次。
+    // 以弱引用比较本批测量身份，批次结束后允许释放其宿主资源。
     private WeakReference<SceneTextMeasurer> batch = new WeakReference<>(null);
     private MathLayout cachedLayout, finalLayout;
     private TextLayout cachedText;
@@ -155,7 +155,7 @@ public final class SceneMath implements SceneControl {
         Map<String, Embed> copy = new LinkedHashMap<>();
         Set<SceneNode> identities =
                 Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
-        // 在任何 add 前完整核验，失败不留下半挂载逻辑树。
+        // 全部 slot 核验成功后再逐项加入逻辑树。
         for (Map.Entry<String, Embed> entry : embeds.entrySet()) {
             String id = Objects.requireNonNull(entry.getKey(), "embed id");
             Embed value = Objects.requireNonNull(entry.getValue(), "embed");
@@ -168,7 +168,7 @@ public final class SceneMath implements SceneControl {
         SceneMath control = new SceneMath(copy, mathStyle, source, initialEquationNumber);
         SceneNode root = new SceneNode().control(control).textPolicy(TextPolicy.NO_WRAP);
         for (Embed slot : copy.values()) root.add(slot.node);
-        // 至多 slots-1 个中间段，创建时固定声明；变化只更新投影，不拆树/重挂 Item。
+        // 创建时固定至多 slots-1 个中间段，后续变化只更新投影。
         for (int i = 1; i < copy.size(); i++) {
             SceneNode segment =
                     new SceneNode().control(control.new PassiveMathPaintSegment(root, i));
@@ -225,7 +225,7 @@ public final class SceneMath implements SceneControl {
 
     /**
      * 当前最终不可变的公式逻辑坐标、尺寸与基线；首次呈现前及卸载后为 null。 独立控件容纳溢出墨迹时会平移外层呈现原点；实际场景定位读取同代 SceneGeometryView。
-     * 不发布布局结果 Signal。
+     * 场景定位由同代几何提供，此快照供只读查询。
      */
     public static MathLayout layout(SceneNode node) {
         if (!(node.control() instanceof SceneMath)) throw new IllegalArgumentException("不是数学控件");
@@ -284,7 +284,7 @@ public final class SceneMath implements SceneControl {
                             presentationBounds);
             paintChunks = chunks(cachedLayout, current.source, node.style(), presentationBounds);
         } else if (node.style().color != cachedStyle.color) {
-            // 颜色只刷新不可变载荷与投影；不进入数学盒、字体整形或伸缩构建。
+            // 颜色变化仅刷新不可变绘制载荷与投影，布局与字体事实继续复用。
             cachedLayout = cachedLayout.withColor(node.style().color);
             cachedStyle = node.style();
             cachedText = project(cachedLayout, current.source, cachedStyle,
@@ -309,7 +309,7 @@ public final class SceneMath implements SceneControl {
     @Override
     public TextLayout presentText(
             SceneNode node, TextLayout full, int width, int height, SceneTextMeasurer text) {
-        // 不依赖 layoutText 的缓存回调顺序；最终排列总是显式确定本批事实。
+        // 最终排列显式确定本批事实，layoutText 缓存仅复用文字请求。
         finalLayout = resolve(node, text);
         return cachedText;
     }
@@ -318,7 +318,7 @@ public final class SceneMath implements SceneControl {
     public ChildPlacements arrange(SceneNode node, LayoutBox box, SceneChildMeasurer childMeasurer) {
         club.heiqi.uilib.ui.scene.layout.SceneLayoutEngine.rejectContentLayers(node, node, "math content");
         List<ChildPlacements.Entry> placements = new ArrayList<>();
-        // 无 placement 的 slot 仍在逻辑树中，动态 binding 也不能给它输入资格。
+        // slot 继续保留逻辑身份，输入资格同时要求本批存在 placement。
         for (Embed slot : slots.values()) passiveAttached(slot.node);
         if (finalLayout != null) {
             int index = 0;
@@ -366,7 +366,7 @@ public final class SceneMath implements SceneControl {
             SceneTextMeasurer text,
             long metricsRevision) {
         // focusable 等资格变更只失效 interaction/paint，可能复用 geometry 而不再 arrange。
-        // 此正式只读端口同样核验无 placement 的逻辑 slot，不依赖强制重排。
+        // 正式只读端口同样按当前 placement 核验逻辑 slot。
         for (Embed slot : slots.values()) passiveAttached(slot.node);
     }
 

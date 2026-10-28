@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 原输入范围保留在解码边界；显示替代不会写回业务文本。UTF8按maximal subpart推进。 */
+/** 按解码边界保留原输入范围，显示替代单独投影；UTF8 按 maximal subpart 推进。 */
 public final class TextInput {
     public static final class InvalidRange {
         public final int start, end;

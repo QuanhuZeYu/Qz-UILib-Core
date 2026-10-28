@@ -36,7 +36,7 @@ public final class SceneSearchField {
         return create(page, state, theme, submit, policy, placeholder, () -> "清空搜索", clear);
     }
 
-    /** 清空按钮文案沿调用方语言信号更新，不影响独立编辑草稿。 */
+    /** 清空文案沿调用方语言信号更新，编辑草稿使用独立来源。 */
     public static View create(
             ScenePageContext page, SceneEditState state, ReadableSignal<SceneTheme> theme,
             Consumer<SceneEditState.Submission> submit, SceneTextField.SubmitPolicy policy,

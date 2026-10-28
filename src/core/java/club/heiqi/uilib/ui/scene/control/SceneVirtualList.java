@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /** 有序展示数据的有限行视图；整行参与资格用工厂外的Computed数据投影表达。
- * 独立草稿归调用方，离屏行不在不同业务键间改绑，视图结束即结束其节点绑定。
+ * 独立草稿归调用方，每行业务键固定，视图结束时释放节点绑定。
  * 合同见 specs/scene/2026-10-18-uilib-virtual-collection-spec.md。 */
 public final class SceneVirtualList<T, K> {
     public static final class Options {
@@ -52,14 +52,14 @@ public final class SceneVirtualList<T, K> {
                 () -> page.theme().get().metrics(SceneControlMetrics.Kind.VIRTUAL));
     }
 
-    /** 复合数据视图的列条件只结束旧高度事实；既有公开入口没有新增依赖前提。 */
+    /** 为复合数据视图追加高度失效条件，公开入口沿用原默认条件。 */
     static <T, K> SceneVirtualList<T, K> measured(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition) {
         return measured(page, items, key, declaration, options, measurementCondition,
                 () -> page.theme().get().metrics(SceneControlMetrics.Kind.VIRTUAL));
     }
 
-    /** 所属复合控件提供当前角色；估算和失效复用原高度索引，不改写业务行的主题。 */
+    /** 按所属复合控件的当前角色估算与失效高度，业务行使用自身声明的主题。 */
     static <T, K> SceneVirtualList<T, K> measured(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
             Function<ReadableSignal<T>, SceneNode> declaration, ReadableSignal<Options> options, ReadableSignal<?> measurementCondition,
             ReadableSignal<SceneControlMetrics> metrics) {
@@ -76,13 +76,13 @@ public final class SceneVirtualList<T, K> {
     public SceneNode node() { return node; }
     public SceneScrollViewport viewport() { return viewport; }
 
-    /** 稳定键的显露意图；不激活、提交或改变当前焦点，已删除目标返回false。 */
+    /** 请求显露稳定键对应行，当前焦点保持；目标已退出时返回 false。 */
     public boolean reveal(K key) { return controller.request(key, false); }
 
     /** 准备该行并请求其首个合法焦点，最终选择仍归唯一焦点路由。 */
     public boolean focus(K key) { return controller.request(key, true); }
 
-    /** 所属复合视图只选自己的主目标，不改变公开focus的首合法后代语义。 */
+    /** 所属复合视图从目标行选择主目标，公开 focus 继续选择首个合法后代。 */
     boolean focus(K key, Function<SceneNode, SceneNode> target) { return controller.request(key, true, target); }
 
     /** 弹出复合内容按明确起点准备并显露，普通初始遍历仍保留原条件。 */

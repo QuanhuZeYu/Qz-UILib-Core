@@ -58,7 +58,7 @@ final class SceneMeasureDependencies {
         return stamp == null ? null : stamp.measurements.get(constraintKey(width, height));
     }
     void endRequests() {
-        // 父测量命中会省略子请求；只结算实际访问过的节点，不能误删其余仍有效的子度量。
+        // 父测量命中时复用子度量，本次只收敛实际访问节点的请求。
         // 当前请求保留到下一次定位或失效，纯绘制投影仍可读取本次已定位的全部约束。
         for (Stamp stamp : active) {
             stamp.measurements.keySet().retainAll(stamp.activeRequests);

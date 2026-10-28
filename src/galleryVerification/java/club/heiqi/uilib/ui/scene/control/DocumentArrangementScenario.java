@@ -21,7 +21,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 普通容器必须能直接消费最终盒arrange，不能借先调用presentText保存排列。 */
+/** 直接以最终分配盒调用普通容器 arrange，核验独立排列路径。 */
 public final class DocumentArrangementScenario extends TestApplication {
     private static SceneChildMeasurer children(SceneNode parent, int minimum, int natural) {
         return new SceneChildMeasurer() {

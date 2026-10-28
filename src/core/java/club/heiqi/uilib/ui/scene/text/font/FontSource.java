@@ -23,9 +23,9 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 
 /**
  * 实际字体字节的只读资源代际。资源 owner 在 worker 显式 prepare 后发布；批处理可同步准备。
- * 旧计划的 source 不随重载变化；创建新代际时必须创建新 source。系统文件在选择时取快照。
+ * 新代际使用新 source，已有计划继续持有原字节快照；系统文件在选择时取快照。
  * 脚本和彩色声明仅作来源提示，匹配资格由实际 FontFace 的布局/呈现事实及完整范围整形决定。
- * 字族成员共享不可变字节；不从 cmap 或“没有 .notdef”推导连接能力。
+ * 字族成员共享不可变字节，连接能力由完整范围整形核验。
  */
 public final class FontSource {
     public final String id, origin;
@@ -201,7 +201,7 @@ public final class FontSource {
         actualStyle = actual;
     }
 
-    /** 只准备不可变字节、摘要和元数据，不取得 native 会话或 UI 所有权。 */
+    /** 准备供后续会话消费的不可变字节、摘要与元数据。 */
     public FontSource prepare() {
         snapshot();
         metadata();
@@ -209,7 +209,7 @@ public final class FontSource {
         return this;
     }
 
-    /** UI 入口只消费准备事实；检查不会触发开流、摘要或解析。 */
+    /** 只读检查资源准备状态，供 UI 入口核验已发布事实。 */
     public boolean isPrepared() {
         if (!isLoaded() || metadata == null) return false;
         if (members != null) for (FontSource member : members) if (!member.isPrepared()) return false;
@@ -233,7 +233,7 @@ public final class FontSource {
         return axes;
     }
 
-    /** 显式字族候选，不合并跨候选的同名字体。 */
+    /** 用本候选的明确成员建立字族。 */
     public static FontSource family(String id, List<FontSource> members) {
         if (members.isEmpty()) throw new IllegalArgumentException("字族没有成员");
         FontSource first = members.get(0);
@@ -247,7 +247,7 @@ public final class FontSource {
         return result;
     }
 
-    /** 集合内成员共享字节，不复制完整TTC。显式face本身不扩展。 */
+    /** 枚举当前 TTC 的 face，成员共享原字节；原显式 face 保持自身边界。 */
     public List<FontSource> collectionFaces() {
         List<FontSource> result = new ArrayList<FontSource>();
         for (int i = 0, n = FontMetadata.faceCount(ByteBuffer.wrap(snapshot())); i < n; i++)
@@ -349,7 +349,7 @@ public final class FontSource {
         return contentHash;
     }
 
-    /** 调用线程所属 native 作用域中创建新 face；不共享服务中的可变 face。 */
+    /** 在调用线程所属 native 会话内创建独立 face。 */
     public FontFace openFace(FontSession service, float emSize) {
         return service.openFace(
                 ByteBuffer.wrap(snapshot()).asReadOnlyBuffer(), faceIndex, emSize, axes);

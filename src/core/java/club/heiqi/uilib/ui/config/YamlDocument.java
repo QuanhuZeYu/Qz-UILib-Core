@@ -29,7 +29,7 @@ import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.SequenceNode;
 import org.yaml.snakeyaml.nodes.Tag;
 
-/** 内部 YAML 表示层：只 compose 节点，从不调用任意类型 constructor。
+/** 内部 YAML 表示层通过 compose 读取节点，类型绑定由配置声明负责。
  * 业务值与节点分离；merge 按映射键或列表索引复用节点，值变化也保留原注释。 */
 final class YamlDocument {
     private final MappingNode root;
@@ -45,15 +45,14 @@ final class YamlDocument {
     }
     static YamlDocument empty() { return new YamlDocument(mapping(), "<defaults>"); }
     static YamlDocument read(Reader reader, String source) throws IOException {
-        // 先按 Reader 合同读取，保留原始 IOException，避免解析库包装成运行时异常。
+        // 先按 Reader 合同读取，使原始 IOException 沿读入口传播。
         StringBuilder text = new StringBuilder();
         char[] buffer = new char[4096];
         int count;
         while ((count = reader.read(buffer)) != -1) text.append(buffer, 0, count);
         LoaderOptions options = new LoaderOptions();
         options.setProcessComments(true);
-        // 仅 compose：先保留 tag 节点以获得完整字段路径，再由 readNode 严格拒绝。
-        // 不调用 load/constructor，因此输入 tag 不会创建 Java 对象。
+        // compose 保留 tag 的原始位置，readNode 按配置支持的节点类型校验并定位完整路径。
         options.setTagInspector(tag -> true);
         Node node;
         try { node = new Yaml(options).compose(new StringReader(text.toString())); }
@@ -215,7 +214,7 @@ final class YamlDocument {
         return unchanged&&style==node.getFlowStyle()&&!(style==DumperOptions.FlowStyle.BLOCK&&hasInlineComments(node))
                 ?node:new MappingNode(Tag.MAP,next,style);
     }
-    /** 序列仅按位置匹配，引用相同才保留原节点；不引入业务条目的身份猜测。 */
+    /** 序列按索引匹配表示，全部子节点引用及样式相同时复用原节点。 */
     private Node mergeSequence(Node old,List<?> input,String path,Map<String,String> comments) {
         SequenceNode node=old instanceof SequenceNode?(SequenceNode)old:new SequenceNode(Tag.SEQ,new ArrayList<Node>(),DumperOptions.FlowStyle.BLOCK);
         List<Node> next=new ArrayList<>();
@@ -237,7 +236,7 @@ final class YamlDocument {
             if(!Double.isFinite(((Number)value).doubleValue()))throw new ConfigException(path,"codec 输出非有限数值");
             tag=Tag.FLOAT;text=value.toString();
         }else throw new ConfigException(path,"codec 输出不支持的对象树类型: "+value.getClass().getName());
-        // 语义相同的标量直接复用，保留引号、数值写法和注释；不规范化用户原表示。
+        // 同语义标量复用原节点，保留用户的引号、数值写法和注释。
         return old instanceof ScalarNode&&tag.equals(old.getTag())&&equivalent(old,value)?old:scalar(tag,text);
     }
     private static DumperOptions.FlowStyle collectionStyle(Node node,DumperOptions.FlowStyle style) {
@@ -251,7 +250,7 @@ final class YamlDocument {
         boolean blockContainer=result instanceof MappingNode&&((MappingNode)result).getFlowStyle()==DumperOptions.FlowStyle.BLOCK
                 ||result instanceof SequenceNode&&((SequenceNode)result).getFlowStyle()==DumperOptions.FlowStyle.BLOCK;
         if(!blockContainer||!hasInlineComments(old))return;
-        // Emitter的block集合结束态不能消费IN_LINE；说明保持归属，转到本集合前。
+        // Emitter 的 block 集合结束态接收前置说明，将 IN_LINE 转到所属集合前以保留文本与归属。
         List<CommentLine> nearby=new ArrayList<>();
         if(old.getBlockComments()!=null)nearby.addAll(old.getBlockComments());
         for(CommentLine comment:old.getInLineComments())

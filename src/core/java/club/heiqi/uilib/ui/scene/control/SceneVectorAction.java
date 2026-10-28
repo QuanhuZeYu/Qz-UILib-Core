@@ -21,7 +21,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 两个正式矢量共享一个动作根；共同几何分别命中填充与描边，不为命中合并网格。 */
+/** 两个矢量共用动作根，填充与描边分别按共同几何核验命中。 */
 final class SceneVectorAction implements SceneControl {
     private final ReadableSignal<SceneAppearance.Palette> colors;
     private final ReadableSignal<SceneVector.Model> model;
@@ -57,7 +57,7 @@ final class SceneVectorAction implements SceneControl {
         control.strokeMotion.install(node, () -> colors.get().source.feedbackMotion, control::strokeColor, "vector.stroke");
         ReadableSignal<SceneVector.Model> fill = page.domain().computed(owner, () -> control.part(true));
         ReadableSignal<SceneVector.Model> stroke = page.domain().computed(owner, () -> control.part(false));
-        // 动画色不能装回 Model：Computed 会先传播失效，几何值相等也无法阻止测量依赖标脏。
+        // 动画色走独立绘制来源，使 Model 的几何依赖保持稳定。
         ReadableSignal<Integer> fillColor = () -> control.fillMotion.color(control.fillColor(node));
         ReadableSignal<Integer> strokeColor = () -> control.strokeMotion.color(control.strokeColor(node));
         control.fill = decoration(SceneVector.create(page, fill, fillColor, strokeColor));

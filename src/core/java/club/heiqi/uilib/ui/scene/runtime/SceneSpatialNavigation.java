@@ -102,7 +102,7 @@ final class SceneSpatialNavigation implements SceneFocusTraversal.Cursor, SceneF
     private void collect(SceneNode node, Map<SceneNode, SceneFocusTraversal> result) {
         if (exhausted.contains(node) || !runtime.locallyInteractive(node)) return;
         SceneFocusTraversal traversal = traversal(node);
-        // 最近所属边界已先行搜索；外层逐行准备不能再次进入同一内层或只看它的有限行。
+        // 最近所属边界已先行搜索，外层查询跳过该已完成边界。
         if (traversal != null && !ordinary.contains(node) && contains(node, source.node())) return;
         boolean focusable = node != source.node() && node.focusable() && runtime.interactive(node);
         if (focusable) result.put(node, null);

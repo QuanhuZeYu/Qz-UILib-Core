@@ -8,9 +8,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** OpenType MATH 一维连接算法；只消费 Java 快照，不读取墨迹、不缩放字形。 */
+/** 按 OpenType MATH Java 快照计算一维连接位置，保持真实字形尺寸。 */
 public final class MathAssembly {
-    // 限制单个构建的需求数量和浮点坐标范围；超限沿数学字体诊断，不无界增加部件。
+    // 按单次部件数与浮点坐标范围限制构建，超限归数学字体诊断。
     private static final int MAX_PARTS = 4096;
     private static final double MAX_ADVANCE = 1048576;
 
@@ -123,7 +123,7 @@ public final class MathAssembly {
                         positions, offset + parts.get(parts.size() - 1).fullAdvance, assembly.axis);
             }
             if (extenders == 0) throw unavailable("assembly 无 extender，无法达到目标");
-            // 第一轮含 extender 可能增加此前非法的连接，不能与零 extender 的结果比较。
+            // 第一轮含 extender 引入新的连接，独立核验其可构建范围。
             if (repeats > 1 && maximum <= previousMaximum)
                 throw unavailable("assembly extender 不能继续增加轴向长度");
             previousMaximum = maximum;

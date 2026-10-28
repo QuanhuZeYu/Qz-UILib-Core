@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
 import java.nio.file.Path;
 
-/** 页面播放意图和所属资源的唯一owner；不构造节点，不执行布局或绘制。 */
+/** 统一管理页面播放意图、来源解析与所属媒体资源，节点组合归页面。 */
 final class MediaPlayback implements AutoCloseable {
     enum Choice { NONE, PART, QUALITY }
     private enum Position { BEGINNING, CURRENT }

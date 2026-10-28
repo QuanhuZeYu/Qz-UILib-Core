@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import java.util.Objects;
 import java.util.function.Predicate;
 
-/** 普通流中的接收区；仅登记目标，不接管内容中的按钮、编辑器或指针所有者。 */
+/** 在普通流中登记接收目标，子内容继续使用原输入路由。 */
 public final class SceneDroppable {
     public static final class Options<K> {
         final Predicate<K> accepts;

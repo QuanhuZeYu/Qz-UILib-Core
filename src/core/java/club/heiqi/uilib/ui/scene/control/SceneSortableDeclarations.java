@@ -55,7 +55,7 @@ final class SceneSortableDeclarations {
                 tree(declaration.root, nodes, "container " + group.key);
                 if (!SceneDragSupport.within(declaration.items, declaration.root) || !declaration.items.children().isEmpty())
                     throw new IllegalArgumentException("排序 items 必须是 root 内的空子树: " + group.key);
-                // items 的孩子声明由排序独占；双重拥有沿 runtime 正式诊断，不猜测 binding 实现类型。
+                // 排序拥有 items 的孩子声明，重复拥有交给 runtime 的正式校验。
                 container = new SceneSortableModel.ContainerEntry<>(group.key, declaration);
             }
             plan.containers.put(group.key, container);
@@ -94,7 +94,7 @@ final class SceneSortableDeclarations {
     }
     private static <T, K, C> void bindDeclarations(SceneSortableModel<T, K, C> model, Plan<T, K, C> plan,
             List<SceneSortableModel.RowEntry<T, K, C>> freshRows) {
-        // 全体 factory 通过校验后才包装与登记声明；现有行在此仍完全不变。
+        // 全部 factory 校验成功后，再包装并登记新声明。
         for (SceneSortableModel.ContainerEntry<T, K, C> container : plan.containers.values())
             if (!model.containers.containsKey(container.key))
                 model.bindTarget(container.declaration.root, new SceneSortableKeys.ContainerTarget<>(container.key), source -> model.accepts(container, source));

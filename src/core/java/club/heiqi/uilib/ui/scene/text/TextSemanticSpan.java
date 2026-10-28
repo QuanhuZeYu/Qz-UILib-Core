@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 共同文本的不可变行内含义；不存视觉样式或几何，来源沿所属 TextInput 映射。 */
+/** 保存共同文本的不可变行内含义，来源沿所属 TextInput 映射。 */
 public final class TextSemanticSpan {
     public enum Kind {
         IMPORTANCE,

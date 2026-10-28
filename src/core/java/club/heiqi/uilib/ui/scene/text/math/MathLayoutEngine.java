@@ -20,9 +20,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** 自有数学盒主路径；不持有资源或场景状态，可由纯派生按输入变化重新求值。 */
+/** 按公式 AST、字体能力与样式纯求值，输出数学盒及有序绘制事实。 */
 public final class MathLayoutEngine {
-    // fixed 插件按完整源公式判定行内 display；只提升 TEXT 入口，脚本请求不会被源文环境覆盖。
+    // fixed 插件按完整源码判定行内 display，仅 TEXT 入口按源环境提升样式。
     private static final java.util.regex.Pattern INLINE_DISPLAY =
             java.util.regex.Pattern.compile(
                     "\\\\begin\\{(align|equation|gather|cd|alignat)\\}",
@@ -131,7 +131,7 @@ public final class MathLayoutEngine {
         final float scriptPercent, scriptScriptPercent;
         int nextTag = 1;
         final Node rootBody;
-        // 绑定事实随 AST 调用作用域传播；宏来源区间可能重叠，不能从区间或数值反猜。
+        // 继承颜色事实随 AST 作用域传播，宏重叠来源仍保留明确绑定。
         boolean inheritedColor = true;
 
         Session(
@@ -317,7 +317,7 @@ public final class MathLayoutEngine {
                         throw new LayoutFailure("layout", node, "数学节点布局尚未完成: " + node.kind);
                 }
             } catch (UnsupportedOperationException error) {
-                // 声明的字体能力缺口整式降级，程序错误不吞掉。
+                // 将声明的字体能力缺口转为整式输入诊断，其余错误沿原调用通道传播。
                 throw new LayoutFailure("font", node, error.getMessage());
             }
         }
@@ -329,7 +329,7 @@ public final class MathLayoutEngine {
             return delimiter(node,context,fixedDelimiterTarget(node,context),group);
         }
         private MathBox middleDelimiter(Node node, MathLayoutContext context) {
-            // fixed middle先构造size1；普通wrapper不由外left重新定高。
+            // fixed middle 先按 size1 构造，随后作为独立定高 wrapper 组合。
             MathLayoutContext sized=context.style(MathStyle.TEXT);
             return delimiter(node,sized,fixedDelimiterTarget(1,sized),Atom.NONE);
         }
@@ -768,7 +768,7 @@ public final class MathLayoutEngine {
                 }
                 if (textRun(child, context)) {
                     StringBuilder run = new StringBuilder(child.value);
-                    // 宏参数可与模板调用点反序；合并run须覆盖全部来源，不能取首尾位置。
+                    // 宏参数可与模板调用点反序，合并 run 时求全部来源并集。
                     int start = child.start, end = child.end;
                     while (index + 1 < children.size()
                             && textRun(children.get(index + 1), context)) {

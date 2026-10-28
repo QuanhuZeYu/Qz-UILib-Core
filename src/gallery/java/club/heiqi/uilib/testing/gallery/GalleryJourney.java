@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 
-/** 操作与预期在共享编译单元，驱动只供给真实宿主输入和呈现事实，不操作控件回调。 */
+/** 共享输入旅程与预期，由驱动递交真实宿主输入并读取呈现事实。 */
 public final class GalleryJourney {
     public interface Driver {
         void frame();
@@ -102,7 +102,7 @@ public final class GalleryJourney {
         require(covered.equals(expected), "分类目录遗漏共享组件页面");
     }
 
-    /** 同一输入旅程用于无窗口集成与真实 GLFW，避免示例成为只有外观的空壳。 */
+    /** 无窗口集成与真实 GLFW 共用同一交互旅程。 */
     public static void components(Driver driver) {
         driver.resize(1400, 900);
         driver.frame();
@@ -577,7 +577,7 @@ public final class GalleryJourney {
                     (int) Math.min(Integer.MAX_VALUE, Math.max(1, (distance + step - 1) / step));
             int previous = scroller.scrollOffset;
             club.heiqi.uilib.ui.scene.node.SceneNode owner = scroller.node;
-            // 使用原滚动端口和当前共同几何显露目标，不修改offset或目标的Tab资格。
+            // 通过滚轮输入与当前共同几何逐步显露目标。
             driver.scroll(area.x + 1, area.y + area.height / 2, above ? ticks : -ticks);
             driver.frame();
             SceneGeometryView.Entry next = driver.geometry().get(owner);

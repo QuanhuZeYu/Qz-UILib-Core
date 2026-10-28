@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.hud;
 
 import java.util.Objects;
 
-/** 不可变位置草稿；偏移使用 UILib framebuffer 像素，scale 只缩放内容，不包含宿主或持久化策略。 */
+/** 不可变位置草稿，偏移使用 UILib framebuffer 像素，scale 仅缩放内容。 */
 public final class SceneHudPlacement {
     public enum Anchor {
         TOP_LEFT, TOP_CENTER, TOP_RIGHT,

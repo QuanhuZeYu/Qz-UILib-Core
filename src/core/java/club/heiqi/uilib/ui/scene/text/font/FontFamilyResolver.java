@@ -28,7 +28,7 @@ public final class FontFamilyResolver {
             if (absolute.getParent() != null) directories.add(absolute.getParent());
         }
         Map<Path, List<FontSource>> selectedFiles = new LinkedHashMap<>();
-        // 先确定被声明字族；随后扫描只保留这些族的完整字节，不让 family() 再开文件。
+        // 先确定声明字族，随后保留其成员完整字节，family() 使用该准备结果。
         for (Path path : required) {
             try {
                 List<FontSource> faces = read(path, revision);

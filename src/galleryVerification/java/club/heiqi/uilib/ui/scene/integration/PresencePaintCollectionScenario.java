@@ -26,7 +26,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 真实页面的嵌套退场候选；计数只证明采集工作量，不推算帧时间。 */
+/** 在真实页面统计嵌套退场候选的采集工作量。 */
 public final class PresencePaintCollectionScenario {
     public static void main(String[] args) {
         if (args.length == 0) verify();
@@ -56,7 +56,7 @@ public final class PresencePaintCollectionScenario {
             once(controls, "首次主绘与嵌套候选");
             controls.forEach(CountingControl::reset);
             domain.execute(() -> color[0].set(0xff2468ac));
-            // 输入准备先捕获退场片段，随后主绘必须消费同批片段，不能再调控件。
+            // 输入准备捕获退场片段后，主绘复用同批片段。
             page.pointer(ScenePointerEvent.move(-1, -1));
             page.frame();
             once(controls, "输入捕获后主绘");
@@ -85,8 +85,8 @@ public final class PresencePaintCollectionScenario {
         })) {
             page.frame();
             require(host.last.commands().stream().anyMatch(command -> command.color == 0xff13579b), "期限探针未绘制初始颜色");
-            // 首批控件已报告到期；页外MOVE不改声明，却先准备退场片段。
-            // 候选控件改报未来期限，也不能使尚未合成的整页画面被当成已更新。
+            // 首批已到绘制期限，页外 MOVE 先准备退场片段。
+            // 候选期限更新后，整页计划仍须兑现本批绘制失效。
             page.pointer(ScenePointerEvent.move(-1, -1));
             page.frame();
             require(host.last.commands().stream().anyMatch(command -> command.color == 0xff2468ac),

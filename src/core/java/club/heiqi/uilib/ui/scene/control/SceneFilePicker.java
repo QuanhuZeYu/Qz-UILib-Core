@@ -232,7 +232,7 @@ public final class SceneFilePicker {
 
     private java.util.List<Path> breadcrumbPaths() {
         java.util.ArrayList<Path> chain = new java.util.ArrayList<>();
-        // 根范围消费当前 worker 已发布的根事实，不借上次目录伪装当前位置。
+        // 根范围直接消费当前 worker 发布的根事实。
         if (selection.roots.get()) {
             for (FilePickerDirectory.Entry entry : selection.entries.get()) chain.add(entry.path);
             return chain;
@@ -315,7 +315,7 @@ public final class SceneFilePicker {
         SceneNode actions = FilePickerStyle.row(0).bind(style.spacing(0, 8)).size(Size.natural(), Size.natural())
                 .add(style.action("取消", null, selection::cancel, FilePickerStyle.Role.OUTLINE))
                 .add(choose);
-        // 分页与确认只在实际正文宽度不足时换行，不再按窗口高度强制保留两行。
+        // 按实际正文可用宽度决定分页与确认是否换行。
         return SceneLayouts.split(pages, actions, style.splitOptions(8, 8))
                 .bind(style.spacing(8, 0));
     }

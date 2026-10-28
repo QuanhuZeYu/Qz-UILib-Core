@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
-/** 阅读面直接消费当前消息事实；动作回调读取当前id，不捕获旧Message。 */
+/** 阅读面消费当前消息事实，动作执行时读取当前 id。 */
 final class MailReader {
     private MailReader() {}
     static SceneNode create(ScenePageContext p,ReadableSignal<SceneTheme> theme,

@@ -96,7 +96,7 @@ final class SceneKeyboardInput {
         if (sequence.use == Sequence.Use.NAVIGATION) return repeatNavigation(input.event, sequence);
         if (sequence.use == Sequence.Use.EDIT && sequence.editing != null && sequence.editing.active()
                 && runtime.focusRouter().focused().get() == sequence.editing.node()) {
-            // 编辑续段不重新查询应用绑定，也不转为导航或宿主动作。
+            // 编辑续段在原有限许可内继续处理。
             runtime.dispatchKeyEdit(input.event);
         }
         return true;
@@ -105,7 +105,7 @@ final class SceneKeyboardInput {
     private boolean repeatNavigation(SceneKeyEvent event, Sequence sequence) {
         SceneNavigationEvent direction = SceneKeyInterpreter.navigation(event);
         if (direction == null || !direction.directional()) return false;
-        // 空间方向每次先问当次目标；Tab 延续原导航，不转为 INSERT_TAB。
+        // 空间方向先询问当前目标，Tab 续段始终使用原导航模式。
         SceneNode focused = runtime.focusRouter().focused().get();
         SceneRuntime.KeyResult result = runtime.dispatchKeyEdit(event, held -> sequence.continuation = held);
         if (result == SceneRuntime.KeyResult.EDITED) {
@@ -150,7 +150,7 @@ final class SceneKeyboardInput {
         } else if (input.fallback != null) input.fallback.run();
     }
 
-    /** 旧 editOrNavigate 和直接导航共用原激活与方向规则，不推断不存在的物理键。 */
+    /** 兼容意图入口共用激活与方向规则，物理键由命名键入口独立维护。 */
     void navigate(SceneNavigationEvent event) {
         if (event == SceneNavigationEvent.ACTIVATE) {
             if (!runtime.dispatchEdit(SceneEditEvent.command(SceneEditEvent.Command.ACTIVATE_ONLY, false, null)))

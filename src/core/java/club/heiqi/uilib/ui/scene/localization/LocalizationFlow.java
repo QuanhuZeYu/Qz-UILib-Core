@@ -12,7 +12,7 @@ import java.util.Properties;
 import java.util.function.Consumer;
 
 /** UILib 独立语言流：完整加载后才发布，选择与同语言重载都形成新资料事实。
- * 格式 locale 显式固定；不补其他语言、不监听平台，也不在失败后重试或回滚。 */
+ * 仅加载明确选择的语言与资源，格式 locale 显式固定，失败沿加载入口报告。 */
 public final class LocalizationFlow implements LocalizationSource, AutoCloseable {
     private final Locale formatLocale;
     private final LocalizationResource[] resources;
@@ -38,12 +38,12 @@ public final class LocalizationFlow implements LocalizationSource, AutoCloseable
     }
 
     public synchronized void select(String language) throws IOException {
-        source.current(); // 先拒绝关闭后的操作，不能在已关闭流上重新打开资料。
+        source.current(); // 先核验来源仍有效，再打开新资料。
         source.publish(load(language));
     }
 
     public synchronized void reload() throws IOException {
-        // current 是唯一语言事实；通知中的重入 select 不会被外层平行字段覆盖回旧语言。
+        // 从 current 读取唯一当前语言，使重入 select 使用最新事实。
         select(source.current().language());
     }
 

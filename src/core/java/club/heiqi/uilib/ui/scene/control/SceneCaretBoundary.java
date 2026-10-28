@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.edit.SceneEditState.Snapshot;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 
 /**
- * 编辑呈现的簇边归属（字体 spec 5.1）：只记来源和方向，不记绝对 x。
+ * 保存编辑呈现的簇边来源与方向，定位时读取当前几何（字体 spec 5.1）。
  * 命中后保留所选 leading/trailing；重排或滚动后从当前共同 Line/Cluster 重新取位置。
  * 草稿与组字投影换代时旧来源不再适用，逻辑选区仍全部归 SceneEditState。
  */
@@ -48,7 +48,7 @@ final class SceneCaretBoundary {
         if (boundary != null && boundary.position == position)
             for (TextLayout.Cluster c : line.clusters())
                 if (boundary.matches(c)) return boundary.leading ? c.leadingX() : c.trailingX();
-        // 未选视觉边时保留原逻辑导航政策，不在本修复改变左右键行为。
+        // 尚未选择视觉边时，沿逻辑导航策略解释当前位置。
         float best = line.x;
         int distance = Integer.MAX_VALUE;
         for (TextLayout.Cluster c : line.clusters()) {

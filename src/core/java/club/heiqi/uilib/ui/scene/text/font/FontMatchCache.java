@@ -5,8 +5,8 @@ import java.util.List;
 import club.heiqi.uilib.ui.scene.text.FontStyle;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.ShapeDirection;
 
-/** 字体服务所属的纯值事实；预算沿现有布局条目和文本长度，不持有 native face。
- * 字体/Unicode 换代由同一服务清空；失败不作为可跨请求复用的匹配结果。 */
+/** 缓存字体服务成功解析的候选与匹配纯值，按布局条目及文本长度设限。
+ * 字体或 Unicode 换代时由服务清空，native face 归服务独立管理。 */
 final class FontMatchCache {
     private final int entries, units;
     private int resolvedUnits, matchedUnits;

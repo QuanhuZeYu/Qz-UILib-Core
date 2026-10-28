@@ -279,7 +279,7 @@ public final class SliderScenario extends TestApplication {
                 int outside=direction<0?box.x-100:box.x+box.width+100;
                 f.pointer(ScenePointerEvent.down(0,rest.thumb,y));f.pointer(ScenePointerEvent.move(outside,y));
                 f.pointer(ScenePointerEvent.up(0,outside,y));f.advance(40_000_000L);
-                // thumb 之外仍由原背景目标接收，不能把整段溢出带都变成 Slider 命中。
+                // thumb 外侧按原背景目标核验命中。
                 int blank=direction<0?box.x-20:box.x+box.width+20;
                 f.pointer(ScenePointerEvent.down(0,blank,box.y+2));f.pointer(ScenePointerEvent.up(0,blank,box.y+2));
                 require(f.outsideClicks==1&&f.commits.size()==1,"溢出 thumb 扩大成了整段输入区域");
@@ -347,7 +347,7 @@ public final class SliderScenario extends TestApplication {
         public void close(){page.close();}
     }
 
-    /** 从正式 PaintPlan 汇总轨道和 thumb 的像素边界，避免另算一套预期轨道。 */
+    /** 从正式 PaintPlan 汇总轨道与 thumb 的实际像素边界。 */
     private static final class Visual {
         final int left,right,thickness,thumb;
         Visual(PaintPlan plan){

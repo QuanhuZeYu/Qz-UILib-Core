@@ -5,7 +5,7 @@ import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 同一轴映射服务绘制、命中、抓取与键盘，领域控件的内部坐标不泄漏到条。 */
+/** 用中性视口轴映射统一绘制、命中、抓取与键盘。 */
 final class SceneScrollbarGeometry {
     final LayoutBox track, thumb, clip;
     final SceneScrollViewport.Snapshot view;

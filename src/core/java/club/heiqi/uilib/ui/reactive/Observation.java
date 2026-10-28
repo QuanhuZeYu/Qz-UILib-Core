@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.reactive;
 
-/** 呈现订阅只登记失效；refresh 由呈现运行时调用，不参与业务 Effect 队列。 */
+/** 呈现订阅登记依赖失效，由呈现运行时调用 refresh 重新收集依赖。 */
 public final class Observation extends Tracker implements AutoCloseable {
     private final Runnable read;
     private final Runnable changed;

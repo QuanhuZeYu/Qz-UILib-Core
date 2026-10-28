@@ -34,7 +34,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 /** 正式页面/标准控件/输入/呈现管线的语言场景；显式提供独立资料并替换字体度量边界。
- * 反例针对同语言换表、写后读取和真正释放后的迟到通知，不镜像文案或布局实现。 */
+ * 覆盖同语言换表、写后读取与释放后的迟到通知。 */
 public final class LocalizationScenario extends TestApplication {
     private static LocalizationSnapshot table(String language, String heading) {
         Map<String, String> values = new HashMap<>();
@@ -78,7 +78,7 @@ public final class LocalizationScenario extends TestApplication {
             software.glyph = Math.max(1, style.size / 2);
             software.lineHeight = style.size;
             TextLayout measured = software.layout(text, style, width);
-            // 旧软件边界的简写Line无行指标，标准控件需要真实advance/baseline/lineHeight。
+            // 以完整 advance、baseline 与 lineHeight 为标准控件提供软件度量。
             List<TextLayout.Line> lines = new ArrayList<>();
             int start = 0;
             for (TextLayout.Line line : measured.lines()) {
@@ -284,7 +284,7 @@ public final class LocalizationScenario extends TestApplication {
         same.publish(reused);
         require(sameSeen.equals(java.util.Arrays.asList("A", "B")), "同实例新批次未替代旧批次 " + sameSeen);
 
-        // 旧批次已有错误不能因为后面的订阅发布新事实而被吞掉。
+        // 后续订阅发布新事实后，原批次错误仍沿原通道传播。
         MutableLocalizationSource failed = own(new MutableLocalizationSource(table("A", "A %s")));
         RuntimeException original = new IllegalStateException("旧批次原异常");
         List<String> failedSeen = new ArrayList<>();

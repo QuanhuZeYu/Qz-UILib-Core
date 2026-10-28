@@ -16,7 +16,7 @@ import java.util.*;
 import club.heiqi.uilib.ui.settings.*;
 import java.util.concurrent.CompletableFuture;
 
-/** 通用模板实际运行外部草稿与业务命令，不用模板代替配置事务。 */
+/** 用外部草稿与业务命令实际消费通用模板，配置事务由业务维护。 */
 public final class SettingsTemplateScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("跨分类保留同一草稿和错误且业务拒绝不发布", this::draftAndRejection);

@@ -52,8 +52,8 @@ final class MathSyntax {
     }
 
     /**
-     * 0.21 是 Java8 可用的固定版本，尚无公开的 InlineContentParser 注册 hook。 此适配只在新 parser 实例上注册触发符，不读取或修改 scanner
-     * 的运行状态。 Java 基线允许采用0.23以后版本时，删除反射并使用公开 beta factory 注册。 字段不匹配必须显式失败；不能悄悄退回另一套数学或 Markdown 解释。
+     * Java8 固定版本 0.21 通过反射在新 parser 实例上注册 InlineContentParser 触发符，scanner 运行状态由成熟解析器维护。
+     * Java 基线允许采用 0.23 以后版本时，改用公开 beta factory。字段接缝不匹配时显式失败。
      */
     @SuppressWarnings("unchecked")
     static InlineParser inlineParser(InlineParserContext context) {
@@ -105,7 +105,7 @@ final class MathSyntax {
                             return ParsedInline.of(
                                     new MathInline(source, display), scanner.position());
                     }
-                    // 首个未转义闭合候选boundary失败时，原开定界也失败；不能越过$10吃后文。
+                    // 首个未转义闭合候选的 boundary 失败时，结束原开定界的配对。
                     scanner.setPosition(start);
                     return ParsedInline.none();
                 }
@@ -119,9 +119,8 @@ final class MathSyntax {
     }
 
     /**
-     * 容器匹配交给同版成熟block parser，不用原字符串prefix推测quote/list continuation。
-     * 不闭合的探查块可能遮住其后的正常文档结构：排除这些起点并重新识别，直到没有 新排除项。每轮至少排除一个真实source起点，所以由输入长度给出有限上界。
-     * 这里只收集完整配对的decoded source offsets，不修复、替换输入或保留探查AST。
+     * 用同版成熟 block parser 判定容器 continuation，并收集完整配对的 decoded source offsets。
+     * 未闭合探查块可遮住后续文档，逐轮排除其起点并重新识别；每轮至少排除一个真实 source 起点，工作量由输入长度限定。
      */
     static Map<Integer, Integer> completePairs(String raw, int[] starts) {
         Set<Integer> rejected = new HashSet<>();

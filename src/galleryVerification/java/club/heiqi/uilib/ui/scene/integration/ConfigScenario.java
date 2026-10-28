@@ -28,7 +28,7 @@ import club.heiqi.uilib.ui.reactive.Observation;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 
-/** 真实状态域与 UTF-8 文件配置场景；不需要 UI、MC 或 native。
+/** 通过真实状态域与 UTF-8 文件核验独立配置能力。
  * 观察者同时读多键，反例覆盖半发布、键诊断、值不可变和订阅释放。 */
 public final class ConfigScenario extends TestApplication {
     private static final ConfigKey<Boolean> ENABLED = new ConfigKey<>("enabled", ConfigCodecs.BOOLEAN, true);
@@ -193,7 +193,7 @@ public final class ConfigScenario extends TestApplication {
             values.add("绕过通知");
             throw new AssertionError("列表可被外部修改");
         } catch (UnsupportedOperationException expected) {
-            // 外部修改必须被不可变值阻止。
+            // 核验发布值的深层不可变边界。
         }
     }
 

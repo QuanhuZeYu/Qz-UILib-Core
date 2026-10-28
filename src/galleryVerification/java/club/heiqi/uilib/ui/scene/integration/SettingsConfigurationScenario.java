@@ -40,7 +40,7 @@ import club.heiqi.uilib.ui.settings.SettingsConfiguration;
 import club.heiqi.uilib.ui.settings.SettingsModel;
 import club.heiqi.uilib.ui.settings.SettingsModel.Source;
 
-/** 真实配置文件与正式状态域：替代页面状态的手工验收，不冒充字体像素或 MC 实机。 */
+/** 用真实配置文件与正式状态域核验工作区配置行为。 */
 public final class SettingsConfigurationScenario extends TestApplication {
     private List<FontSource> builtins;
 
@@ -204,7 +204,7 @@ public final class SettingsConfigurationScenario extends TestApplication {
         scenario("显式宿主资源失败记录诊断且继续原异常通道", this::explicitResourceFailure);
     }
 
-    /** 队列只能由测试所属线程推进；后台只负责递交，不能借 CURRENT 伪证线程亲和。 */
+    /** 后台向队列递交，测试所属线程统一推进并核验线程亲和。 */
     private static final class QueuedDomain {
         final Thread owner = Thread.currentThread();
         final LinkedBlockingQueue<Runnable> queue = new LinkedBlockingQueue<>();
@@ -238,14 +238,14 @@ public final class SettingsConfigurationScenario extends TestApplication {
             require(worker != owner, "文档 I/O 准备阻塞了 UI 所属线程");
             workerPool = ForkJoinTask.getPool();
             entered.complete(worker);
-            // 普通门闩不将进行中的任务计为空闲；CompletableFuture 等待会触发 managed blocking。
+            // 普通门闩保留在途任务占用事实，CompletableFuture 等待另有 managed blocking 语义。
             try { require(release.await(10, TimeUnit.SECONDS), "后台准备未获确定性释放"); }
             catch (InterruptedException failure) { throw new AssertionError("后台准备被中断", failure); }
         }
 
         void awaitCompletion() throws Exception {
             Thread worker = entered.get(10, TimeUnit.SECONDS);
-            // 低 CPU 时 CompletableFuture 使用专用线程；只能等待本次实际 worker，不能猜 common pool。
+            // 低 CPU 时 CompletableFuture 可使用专用线程，此处等待本次实际 worker。
             if (workerPool == null) {
                 worker.join(TimeUnit.SECONDS.toMillis(10));
                 require(!worker.isAlive(), "已开始文件操作没有结束");

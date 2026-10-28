@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 只处理本阶段 DSL；首次错误整段字面呈现，不发布半解析状态或修复结构。 */
+/** 将 UILib DSL 转换为共同内容；首次错误时整段按字面呈现并定位诊断。 */
 final class RichTagsParser {
     private final TextInput original;
     private final String raw;
@@ -173,7 +173,7 @@ final class RichTagsParser {
         return null;
     }
 
-    /** 词法输出仅描述一个完整标签，不改变正文、作用域或声明。end 是标签后的 UTF16 游标。 */
+    /** 一个完整标签的词法事实，end 为标签后的 UTF16 游标；语义提交由解析器负责。 */
     private static final class TagToken {
         final int start, end;
         final String name;
@@ -318,11 +318,11 @@ final class RichTagsParser {
                         club.heiqi.uilib.ui.scene.text.math.MathContent.parse(formula),
                         mathStyle));
         append("\ufffc", start, position);
-        // 数学正文按捕获语义原样往返，不把尖括号或与号送回DSL实体解析。
+        // 数学正文按捕获语义原样写回 canonical，保留尖括号与与号。
         canonical.append(original.text, start, position);
     }
 
-    /** 属性验证完成后提交一个原子声明；不改变外层 style/link 或作用域。 */
+    /** 属性验证后提交独立图像原子，外层 style/link 与作用域继续沿用。 */
     private void acceptImage(TagToken token) {
         int start = token.start;
         Map<String, String> attributes = token.attributes;

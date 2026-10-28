@@ -22,7 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 普通任务表组合共享排序命令、列声明及独立备注；没有表格专用输入或布局代码。 */
+/** 用共享排序命令、列声明与独立备注组合普通任务表。 */
 public final class DataTablePage {
     private static final class Task {
         final int id; final String title; final boolean done;

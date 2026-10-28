@@ -6,7 +6,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.TreeSet;
 
-/** 分割交点Y后的扫边带中顺序稳定；同一填充区域只生成一次，不叠半透明轮廓。 */
+/** 按交点 Y 分带并稳定排序扫边，同一填充区域只生成一次覆盖。 */
 final class ScenePathTessellator {
     private static final class Edge {
         final double ax,ay,bx,by;final int winding;

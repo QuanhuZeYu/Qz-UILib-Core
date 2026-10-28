@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.Quad;
 import club.heiqi.uilib.ui.render.batch.OrderedQuadBatch.State;
 
 /** 默认只合并相邻兼容图元；显式允许重排时只在当前容量段按完整状态分组。
- * 容量与宿主屏障始终输出封闭提交段，分组不持有外部资源或跨段载荷。 */
+ * 容量与宿主屏障分别封闭提交段，分组仅管理当前段值载荷。 */
 public final class OrderedQuadCollector {
     private final int capacity;
     private final boolean allowReordering;
@@ -43,7 +43,7 @@ public final class OrderedQuadCollector {
         if (submitting) throw new IllegalStateException("提交回调不能重入收集器");
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(quad, "quad");
-        // 原单位矩形路径保留图元与状态，不为既有文字/图像逐顶点分配或建立裁剪网格。
+        // 单位变换与矩形裁剪直接沿用原图元和状态。
         if (state.transform.identity() && state.shapeClip.unbounded()) {
             addPrepared(state, quad);
             return;
@@ -57,7 +57,7 @@ public final class OrderedQuadCollector {
             addPrepared(prepared, world);
             return;
         }
-        // 与原EBO相同的两个三角形分别裁剪，采样属性和各片段顺序不跨图元重排。
+        // 按固定 EBO 的两个三角形分别裁剪，保留采样属性与图元顺序。
         SceneMesh mask = region.mesh();
         clipTriangle(mask, prepared, world, world.x0, world.y0, world.s0, world.t0,
                 world.x1, world.y1, world.s1, world.t1, world.x2, world.y2, world.s2, world.t2);
@@ -65,7 +65,7 @@ public final class OrderedQuadCollector {
                 world.x2, world.y2, world.s2, world.t2, world.x3, world.y3, world.s3, world.t3);
     }
 
-    /** 只接收已在世界坐标中准备的载荷，裁剪输出不能再次经过公开add的变换。 */
+    /** 接收已转到世界坐标的载荷，供原图元与裁剪输出共同提交。 */
     private void addPrepared(State state, Quad quad) {
         if (!visible(state.clip, quad)) return;
         if (quads.size() == capacity) flush();
@@ -92,7 +92,7 @@ public final class OrderedQuadCollector {
         mask.clipPolygon(new double[] { x0, y0, s0, t0, x1, y1, s1, t1, x2, y2, s2, t2 }, 4, polygon -> {
             for (int i = 8; i < polygon.length; i += 4) {
                 if (cross(polygon[0], polygon[1], polygon[i - 4], polygon[i - 3], polygon[i], polygon[i + 1]) == 0) continue;
-                // 第3点重复第2点，原EBO只留下一个真实三角形，不增加新的图元格式。
+                // 重复末点使固定 EBO 的第二个三角形退化，沿用 Quad 载荷提交单三角形。
                 addPrepared(state, new Quad((float) polygon[0], (float) polygon[1],
                         (float) polygon[i - 4], (float) polygon[i - 3], (float) polygon[i], (float) polygon[i + 1],
                         (float) polygon[i], (float) polygon[i + 1],
@@ -139,7 +139,7 @@ public final class OrderedQuadCollector {
         return new OrderedQuadBatch(ordered, combined);
     }
 
-    /** 调用方在变换/深度/pass变化及委托其他渲染之前调用；业务组件不管理它。 */
+    /** 宿主在变换、深度、pass 变化或委托其他渲染前封闭当前段。 */
     public void flush() {
         if (submitting) throw new IllegalStateException("提交回调不能重入收集器");
         if (quads.isEmpty()) return;
@@ -149,7 +149,7 @@ public final class OrderedQuadCollector {
         quads.clear();
         draws.clear();
         first = 0;
-        // 回调只消费已封闭段，不能填入下一段；防止满容量提交后重入突破预算。
+        // 提交期间保持收集器边界，回调仅消费已封闭段。
         submitting = true;
         try {
             submit.accept(output);

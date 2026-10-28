@@ -11,7 +11,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.jar.JarFile;
 
-/** 成品检查通过 null-parent 加载器消费正式 Jar，不把开发输出当成隔离证据。 */
+/** 通过 null-parent 加载器实际消费正式 Jar，核验成品隔离。 */
 public final class ArtifactChecks extends TestApplication {
     @Override protected void runTests() throws Exception {
         String declared = System.getProperty("uilib.verification.core");

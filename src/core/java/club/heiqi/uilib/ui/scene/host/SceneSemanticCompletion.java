@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 
-/** 请求的单次结算；显式回调在原批次执行，其失败不能被Future的派生异常吞掉。 */
+/** 请求只结算一次；显式回调在原批次执行，失败同时交给 Future 和原批次通道。 */
 final class SceneSemanticCompletion {
     final CompletableFuture<Result> future;
     private final BiConsumer<Result,Throwable> callback;

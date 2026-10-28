@@ -63,7 +63,7 @@ public final class ScenePageContext {
         runtime.scrollStep(scrollStep);
     }
 
-    /** 应用配置的页面域投影；局部配色可由此派生，不抢占全局主题权威。 */
+    /** 将应用主题配置投影到页面域，供局部配色派生使用。 */
     public ReadableSignal<ThemeMode> themeMode() { return themeMode; }
     public ReadableSignal<SceneTheme> theme() { return theme; }
     public ReadableSignal<SceneDensity> density() { return density; }
@@ -94,7 +94,7 @@ public final class ScenePageContext {
     public ReadableSignal<Integer> viewportWidth() { return runtime.viewportWidth(); }
     public ReadableSignal<Integer> viewportHeight() { return runtime.viewportHeight(); }
 
-    /** 借用宿主泵；绑定仍随正式 NodeBinding 挂载/卸载，不转移媒体会话所有权。 */
+    /** 借用宿主媒体泵，视图绑定随 NodeBinding 挂载/卸载；会话仍归原持有者。 */
     public club.heiqi.uilib.ui.scene.video.MediaViewPump mediaViews() {
         domain.checkAccess();
         if (mediaViews == null) throw new IllegalStateException("宿主未装配媒体呈现服务");
@@ -110,7 +110,7 @@ public final class ScenePageContext {
         return scope;
     }
 
-    /** 正式扩展复用同一runtime；普通内容通过mount声明根，不另建运行环境。 */
+    /** 扩展复用本页 runtime，普通内容通过 mount 声明根。 */
     public SceneRuntime runtime() {
         domain.checkAccess();
         return runtime;
@@ -121,14 +121,14 @@ public final class ScenePageContext {
         return runtime.attach(null, root);
     }
 
-    /** 本次页面拥有根逻辑树；结束挂载后释放，不结束调用方保留的子树。 */
+    /** 页面在挂载结束后释放所拥有的根逻辑树；调用方保留的子树仍归调用方。 */
     public MountHandle mountOwned(SceneNode root) {
         domain.checkWrite();
         Objects.requireNonNull(root, "root");
         // 初始化失败同样沿页面已有 scope 清理，保留原错误及清理 suppressed。
         Object logicalScope = new Object();
         scope.own(() -> {
-            // 移动已交接生命周期责任，旧页面声明不能销毁新归属中的对象。
+            // 明确移动会交接生命周期责任，此处只销毁仍归本页的根。
             if (root.logicalOwner() == logicalScope) root.destroy();
         });
         return runtime.attachOwned(root, logicalScope);

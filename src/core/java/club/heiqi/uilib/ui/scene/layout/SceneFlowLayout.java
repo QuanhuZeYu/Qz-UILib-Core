@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 普通轴向容器与所属层共用的尺寸分配；只消费当批子测量，不保存几何。 */
+/** 普通轴向容器与所属层共用尺寸分配算法，消费当批直属子测量。 */
 public final class SceneFlowLayout {
     private SceneFlowLayout() {}
     static int cross(Size size, int desired, int available) {

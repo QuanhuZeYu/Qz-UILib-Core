@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 
-/** 与React Aria字符跳转一致的有限键入前缀；仅匹配业务名称，不构造行视图。 */
+/** 按 React Aria 字符跳转语义，用有限键入前缀匹配逻辑业务名称。 */
 final class SceneTypeahead {
     private String query = "";
     private long lastInput;
@@ -23,7 +23,7 @@ final class SceneTypeahead {
         this.maximumLength = maximumLength;
     }
 
-    /** 只消费所属输入批次的时刻；匹配本身不采钟，也不推进框架时间。 */
+    /** 按所属输入批次时刻维护前缀期限。 */
     <T> int find(List<T> items, Function<T, String> name, int focused, String text, long now) {
         if (text == null || text.isEmpty() || text.codePoints().anyMatch(Character::isISOControl))
             return -1;

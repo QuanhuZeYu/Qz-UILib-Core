@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 
-/** 值型文本样式。名称由字体服务映射到列表；显式列表完整覆盖名称，不隐含追加候选。 */
+/** 值型文本样式，字体服务将名称映射为候选列表，显式列表完整覆盖该映射。 */
 public final class TextStyle {
     public final String font;
     public final int size, color;
@@ -166,7 +166,7 @@ public final class TextStyle {
     /** 普通文字请求的有界缓存键；前景和默认mark色保留在当前绘制声明。 */
     public TextStyle layoutStyle() {
         if(color==0&&defaultHighlightColor==0)return this;
-        // 样式和字体来源都是不可变代际；同一样式不在每次定位请求里复制完整候选列表。
+        // 样式与字体来源按不可变代际复用，定位请求共享同一候选列表。
         TextStyle result=layoutStyle;
         if(result==null){result=new TextStyle(font,logicalEm,0,candidates,effects,decoration,fontStyle,
                 baselineShift,letterSpacing,highlightColor,0,script);layoutStyle=result;}

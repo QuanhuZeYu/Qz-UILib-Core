@@ -15,9 +15,9 @@ import club.heiqi.uilib.ui.scene.text.font.nativefont.FontFace;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontSession;
 import club.heiqi.uilib.ui.scene.text.font.nativefont.FontEngine;
 
-/** 单个按需启动的 owned worker。GL/render 请求只操作短临界区，不打开字体或等待光栅。
- * 位图、pending、ready通知和错误各有上限；错误保留身份与原因，不自动重试。
- * close 只发关闭信号；awaitClose 专用于宿主销毁验收，不能用来等待每帧字形。
+/** 拥有按需启动的单个光栅 worker，请求线程仅操作短临界区。
+ * 位图、pending、ready 通知和错误分别有界，同键失败记录保留期间直接复用其身份与原因。
+ * close 发关闭信号，awaitClose 供宿主销毁时等待 worker 收尾。
  */
 public final class AsyncGlyphRasterizer implements AutoCloseable {
     public static final class Budget {
@@ -180,7 +180,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         return cache.get(key);
     }
 
-    /** 当前宿主可见集合更新，移除尚未执行的过期需求；不打断正在进行的单次原生调用。 */
+    /** 按宿主当前可见集合移除待执行的过期需求，正在执行的原生调用完成后收尾。 */
     public synchronized void retainPending(Collection<GlyphKey> visible) {
         java.util.Objects.requireNonNull(visible, "visible");
         if (pending.isEmpty()) return;
@@ -199,8 +199,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         if (limit < 0) throw new IllegalArgumentException("无效通知预算");
         List<GlyphKey> result = new ArrayList<GlyphKey>();
         while (result.size() < limit && !ready.isEmpty()) result.add(ready.removeFirst());
-        // #81 只有移出通知才释放ready背压；热态空drain不唤醒无任务的worker。
-        // 新任务和close各自通知，空列表仍独立且可修改，零预算不改变队列。
+        // 移出 ready 通知后唤醒 worker 继续生产，新任务和 close 分别通知。
         if (!result.isEmpty()) notifyAll();
         return result;
     }
@@ -228,7 +227,7 @@ public final class AsyncGlyphRasterizer implements AutoCloseable {
         synchronized (this) {
             for (; ; ) {
                 if (closed) return null;
-                // 满通知队列暂停生产，宿主在 prepare drain 后继续；不抛弃 ready 事件。
+                // ready 达到预算时暂停生产，宿主在 prepare 中 drain 后继续。
                 if (ready.size() < budget.ready)
                     for (Map.Entry<GlyphKey, Boolean> entry : pending.entrySet())
                         if (!entry.getValue()) {

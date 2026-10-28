@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 从同代几何逆绘制序查找；父自身未命中不阻断未裁剪的子节点。 */
+/** 按同代几何逆绘制序查找，子节点按自身区域与祖先裁剪核验。 */
 public final class SceneHitTester {
     public SceneNode hit(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) {
         return hit(runtime, geometry, x, y, false);
@@ -19,7 +19,7 @@ public final class SceneHitTester {
     public SceneNode passive(SceneRuntime runtime, SceneGeometryView geometry, int x, int y) {
         return passiveTargets(runtime, geometry, x, y, node -> false).control;
     }
-    /** 控件提示与区域兴趣含义不同；一次正式查询分别投影，区域不冒充禁用后仍有提示。 */
+    /** 在一次正式查询中分别投影控件提示与祖先区域兴趣。 */
     public static final class PassiveTargets {
         public final SceneNode control, within;
         PassiveTargets(SceneNode control, SceneNode within) { this.control = control; this.within = within; }

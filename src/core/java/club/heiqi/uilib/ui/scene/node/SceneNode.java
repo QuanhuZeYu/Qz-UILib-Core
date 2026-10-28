@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 逻辑声明与稳定身份，不持有布局结果；挂载后修改只经呈现运行时。 */
+/** 持有逻辑声明与稳定身份，布局结果归框架；挂载后通过呈现运行时协调变更。 */
 public final class SceneNode {
     private final UUID id = UUID.randomUUID();
     private final List<SceneNode> children = new ArrayList<>();
@@ -44,7 +44,7 @@ public final class SceneNode {
     private boolean logicalOwned, transferred;
     private final List<AutoCloseable> resources = new ArrayList<>();
 
-    /** 逻辑资源跨卸载保留，仅永久销毁释放；外部共享资源不隐含归属。 */
+    /** 显式登记节点拥有的逻辑资源，跨卸载保留，永久销毁时释放。 */
     public SceneNode own(AutoCloseable resource) {
         writable();
         resources.add(Objects.requireNonNull(resource, "resource"));
@@ -176,14 +176,14 @@ public final class SceneNode {
     private club.heiqi.uilib.ui.scene.geometry.SceneTransform transform = club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
     private club.heiqi.uilib.ui.scene.geometry.SceneShape shapeClip;
     public club.heiqi.uilib.ui.scene.geometry.SceneTransform transform() { return transform; }
-    /** 相对当前分配外盒的呈现变换；不改变度量、占位和原滚动单位。 */
+    /** 相对当前分配外盒变换呈现，度量、占位与滚动继续使用原布局单位。 */
     public SceneNode transform(club.heiqi.uilib.ui.scene.geometry.SceneTransform value) {
         writable(); Objects.requireNonNull(value, "呈现矩阵");
         if (!transform.equals(value)) { transform = value; if (runtime != null) runtime.invalidateGeometry(this); }
         return this;
     }
     public club.heiqi.uilib.ui.scene.geometry.SceneShape shapeClip() { return shapeClip; }
-    /** 局部外盒形状裁剪；与旧矩形clip及滚动视口取交集。null结束形状声明。 */
+    /** 局部形状与矩形 clip、滚动视口共同取交集，null 结束形状声明。 */
     public SceneNode clip(club.heiqi.uilib.ui.scene.geometry.SceneShape value) {
         writable();
         if (shapeClip != value) { shapeClip = value; if (runtime != null) runtime.invalidateGeometry(this); }
@@ -199,7 +199,7 @@ public final class SceneNode {
     }
     public float translationX() { return translationX; }
     public float translationY() { return translationY; }
-    /** 呈现位移进入共同排列，不能仅改变绘制坐标。 */
+    /** 将呈现位移发布到绘制与输入共用的几何。 */
     public SceneNode translation(float x, float y) {
         writable();
         if (!Float.isFinite(x) || !Float.isFinite(y)) throw new IllegalArgumentException("呈现位移必须有限");
@@ -229,7 +229,7 @@ public final class SceneNode {
     private boolean focusable;
     private SceneNode initialFocus, restoreFocus;
 
-    /** 页面根或模态的进入目标；null使用框架逻辑顺序，不在更新声明时抢焦点。 */
+    /** 声明页面根或模态进入时的目标，null 使用框架逻辑顺序。 */
     public SceneNode initialFocus() {
         return initialFocus;
     }
@@ -256,7 +256,7 @@ public final class SceneNode {
         return focusable;
     }
 
-    /** 挂载后通过绑定更新，不在输入handler直接改声明。 */
+    /** 挂载后由绑定在声明结算阶段更新。 */
     public SceneNode focusable(boolean value) {
         writable();
         focusable = value;
@@ -269,7 +269,7 @@ public final class SceneNode {
     private IntConsumer scrollAction;
     private BooleanSupplier escapeAction;
 
-    /** 范围/页面关闭策略：true表示已消费；只发布状态或意图，不直接改挂载声明。 */
+    /** 声明范围或页面的关闭意图，true 表示已消费；结构变化交由后续绑定结算。 */
     public SceneNode onEscape(BooleanSupplier action) {
         writable();
         escapeAction = action;
@@ -572,7 +572,7 @@ public final class SceneNode {
         if (next != null) next.children.add(this);
     }
 
-    /** 框架原生装饰沿宿主父链参与输入；不加入页面声明的内容子项或普通流。 */
+    /** 框架装饰沿宿主父链参与输入，内容子项与普通流仍由页面声明维护。 */
     public void frameworkDecorationParent(SceneRuntime authority, SceneNode host) {
         authority.checkMutation();
         if (runtime != null && runtime != authority) throw new IllegalArgumentException("装饰属于另一运行时");

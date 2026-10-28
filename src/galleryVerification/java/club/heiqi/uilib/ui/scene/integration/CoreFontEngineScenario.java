@@ -25,8 +25,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 无MC/Forge/LWJGL classpath的注入与数据所有权验收；此engine是合同探针，不是发行字体实现。
- * 真实脚本/emoji/像素验收仍由独立真实FT/HB场景完成，不能用此探针代替。
+ * 独立核心 classpath 中的注入与数据所有权探针。
+ * 脚本、emoji 与像素由真实 FT/HB 场景单独验收。
  */
 public final class CoreFontEngineScenario extends TestApplication {
 

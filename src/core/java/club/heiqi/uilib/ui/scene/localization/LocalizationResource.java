@@ -7,12 +7,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 
-/** 独立语言资料入口；每次打开返回由流负责关闭的新输入，不读取宿主资源包。 */
+/** 独立语言资料入口，每次打开返回由语言流负责关闭的新输入。 */
 @FunctionalInterface
 public interface LocalizationResource {
     InputStream open(String language) throws IOException;
 
-    /** ClassLoader 的指定根目录下读取 UTF-8 properties；根不依赖全局扫描。 */
+    /** 从 ClassLoader 指定根目录读取 UTF-8 properties。 */
     static LocalizationResource classpath(ClassLoader loader, String root) {
         Objects.requireNonNull(loader, "loader");
         Objects.requireNonNull(root, "root");
@@ -36,7 +36,7 @@ public interface LocalizationResource {
         };
     }
 
-    /** 独立目录不创建文件、不监控变化；业务写入完成后显式 reload。 */
+    /** 读取独立目录已有资料，业务写入后显式 reload。 */
     static LocalizationResource directory(Path root) {
         final Path directory = Objects.requireNonNull(root, "root");
         return new LocalizationResource() {
@@ -53,7 +53,7 @@ public interface LocalizationResource {
         };
     }
 
-    /** 语言标识只能是安全的单一路径段，不能改变资源根或 Windows 路径语义。 */
+    /** 将语言标识限制为资源根内的安全单路径段。 */
     static String requireLanguage(String language) {
         LocalizationSnapshot.requireKey(language);
         if (".".equals(language)

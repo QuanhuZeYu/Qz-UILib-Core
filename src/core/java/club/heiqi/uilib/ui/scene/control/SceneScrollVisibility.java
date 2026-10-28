@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.motion.MotionValue;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
-/** 活动后的有限等待与淡出；只拥有 alpha，不持有滚动位置或输入时钟。 */
+/** 管理滚动活动后的有限等待与 alpha 淡出，时间取运行时统一时钟。 */
 final class SceneScrollVisibility {
     final Signal<Float> opacity;
     private final SceneRuntime runtime;
@@ -66,7 +66,7 @@ final class SceneScrollVisibility {
         if (waiting) {
             if (now - fadeAt < 0) return;
             waiting = false;
-            // 等待是交互期限；迟到帧按实际经过时间采样，不重新延长淡出。
+            // 迟到帧从原 fadeAt 按实际经过时间采样淡出。
             alpha.snap(opacity.get(), fadeAt);
             alpha.retarget(0, motion(), fadeAt);
         }

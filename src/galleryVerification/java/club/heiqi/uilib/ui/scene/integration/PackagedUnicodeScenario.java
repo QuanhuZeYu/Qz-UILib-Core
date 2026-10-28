@@ -8,7 +8,7 @@ import java.net.URLClassLoader;
 import java.lang.reflect.Method;
 import java.util.Locale;
 
-/** 隔离加载真正shadow产物，防止Minecraft旧ICU与错误资源路径被开发classpath掩盖。 */
+/** 隔离加载正式 shadow 产物，核验其 ICU 与资源路径独立完整。 */
 public final class PackagedUnicodeScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {

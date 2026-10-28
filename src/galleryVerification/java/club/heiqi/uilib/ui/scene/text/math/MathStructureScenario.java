@@ -7,7 +7,7 @@ import club.heiqi.uilib.testing.TestApplication;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 真实 AST 消费者，只验语义/错误/来源，不声称布局或 GPU。 */
+/** 通过真实 AST 消费核验数学语义、错误与来源。 */
 public final class MathStructureScenario extends TestApplication {
     @Override
     protected void runTests() throws Exception {

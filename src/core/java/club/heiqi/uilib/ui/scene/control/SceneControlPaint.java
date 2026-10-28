@@ -16,7 +16,7 @@ final class SceneControlPaint {
                 Math.max(0, box.height - padding * 2));
     }
 
-    /** 共同动作的焦点只覆盖细轮廓，不以背景色遮盖内部，透明表面亦成立。 */
+    /** 沿共同动作外缘绘制细焦点轮廓，内部保留原表面覆盖。 */
     static void focus(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color, int radius) {
         club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.roundedOutline(target, box, clip, color, radius);
     }

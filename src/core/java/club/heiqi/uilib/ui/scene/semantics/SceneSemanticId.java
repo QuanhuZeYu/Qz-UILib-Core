@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.semantics;
 
 import java.util.UUID;
 
-/** 一次真实挂载的不透明值；保留它不会持有节点、运行时或业务来源。 */
+/** 以独立 UUID 表示一次真实挂载。 */
 public final class SceneSemanticId {
     private final UUID value;
     private SceneSemanticId(UUID value) { this.value = value; }

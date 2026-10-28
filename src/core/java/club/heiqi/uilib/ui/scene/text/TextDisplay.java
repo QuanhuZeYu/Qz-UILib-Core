@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.text;
 
-/** 字体显示与编辑方向分析共用的字符投影，不写回业务源文或改变来源映射。 */
+/** 字体显示与编辑方向分析共用字符投影，业务源文与来源映射保持完整。 */
 public final class TextDisplay {
     private TextDisplay() {}
 

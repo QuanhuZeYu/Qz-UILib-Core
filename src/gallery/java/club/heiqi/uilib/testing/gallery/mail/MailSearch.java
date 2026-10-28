@@ -13,7 +13,7 @@ import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 搜索表面只包正式单行字段；输入、组字、选区和提交不在案例中另实现。 */
+/** 用正式单行字段组合搜索表面与查询意图。 */
 final class MailSearch {
     private MailSearch() {}
 
@@ -35,7 +35,7 @@ final class MailSearch {
         SceneEditState query = new SceneEditState(p.domain(), model.query.get());
         Owner scope = p.domain().owner();
         String[] lastQuery = {model.query.get()};
-        // 外部查询意图明确重置草稿；用户INPUT提交相同值不重置光标或组字。
+        // 外部查询变化时重置草稿，用户 INPUT 同值发布延续原编辑位置与组字。
         p.domain()
                 .effect(
                         scope,

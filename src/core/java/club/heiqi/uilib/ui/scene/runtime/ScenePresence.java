@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** 逻辑身份、输入与被动片段分开；保留只延后所属逻辑资源销毁，不延续挂载订阅。 */
+/** 分别管理逻辑身份、输入与被动片段；退场仅延后逻辑资源释放，挂载订阅即时结束。 */
 final class ScenePresence implements SceneTransitions.Step {
     private static final class Visibility {
         final MotionValue value = new MotionValue();
@@ -55,7 +55,7 @@ final class ScenePresence implements SceneTransitions.Step {
         sources.put(scope, new Source(parent));
         return () -> { sources.remove(scope); finishScope(scope); };
     }
-    /** 拥有声明的来源通知也作用于已退出条目；不依赖子序列再次变化。 */
+    /** 将拥有声明的来源变化同步到已退出条目。 */
     void configureSource(Object scope, PresenceOptions options) {
         Source source = sources.get(scope);
         if (source == null || source.options == options) return;

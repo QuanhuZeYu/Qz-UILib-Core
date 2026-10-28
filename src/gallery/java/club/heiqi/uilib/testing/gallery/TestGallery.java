@@ -14,7 +14,7 @@ import club.heiqi.uilib.ui.settings.SettingsPage;
 import java.util.Collections;
 import java.util.function.Consumer;
 
-/** 仅收录有真实参考的应用页面；页面内容复用正式组件，入口不保留旧示例分派。 */
+/** 按共同目录装配具有真实参考的应用页面，页面复用正式组件。 */
 public final class TestGallery implements ScenePage {
     public enum Page {
         HOME("场景概览", "按类别浏览通用组件与综合应用"),
@@ -336,7 +336,7 @@ public final class TestGallery implements ScenePage {
         context.mountOwned(shell);
     }
 
-    /** 原生宿主请求按当前页面转交；确认完成动作由窗口提供，不混入目录导航。 */
+    /** 将原生关闭请求交给当前页面，窗口提供确认后的完成动作。 */
     public void requestClose(Runnable complete) {
         environment
                 .settings()

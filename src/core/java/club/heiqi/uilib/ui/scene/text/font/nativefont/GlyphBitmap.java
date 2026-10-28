@@ -69,7 +69,7 @@ public final class GlyphBitmap {
         return singleChannel;
     }
 
-    /** CPU 缓存按实际 owned 字节记账，不包含按需导出数据。 */
+    /** 返回 CPU 缓存实际拥有的字节量，导出缓冲由消费者计费。 */
     public int byteSize() {
         return data.length;
     }
@@ -86,7 +86,7 @@ public final class GlyphBitmap {
         return ByteBuffer.wrap(singleChannel ? pixels() : data).asReadOnlyBuffer();
     }
 
-    /** 仅导出指定行，mono 按需展开为白色 premult RGBA，不增加主存储。 */
+    /** 导出指定行，mono 在目标缓冲中按需展开为白色 premult RGBA。 */
     public void copyRgba(ByteBuffer destination, int firstRow, int rows) {
         checkCopy(destination, firstRow, rows, 4);
         int first = firstRow * width, count = rows * width;
@@ -96,7 +96,7 @@ public final class GlyphBitmap {
                 for (int c = 0; c < 4; c++) destination.put(data[i]);
     }
 
-    /** RGBA 输入的 coverage 来自 alpha；不能按 color=false 重新解释调用者的字节。 */
+    /** 单通道直接导出 coverage，RGBA 从原 alpha 提取。 */
     public void copyCoverage(ByteBuffer destination, int firstRow, int rows) {
         checkCopy(destination, firstRow, rows, 1);
         int first = firstRow * width, count = rows * width;
@@ -113,7 +113,7 @@ public final class GlyphBitmap {
             throw new java.nio.BufferOverflowException();
     }
 
-    /** NORMAL 不复制像素或增加边框；其余显式样式保留原 owned 格式。 */
+    /** NORMAL 复用当前位图，其余显式样式按原 owned 格式生成变体。 */
     public GlyphBitmap styled(GlyphRasterStyle style) {
         java.util.Objects.requireNonNull(style, "style");
         if (style.normal() || width == 0 || height == 0) return this;

@@ -135,7 +135,7 @@ final class SceneSortableModel<T, K, C> {
         }
     }
     private void mountDestinations(SceneSortableDeclarations.Plan<T, K, C> plan) {
-        // 旧容器完整保留到全部跨父迁移完成，防止源销毁存续行。
+        // 跨父迁移全部完成后，再结束旧容器及其剩余内容。
         List<SceneNode> mounted = new ArrayList<>();
         for (ContainerEntry<T, K, C> value : containers.values()) mounted.add(value.declaration.root);
         for (ContainerEntry<T, K, C> value : plan.containers.values())

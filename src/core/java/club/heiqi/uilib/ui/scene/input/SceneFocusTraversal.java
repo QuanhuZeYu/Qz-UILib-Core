@@ -8,7 +8,7 @@ import java.util.Objects;
 public interface SceneFocusTraversal {
     Cursor begin(SceneNode from, boolean backward);
 
-    /** 可选空间方向准备；null沿现有普通子树几何，旧逻辑游标不增加几何前提。 */
+    /** 可选空间方向准备，null 使用普通子树几何；逻辑遍历沿原独立入口。 */
     default DirectionalCursor beginDirection(SceneNode from, SceneNavigationEvent direction,
             club.heiqi.uilib.ui.scene.layout.LayoutBox origin) { return null; }
 
@@ -31,7 +31,7 @@ public interface SceneFocusTraversal {
         public static Result ready(SceneNode target) { return new Result(Status.READY, Objects.requireNonNull(target)); }
         public static Result waiting() { return new Result(Status.WAITING, null); }
         public static Result end() { return new Result(Status.END, null); }
-        /** 已准备目标真实退出，本次意图结束，不转投另一业务对象。 */
+        /** 已准备目标退出时结束原意图。 */
         public static Result cancelled() { return new Result(Status.CANCELLED, null); }
     }
 }

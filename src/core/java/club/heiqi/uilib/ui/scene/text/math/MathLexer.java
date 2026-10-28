@@ -136,7 +136,7 @@ public final class MathLexer {
         return Collections.unmodifiableList(tokens);
     }
 
-    /** URL 的 catcode 必须在读取其源码前切换，不能先把整式注释吞掉。 */
+    /** 读取 URL 源码前切换 catcode，使其中注释符按 URL 词法消费。 */
     static final class Scanner {
         final String source;
         int i;

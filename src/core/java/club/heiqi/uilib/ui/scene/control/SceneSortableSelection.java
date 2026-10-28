@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** 一次位置查询：先裁定空间容器，再按该容器布局求插槽；不持有跨批几何。 */
+/** 使用本次几何先选择空间容器，再按其布局求插槽。 */
 final class SceneSortableSelection<T, K, C> {
     static final class Position<T, K, C> {
         final SceneSortableModel.ContainerEntry<T, K, C> container;
@@ -36,7 +36,7 @@ final class SceneSortableSelection<T, K, C> {
     Position<T, K, C> pointer(SceneSortableModel.RowEntry<T, K, C> source, SceneGeometryView geometry, int x, int y) {
         List<SceneSortableModel.ContainerEntry<T, K, C>> legal = containers(source, geometry);
         SceneSortableModel.ContainerEntry<T, K, C> target = nearestContainer(geometry, x, y);
-        // 政策不能改变空间命中：最近容器拒绝时不吸附远处的合法容器。
+        // 先按空间选择最近容器，再核验该容器接收政策。
         if (target == null || !legal.contains(target)) return null;
         return insertion(source, target, geometry, x, y);
     }
@@ -104,7 +104,7 @@ final class SceneSortableSelection<T, K, C> {
         while (index < all.size() && all.get(index) == source) index++;
         return new Position<>(container, index < all.size() ? all.get(index).key : null);
     }
-    /** 变高网格按整行可见带选择，不能把行内空白当成下一行。 */
+    /** 按变高网格整行可见带选择插入行。 */
     private List<SceneSortableModel.RowEntry<T, K, C>> nearestBand(List<SceneSortableModel.RowEntry<T, K, C>> all,
                                                                  SceneGeometryView geometry, int y) {
         List<SceneSortableModel.RowEntry<T, K, C>> chosen = new ArrayList<>();
@@ -135,7 +135,7 @@ final class SceneSortableSelection<T, K, C> {
         for (SceneSortableModel.ContainerEntry<T, K, C> container : containers(source, geometry)) navigation.consider(container);
         return navigation.position(current);
     }
-    /** 一次方向查询持有候选评分；它不改变焦点、滚动或业务集合。 */
+    /** 为本次方向查询计算候选评分。 */
     private final class Navigation {
         private final SceneSortableModel.RowEntry<T, K, C> source;
         private final SceneSortableModel.ContainerEntry<T, K, C> current;

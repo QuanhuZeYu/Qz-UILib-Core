@@ -107,12 +107,12 @@ final class SceneEditCommands {
         Snapshot before = state.snapshot().get();
         state.breakHistoryGroup();
         state.composition("", false);
-        // 真实用户离开才可提交；失活、模态隔离、卸载不改变独立草稿权威。
+        // 真实用户失焦时提交，失活、模态隔离与卸载仅结束原输入联系。
         if (eligible && policy == SubmitPolicy.BLUR && before.active && !readOnly.get())
             onSubmit.accept(state.request(true));
     }
 
-    /** 来源文本与候选组字优先；各模式只决定本地导航清理，不复制草稿/IME协议。 */
+    /** 优先处理来源文本与候选组字，各模式仅声明本地导航的清理规则。 */
     boolean input(Snapshot before, SceneEditEvent event, Runnable beforeInput) {
         boolean locked = readOnly.get();
         if (event.compositionEvent) {
@@ -129,7 +129,7 @@ final class SceneEditCommands {
             }
             return true;
         }
-        // 方向/删除/空格等候选键归IME，不同时修改已确认草稿或提交字段。
+        // 候选组字期间，方向、删除与空格等键统一交给 IME。
         return event.command != null && before.composing && !locked
                 && event.command != SceneEditEvent.Command.ESCAPE;
     }

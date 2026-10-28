@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.input;
 
 /** 无平台、不可变的单指针输入；坐标已由宿主转换到scene统一像素。
  * 宿主必须递交所有按钮的DOWN/UP。按钮0是标准激活键，其余按钮仅占位并吞尾。
- * 每个事件按采集顺序递交；focus、IME、键盘与拖放不属于本接口。 */
+ * 逐项按采集顺序递交，焦点、IME、键盘与拖放沿各自接口表达。 */
 public final class ScenePointerEvent {
     public enum Kind {
         DOWN,
@@ -22,7 +22,7 @@ public final class ScenePointerEvent {
     public final int x, y, delta;
     public final double worldX, worldY, preciseX, preciseY;
     private final club.heiqi.uilib.ui.scene.geometry.SceneTransform frame;
-    /** 采集时刻；速度估计使用事件间隔，不以同帧结算间隔代替。 */
+    /** 宿主采集时刻，速度按事件实际采集间隔估算。 */
     public final long timeNanos;
     public enum ScrollPhase { DISCRETE, UPDATE, END, MOMENTUM }
     public final ScrollPhase scrollPhase;
@@ -45,7 +45,7 @@ public final class ScenePointerEvent {
     }
 
     public ScenePointerEvent at(long timeNanos) { return new ScenePointerEvent(kind, button, preciseX, preciseY, delta, timeNanos, scrollPhase, worldX, worldY, frame); }
-    /** 从同一个world采样映射，不在祖先链逐级取整。 */
+    /** 从原 world 精确采样直接映射到当前坐标系。 */
     public ScenePointerEvent in(club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry) {
         club.heiqi.uilib.ui.scene.geometry.SceneTransform next = geometry.coordinateTransform();
         if (next.equals(frame)) return this;
@@ -58,17 +58,17 @@ public final class ScenePointerEvent {
         return frame.identity() ? this : new ScenePointerEvent(kind, button, worldX, worldY, delta, timeNanos, scrollPhase,
                 worldX, worldY, club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY);
     }
-    /** 宿主明确提供直接滚动序列；MOMENTUM 表示已有动量，不能重复合成。 */
+    /** 递交宿主直接滚动序列，MOMENTUM 沿用宿主已有动量。 */
     public static ScenePointerEvent scrollGesture(int x, int y, int delta, ScrollPhase phase, long timeNanos) {
         return new ScenePointerEvent(Kind.SCROLL, -1, x, y, delta, timeNanos, phase);
     }
 
-    /** 按下只建立手势所有权，不发布click。 */
+    /** 按下建立手势所有权，激活由合法释放处理。 */
     public static ScenePointerEvent down(int button, int x, int y) {
         return button(Kind.DOWN, button, x, y);
     }
 
-    /** 释放按当前统一几何检查原目标，未知或重复UP不激活。 */
+    /** 释放时按当前共同几何核验原主键与目标，合法完整段才激活。 */
     public static ScenePointerEvent up(int button, int x, int y) {
         return button(Kind.UP, button, x, y);
     }
@@ -78,7 +78,7 @@ public final class ScenePointerEvent {
         return new ScenePointerEvent(kind, button, x, y, 0);
     }
 
-    /** 移动维护当前位置，不重选起手目标。 */
+    /** 移动更新当前位置，沿起手 owner 接续。 */
     public static ScenePointerEvent move(int x, int y) {
         return new ScenePointerEvent(Kind.MOVE, -1, x, y, 0);
     }
@@ -88,19 +88,19 @@ public final class ScenePointerEvent {
         return new ScenePointerEvent(Kind.CANCEL, -1, 0, 0, 0);
     }
 
-    /** 宿主确认所有物理按钮已释放时同步结束占位，用于失焦丢UP；不会恢复旧owner。
-     * 不能在仍有按钮按下时递交此事件；仅恢复焦点并不能证明物理结束。 */
+    /** 宿主确认全部按钮已实际释放后，同步结束失焦丢 UP 留下的物理占位。
+     * 设备真实释放是递交前提，恢复焦点仍须等待该事实。 */
     public static ScenePointerEvent allButtonsReleased() {
         return new ScenePointerEvent(Kind.ALL_BUTTONS_RELEASED, -1, 0, 0, 0);
     }
 
-    /** 滚轮沿当前有效范围路由，不建立pointer owner。 */
+    /** 滚轮按当前有效范围独立路由。 */
     public static ScenePointerEvent scroll(int x, int y, int delta) {
         return new ScenePointerEvent(Kind.SCROLL, -1, x, y, delta);
     }
 
-    /** 完整synthetic activation，空闲状态按坐标完整点击，执行clickFocus和业务激活；不制造物理DOWN或拖选。
-     * 已有物理手势（包括取消尾部、空白和第二键）时整项吞掉，不能绕过owner。 */
+    /** 空闲时按坐标执行完整 synthetic 点击，包含 clickFocus 与业务激活。
+     * 已有物理段时整项吞掉，覆盖取消尾部、空白起手与第二键。 */
     public static ScenePointerEvent syntheticActivation(int x, int y) {
         return new ScenePointerEvent(Kind.SYNTHETIC_ACTIVATION, -1, x, y, 0);
     }

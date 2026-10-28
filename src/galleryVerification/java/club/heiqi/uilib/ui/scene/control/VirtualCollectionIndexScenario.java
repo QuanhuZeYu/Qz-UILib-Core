@@ -8,7 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
 
-/** 用业务选择和独立线性前缀核验集合逻辑，不镜像树状索引实现。 */
+/** 以业务选择与独立线性前缀核验集合逻辑。 */
 public final class VirtualCollectionIndexScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("选择替换切换及按当前顺序范围选择", this::selection);

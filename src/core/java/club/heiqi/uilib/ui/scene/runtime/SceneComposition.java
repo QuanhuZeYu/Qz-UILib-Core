@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.input.SceneEditEvent;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
 /** 一次组字联系的身份与终止；草稿和焦点仍分别归编辑状态与唯一路由器。
- * 对应编辑规格第 2 节：来源、挂载、状态及基线必须同时有效，迟到事件不能重投当前焦点。 */
+ * 按编辑规格第 2 节共同核验来源、挂载、状态与基线，事件始终归原联系。 */
 final class SceneComposition {
     private static final class Link {
         final SceneCompositionSource source;
@@ -28,7 +28,7 @@ final class SceneComposition {
 
     SceneComposition(SceneRuntime runtime) { this.runtime = runtime; }
 
-    /** null 表示该来源已失效或 BEGIN 无合法目标；调用者消费事件，不再按当前焦点回退。 */
+    /** null 表示原来源或起始目标失效，此事件在原联系内结束消费。 */
     SceneNode target(SceneEditEvent event, SceneNode focused) {
         if (event.compositionPhase == SceneEditEvent.CompositionPhase.BEGIN) {
             if (!event.compositionSource.beginOnce()) return null;
@@ -57,7 +57,7 @@ final class SceneComposition {
             invalidate(null);
     }
 
-    /** 先结束身份再清呈现；reset/cancel 的新基线不受旧联系清理影响。 */
+    /** 先结束原身份，再按基线代际清理其预编辑呈现。 */
     void invalidate(SceneNode target) {
         runtime.domain().checkWrite();
         Link link = active;
@@ -80,7 +80,7 @@ final class SceneComposition {
         return accepts(focused) && ((SceneCompositionTarget) focused.control()).compositionState().snapshot().get().composing;
     }
 
-    /** 最终事件即使控件回调失败也结束原联系，不清理后来建立的来源。 */
+    /** 最终事件后结束仍匹配该来源的原联系，回调失败也执行清理。 */
     void finish(SceneEditEvent event) {
         if (active != null && active.source == event.compositionSource
                 && (event.compositionPhase == SceneEditEvent.CompositionPhase.COMMIT

@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.text.math;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 保留单位事实，转换归布局；普通长度与 mu 不能在解析期当作同一 em。 */
+/** 解析时保留原单位，布局分别换算普通长度与 mu。 */
 final class MathDimension {
     final double number;
     final String unit;

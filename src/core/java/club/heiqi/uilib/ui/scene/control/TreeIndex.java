@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
-/** 只有业务键和值的树索引；校验、展开均不创建SceneNode，不递归遍历深层调用栈。 */
+/** 保存业务键与值的树索引，以显式栈校验并展开逻辑层级。 */
 final class TreeIndex<T, K> {
     static final class Item<T, K> {
         final T value; final K key, parent; final List<K> children = new ArrayList<>();
@@ -35,7 +35,7 @@ final class TreeIndex<T, K> {
                 ancestor.children.add(item.key);
             }
         }
-        // 每次结构来源只建立一次同级位置，有限行语义读取不重新扫描整个投影。
+        // 每个结构来源建立一次同级位置索引，供有限行语义直接查询。
         indexSiblings(roots);
         for (Item<T, K> item : items.values()) indexSiblings(item.children);
         Set<K> checked = new HashSet<>();

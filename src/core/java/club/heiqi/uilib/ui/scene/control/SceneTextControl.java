@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 
-/** 标签与按钮共用文本测量/呈现；缓存只持不可变排版，不持节点或旧挂载作用域。 */
+/** 标签与按钮共用文本测量、呈现与不可变排版缓存。 */
 final class SceneTextControl implements SceneControl {
     private final ReadableSignal<SceneTheme> theme;
     private final SceneTextPolicy policy;
@@ -110,7 +110,7 @@ final class SceneTextControl implements SceneControl {
         return create(text, control, colors, role, null);
     }
 
-    /** 内容模式从创建起复用标准动作声明，完整名称不参与视觉测量，也不创建隐藏文字按钮。 */
+    /** 内容模式直接组合标准动作与内容子树，完整名称仅供语义与提示使用。 */
     static SceneNode createModern(ReadableSignal<String> name, SceneNode content,
             ReadableSignal<SceneAppearance.Palette> colors, SceneAppearance.Role role, ReadableSignal<Boolean> selected) {
         SceneTextControl control = modern(colors, role, null, SceneTextPolicy.WRAP);
@@ -247,7 +247,7 @@ final class SceneTextControl implements SceneControl {
         return source != null && presented != source && entry != null && entry.text == presented;
     }
 
-    /** 组合内容沿标准文字的省略事实返回根完整名称，不暴露内容把手或产生中间提示对象。 */
+    /** 沿组合内容的文字省略事实判断是否显示动作根的完整名称。 */
     private static boolean contentTruncated(SceneNode node, SceneGeometryView geometry) {
         for (SceneNode child : node.children()) {
             if (!child.visible()) continue;

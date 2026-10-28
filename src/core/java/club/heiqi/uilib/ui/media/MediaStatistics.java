@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.media;
 
-/** 累计计数与内部持有峰值。主动切代跳过另计；解码绝不冒充 GPU 提交。 */
+/** 累计计数与内部持有峰值，解码、实际提交、丢帧与主动切代跳过分别计数。 */
 public final class MediaStatistics {
     public final long decodedVideoFrames, decodedAudioBlocks, presentedFrames, droppedFrames, skippedFrames;
     public final long peakVideoBytes, peakVideoFrames, peakVideoNanos, peakAudioBytes, peakAudioBlocks, peakAudioNanos;

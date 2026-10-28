@@ -55,7 +55,7 @@ final class NoticeComponentsPage {
                                 2_000_000_000L,
                                 (node, value) -> displayed.set(value == null ? "" : value)))
                 .bind(NodeBinding.value(() -> !displayed.get().isEmpty(), SceneNode::visible));
-        // 短暂消息的显示来源是同一 transientValue 投影，不写业务状态或使用独立计时器。
+        // 短暂消息共用 transientValue 呈现来源与期限。
         SceneNode live =
                 SceneNotice.create(
                         p,

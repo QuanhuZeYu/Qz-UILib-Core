@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** 可交给页面/业务已有资源作用域；服务不绑定 scene，不初始化适配。 */
+/** 持有媒体会话，生命周期可登记到页面或业务既有资源作用域；适配由工厂按需创建。 */
 public final class MediaService implements AutoCloseable {
     private static final AtomicLong IDS=new AtomicLong();
     private final MediaDecoderFactory decoders;

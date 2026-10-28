@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/** 新source SPI的独立生命周期反例；原factory lambda由原core场景覆盖。 */
+/** 核验 source SPI 的独立生命周期，factory lambda 由核心场景单独覆盖。 */
 public final class MediaSourceScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("同source跨seek保存owner上下文且暂停按deadline刷新",()->{

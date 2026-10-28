@@ -22,7 +22,7 @@ import club.heiqi.uilib.ui.config.ConfigSession;
 import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 
-/** 独立产物的真实 YAML 对象场景。业务按自己的不可变类型读写，不接触 YAML 节点。 */
+/** 在独立产物中按业务不可变类型读写真实 YAML 对象。 */
 public final class YamlObjectScenario extends TestApplication {
     private static final class Range {
         final int low, high;

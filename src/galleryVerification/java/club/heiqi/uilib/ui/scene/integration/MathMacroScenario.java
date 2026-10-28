@@ -341,10 +341,10 @@ public final class MathMacroScenario extends TestApplication {
         resourceFailure(recursive, recursive.lastIndexOf(tex("@a")));
         String indirect = tex("@def@a#1{@b{#1#1}}@def@b#1{@a{#1}}@a{x}");
         resourceFailure(indirect, indirect.lastIndexOf(tex("@a")));
-        // raw 模式也必须共享每式预算，不能因临时输入窗口重置累计量。
+        // 核验 raw 临时窗口共用每式累计预算。
         String raw = tex("@def@a#1{@a{#1#1}}@href{@a{x}}{x}");
         resourceFailure(raw, raw.lastIndexOf(tex("@a")));
-        // 单个 verb token 的正文可能很长，少量 token 也不能逃过文本复制工作量。
+        // 核验长 verb 正文按实际复制文本量计费。
         String longToken = tex(doublingChain(8)).replace("{x}", tex("{@verb|")
                 + String.join("", java.util.Collections.nCopies(2048, "x")) + "|}");
         resourceFailure(longToken, longToken.lastIndexOf(tex("@auditA")));

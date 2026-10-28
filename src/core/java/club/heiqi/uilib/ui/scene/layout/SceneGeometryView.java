@@ -14,10 +14,10 @@ public interface SceneGeometryView {
         public final LayoutBox box, clip;
         public final LayoutBox layoutBox, worldBounds;
         public final SceneTransform transform, inverse;
-        /** 本节点已解析的局部效果，不含累计父矩阵及布局换基补偿。 */
+        /** 本节点已解析的局部效果，累计父矩阵与布局换基由 frame 单独表达。 */
         public final SceneTransform localTransform;
         public final SceneClipRegion worldClip, shapeClip;
-        /** 仅本节点的已解析裁剪；捕获和逐层显露复用同一mesh，不冻结祖先。 */
+        /** 本节点已解析裁剪，捕获与逐层显露共用该 mesh，祖先裁剪按当前路径组合。 */
         public final SceneClipRegion ownWorldClip;
         /** 控件准备出的实际命中填充；null保持原盒命中，坐标固定为world。 */
         public final SceneMesh hitMesh;
@@ -49,7 +49,7 @@ public interface SceneGeometryView {
         public Entry in(SceneTransform frameInverse, boolean self) {
             if (frameInverse == null) return new Entry(node, layoutBox, worldBounds, transform, worldClip, layoutBox,
                     SceneClipRegion.UNBOUNDED, text, scrollOffset, scrollMaximum, hitMesh, ownWorldClip, localTransform);
-            // 同一累计frame的孩子直接保布局盒，避免逆乘浮点尾差经floor/ceil膨胀一个像素。
+            // 同累计 frame 的孩子直接保留布局盒，使整数边界稳定。
             SceneTransform relative = frameInverse.equals(inverse) ? SceneTransform.IDENTITY : frameInverse.multiply(transform);
             LayoutBox bounds = self ? layoutBox : hitMesh != null ? bounds(hitMesh.transformed(frameInverse)) : relative.identity() ? layoutBox
                     : bounds(SceneMesh.rectangle(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height).transformed(relative));
@@ -61,7 +61,7 @@ public interface SceneGeometryView {
         public SceneMesh worldShape() { return hitMesh != null ? hitMesh : SceneMesh.rectangle(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height).transformed(transform); }
     }
 
-    /** 同一正式快照的世界读取与按消费者缓存的局部读取；不另建布局或输入树。 */
+    /** 提供同一正式快照的世界视图与按消费者缓存的局部视图。 */
     default SceneGeometryView world() { return this; }
     default SceneTransform coordinateTransform() { return SceneTransform.IDENTITY; }
     default SceneGeometryView asControl(SceneNode consumer) {
@@ -110,7 +110,7 @@ public interface SceneGeometryView {
         return new LayoutBox((int) left, (int) top, (int) (right - left), (int) (bottom - top));
     }
 
-    /** 同代宿主可用区域；被动呈现以此限界，不读取平台或布局后回写。 */
+    /** 同代宿主可用区域，供被动呈现限界。 */
     default LayoutBox viewport() {
         int width = 0, height = 0;
         for (Entry entry : ordered())

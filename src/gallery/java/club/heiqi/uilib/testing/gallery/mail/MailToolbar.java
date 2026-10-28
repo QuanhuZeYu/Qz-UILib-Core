@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 操作与分页保持同一工具区域；选择状态只替换可用动作，不额外推下一整条列表。 */
+/** 在同一工具区域组合操作与分页，选择状态只替换当前动作。 */
 final class MailToolbar {
     private MailToolbar() {}
 

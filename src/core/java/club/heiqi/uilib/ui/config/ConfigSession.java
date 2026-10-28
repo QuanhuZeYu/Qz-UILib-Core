@@ -17,7 +17,7 @@ import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 
 /** 应用持有的配置权威值；构造和全部操作均在所属 ReactiveDomain 内执行。
- * 无自持订阅或线程；订阅释放交给使用者的 Owner。加载先全量验证，再发布整份快照。
+ * 订阅由使用者的 Owner 释放；加载先全量验证，再发布整份快照。
  * I/O 与非法配置沿调用通道暴露；已经发布之后的观察者异常遵循状态域原有失败语义。 */
 public final class ConfigSession {
     private final ReactiveDomain domain;
@@ -84,7 +84,7 @@ public final class ConfigSession {
     }
 
     /** 有界的多键提交：全部键先按原有 checked 合同校验与冻结，再一次发布。
-     * 不改变普通 set 的校验、相同值和观察者失败语义。 */
+     * 校验、同值去重及观察者失败沿普通 set 的共同语义处理。 */
     public void setAll(Map<ConfigKey<?>, ?> updates) {
         domain.checkWrite();
         Objects.requireNonNull(updates, "updates");
@@ -105,7 +105,7 @@ public final class ConfigSession {
     /** 声明可交给后台文档读取；声明及其 codec/validator 沿纯值合同使用。 */
     public ConfigSchema schema() { domain.checkAccess(); return schema; }
 
-    /** 在所属域内捕获整份一致值；快照不再依赖本 session 的后续编辑。 */
+    /** 在所属域内捕获当前完整一致值，返回独立不可变文档。 */
     public ConfigDocument snapshot() {
         domain.checkAccess();
         return new ConfigDocument(schema, document, values);

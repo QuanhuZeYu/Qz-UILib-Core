@@ -33,7 +33,7 @@ import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** editing spec 1.1.2：正式页面、状态和路由回归；不冒称宿主原生键盘或真实字体验收。 */
+/** 通过正式页面、状态与路由核验编辑规格第 1.1.2 节的多行行为。 */
 public final class MultilineEditingScenario extends TestApplication {
     /** 只提供无native的字体边界事实；没有光标、选区、历史或编辑算法。真实字体另在GPU应用验收。 */
     static final class PlainHost implements SceneHost, SceneTextMeasurer {
@@ -368,7 +368,7 @@ public final class MultilineEditingScenario extends TestApplication {
     }
 
     private static boolean caretVisible(PaintPlan plan, int color) {
-        // 标准字段在边框/选区/文字之后绘制caret；高20的单行边框也可能宽1，不能取首项。
+        // 按绘制顺序取最后一个匹配矩形，区分 caret 与同尺寸边框。
         PaintCommand caret = null;
         for (PaintCommand command : plan.commands())
             if (command.kind == PaintCommand.Kind.RECT

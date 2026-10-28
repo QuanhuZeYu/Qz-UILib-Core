@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.semantics.SceneSemantics;
 import java.nio.file.*;
 import java.util.*;
 
-/** 字体字段编辑器；添加子视图和所属文件选择器只在此拥有，不发布配置。 */
+/** 拥有字体字段的添加子视图与文件选择器，编辑结果写入共同草稿。 */
 final class SettingsFontDialog {
     private enum View {
         NONE,
@@ -31,7 +31,7 @@ final class SettingsFontDialog {
     SettingsFontDialog(SettingsUi ui) {
         this.ui = ui;
         view = ui.context.domain().signal(View.NONE);
-        // 编号与行动作共享一遍来源索引；重复声明仍以独立身份定位，不让全量行产生平方扫描。
+        // 编号与行动作共用一遍来源索引，重复声明按独立身份定位。
         ordinals =
                 ui.context
                         .domain()
@@ -71,7 +71,7 @@ final class SettingsFontDialog {
     }
 
     SceneNode build() {
-        // 两个互斥的视图范围沿同一外框位置替换，不叠加第二个添加模态；
+        // 列表与添加视图在同一外框内互斥替换；
         // 范围进入/返回由正式初始焦点和恢复规则处理，路径编辑节点持续保留。
         return club.heiqi.uilib.ui.scene.layout.SceneLayouts.overlay()
                 .add(listView())
@@ -226,7 +226,7 @@ final class SettingsFontDialog {
         SceneCommand command =
                 SceneCommand.of(
                         () -> {
-                            // 重载可先刷新旧行再协调移除；不在当前索引的来源已没有移动资格。
+                            // 重载先刷新行再协调移除，移动前核验来源仍在当前索引中。
                             Integer position = ordinals.get().get(source.get().identity());
                             return position != null
                                     && (offset < 0

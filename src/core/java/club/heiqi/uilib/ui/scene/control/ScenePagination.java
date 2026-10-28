@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
 import java.util.Objects;
 
-/** 摘要与前后页意图，不要求总数，也不持有分页或请求状态。 */
+/** 从当前摘要与可用条件构造前后页意图，分页及请求状态归业务持有。 */
 public final class ScenePagination {
     private ScenePagination() {}
 

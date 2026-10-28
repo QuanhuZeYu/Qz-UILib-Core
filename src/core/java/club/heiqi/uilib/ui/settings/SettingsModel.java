@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.settings.SettingsConfiguration.Snapshot;
 import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 
 /** 一份工作区草稿，分类导航共享同一实例；页面释放仅结束本页订阅。
- * 值语义区分草稿、live 与 saved，不把字体路径当作行身份。 */
+ * 按值区分草稿、live 与 saved，字体行用独立来源身份延续。 */
 public final class SettingsModel {
     public static final class Source {
         private final Object identity = new Object();
@@ -35,7 +35,7 @@ public final class SettingsModel {
         }
     }
 
-    /** 只属于本次添加请求的业务结果；失效请求既不添加，也不借用后来请求的全局错误。 */
+    /** 本次添加请求的独立结果，接受时核验原请求代际并报告其自身错误。 */
     public static final class Addition {
         private final boolean added;
         private final String error;
@@ -45,7 +45,7 @@ public final class SettingsModel {
         public String error() { return error; }
     }
 
-    /** 同文案的两次成功仍是两个操作；呈现期限不改变业务结果。 */
+    /** 用操作身份区分同文案成功结果，呈现期限单独管理。 */
     static final class Feedback {
         final String text;
         final boolean success;
@@ -267,7 +267,7 @@ public final class SettingsModel {
 
     public CompletableFuture<Addition> add(String declaration) { return add(declaration, () -> true); }
 
-    /** 所属编辑器在资源校验后确认本次提交仍可接受；沿原编辑状态完成，不另建输入目标。 */
+    /** 资源校验完成后由所属编辑器核验本次提交，并通过原编辑状态完成。 */
     CompletableFuture<Addition> add(String declaration, BooleanSupplier accept) {
         write();
         clearFeedback();
@@ -305,7 +305,7 @@ public final class SettingsModel {
         sources.set(Collections.unmodifiableList(next));
     }
 
-    /** 只在排序正常结束时变更草稿；来源身份独立于声明值，重复字体也不会串行。 */
+    /** 排序正常结束时更新草稿，重复字体通过独立来源身份定位。 */
     public void moveBefore(Object sourceKey, Object beforeKey) {
         write();
         List<Source> current = sources.get();
@@ -330,7 +330,7 @@ public final class SettingsModel {
         replace.set(value);
     }
 
-    /** 主题与其他字段共享草稿；预览不发布全局值，也不保存文件。 */
+    /** 主题参与共同草稿，预览只驱动页面局部配色。 */
     public void setTheme(ThemeMode value) {
         write();
         Objects.requireNonNull(value, "theme");
@@ -458,7 +458,7 @@ public final class SettingsModel {
     }
 
     /** 放弃未落盘变化的确认归页面模态；本方法执行已确认的实际加载。
-     * 后续编辑属于新的草稿意图，旧加载完成只能更新配置事实，不能覆盖新草稿。 */
+     * 后续编辑开启新草稿代际；加载结果发布配置事实后，仅回填仍属原代际的草稿。 */
     public CompletableFuture<Void> reload() {
         write();
         clearFeedback();

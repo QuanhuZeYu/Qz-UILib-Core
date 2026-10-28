@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** 标准图形及完整名称；实际大小 coverage 共用普通 PaintPlan，不依赖宿主图标字体。 */
+/** 以普通 PaintPlan 绘制标准图形，共用实际尺寸 coverage 与完整名称。 */
 public final class SceneIconButton {
     public enum Symbol { STAR, STAR_FILLED, ARCHIVE, MAIL, MAIL_OPEN, SEARCH, CLOSE,
         CHEVRON_LEFT, CHEVRON_RIGHT, INBOX, ALL_MAIL, THEME, SORT, CHECK, MINUS, CHECK_BOX, TAG, PEOPLE, MENU, SLIDERS, FILE, MONITOR, FOLDER, CHEVRON_DOWN }
@@ -18,12 +18,12 @@ public final class SceneIconButton {
             ReadableSignal<SceneTheme> theme, Runnable action) {
         Objects.requireNonNull(symbol);return create(page,() -> symbol,name,theme,action);
     }
-    /** 只改变标记，不替换动作节点或改变命中与焦点身份。 */
+    /** 在同一动作节点上更新标记，延续命中与焦点身份。 */
     public static SceneNode create(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<String> name,
             ReadableSignal<SceneTheme> theme, Runnable action) {
         return SceneSymbolControl.node(page,name,new Control(theme,symbol),action);
     }
-    /** 命令同时提供本地可用资格和执行前检查，调用方不再拆成两处绑定。 */
+    /** 共用命令的可用条件与执行入口。 */
     public static SceneNode create(ScenePageContext page, Symbol symbol, ReadableSignal<String> name,
             ReadableSignal<SceneTheme> theme, SceneCommand command) {
         Objects.requireNonNull(symbol); return create(page, () -> symbol, name, theme, command);
@@ -33,7 +33,7 @@ public final class SceneIconButton {
         Objects.requireNonNull(command, "命令");
         return SceneControlBindings.command(create(page, symbol, name, theme, command::tryExecute), command);
     }
-    /** 复合动作内的纯装饰，使用相同标记但不建立额外的输入目标。 */
+    /** 为复合动作提供同源标记装饰，输入归所属动作根。 */
     public static SceneNode graphic(ScenePageContext page, ReadableSignal<Symbol> symbol, ReadableSignal<SceneTheme> theme) {
         return SceneSymbolControl.graphic(page,new Control(theme,symbol));
     }

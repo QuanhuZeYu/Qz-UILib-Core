@@ -36,7 +36,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 
 /** 正式typed集成场景；复用既有固定字体度量，路由、布局、绑定与计划均为生产实现。
- * red.log是旧pipeline.click表示宿主DOWN的独立探针，不是此typed测试的baseline运行。 */
+ * red.log 保留 pipeline.click 按宿主 DOWN 解释时的独立探针来源。 */
 public final class PointerInputScenario extends TestApplication {
     private final class Page {
         final ReactiveDomain domain = ReactiveDomain.direct();
@@ -259,7 +259,7 @@ public final class PointerInputScenario extends TestApplication {
                 state = SceneDraggable.state(domain);
                 drag = SceneDraggable.create(ctx, content, state,
                         new SceneDraggable.Options().handles(handle).autoScroll(false));
-                // 同一声明可验证普通溢出与真实祖先裁剪，不回写布局结果来制造命中范围。
+                // 按同一声明分别核验普通溢出与真实祖先裁剪。
                 SceneNode viewport = new SceneNode().size(Size.fixed(32), Size.fixed(240))
                         .bind(NodeBinding.value(clipped, SceneNode::clip)).add(drag);
                 ctx.mount(new SceneNode().size(Size.fill(1), Size.fill(1)).padding(24).add(viewport));
@@ -270,7 +270,7 @@ public final class PointerInputScenario extends TestApplication {
 
         void frame(ScenePointerEvent... events) {
             for (ScenePointerEvent event : events) session.pointer(event);
-            // 连续 MOVE 必须跨过正式 300Hz 输入周期，不能由 CPU 速度决定是否被处理。
+            // 连续 MOVE 显式跨过正式 300Hz 输入周期。
             host.now += 3_333_334L;
             session.frame();
         }
@@ -382,7 +382,7 @@ public final class PointerInputScenario extends TestApplication {
                 int[] expanded = p.edgePoint();
                 require(!oldBox.contains(expanded[0], expanded[1]) && newBox.contains(expanded[0], expanded[1]),
                         "必须选择旧盒外、新盒内的实际留白点");
-                // 同一个点先在旧盒拒绝、再在新盒抓取，同时覆盖缩小后不能遗留旧热区。
+                // 在同一点依次核验旧盒拒绝、新盒捕获与缩小后的当前热区。
                 p.theme(previous);
                 require(SceneGeometryView.sameBox(oldBox, p.box(p.handle)), reasons[i] + "往返不得累计缩放");
                 p.reject(expanded, reasons[i] + "恢复旧盒后");
@@ -1242,7 +1242,7 @@ public final class PointerInputScenario extends TestApplication {
                     p.tap();
                     p.expect(2, "异常后物理结束正常恢复");
                 });
-        // 底层合同：pipeline.close丢弃队列但不释放runtime，后者仍可接受完整synthetic。
+        // pipeline.close 结束队列后保留 runtime，核验其仍接受完整 synthetic。
         scenario(
                 "管线close丢弃pending输入且不重放关闭页面",
                 () -> {

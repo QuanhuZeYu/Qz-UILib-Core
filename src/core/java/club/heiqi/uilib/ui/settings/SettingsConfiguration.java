@@ -30,7 +30,7 @@ import club.heiqi.uilib.ui.scene.control.ThemeConfiguration;
 import club.heiqi.uilib.ui.scene.control.ScrollConfiguration;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 
-/** 设置工作区借用正式配置；保存基线归宿主持有的对象，不随页面释放。
+/** 设置工作区借用正式配置，保存基线由宿主持有的配置对象维护。
  * 字体来源读取由宿主复用既有解析器，配置文档与其他模块字段仍由 session 保存。 */
 public final class SettingsConfiguration implements AutoCloseable {
     public static final class Snapshot {
@@ -133,7 +133,7 @@ public final class SettingsConfiguration implements AutoCloseable {
     }
 
     /** 显式文件加载完成后让宿主更新所属资源；同值加载仍刷新原地替换的字体文件。
-     * 回调失败保留已经读取并发布的配置事实，不增加监视或恢复策略。 */
+     * 回调失败沿原通道报告，已经读取并发布的配置事实保持生效。 */
     public SettingsConfiguration(
             ReactiveDomain domain,
             ConfigSession session,
@@ -146,7 +146,7 @@ public final class SettingsConfiguration implements AutoCloseable {
         this(immediate(validateCandidates), domain, session, fontKey, mcKey, path, builtinCandidates, reloadResources);
     }
 
-    /** 字体准备可异步完成；调用者在完成后回到原域发布，后台不访问 Signal。 */
+    /** 字体准备由校验回调执行，异步结果在原域结算。 */
     public static SettingsConfiguration withAsyncValidation(
             ReactiveDomain domain,
             ConfigSession session,
@@ -214,12 +214,12 @@ public final class SettingsConfiguration implements AutoCloseable {
         return mcKey != null;
     }
 
-    /** ConfigKey 按实例身份归属 schema；旧宿主未声明时不读取或写入此键。 */
+    /** 按 ConfigKey 实例身份检查应用 schema 是否声明合批配置。 */
     public boolean hasBatching() {
         return session.schema().keys().contains(BatchingConfiguration.KEY);
     }
 
-    /** 配置归应用schema；未声明该实例的旧宿主保持Core默认且不越界访问。 */
+    /** 按 ConfigKey 实例身份检查应用 schema 是否声明滚动配置，缺省时使用 Core 默认。 */
     public boolean hasScrolling() {
         return session.schema().keys().contains(ScrollConfiguration.KEY);
     }
@@ -259,8 +259,8 @@ public final class SettingsConfiguration implements AutoCloseable {
         return resourceError;
     }
 
-    /** 仅为宿主字体资源更新提供已知失败边界；不捕获域、布局或绘制的一般异常。
-     * 配置已经发布后资源失败仍保留当前值，错误交给共享工作区显示；无回滚或自动重试。 */
+    /** 为宿主字体资源更新记录诊断，失败沿原配置事实继续报告给共享工作区。
+     * 域、布局和绘制的一般异常由各自调用边界处理。 */
     public void updateResources(Runnable update) {
         updateResources(update, false);
     }
@@ -316,7 +316,7 @@ public final class SettingsConfiguration implements AutoCloseable {
         if (closed) throw new IllegalStateException("设置配置已关闭");
     }
 
-    /** 只由宿主关闭；页面释放不关闭共享配置。不等待或中断已开始的文件操作。 */
+    /** 宿主负责关闭共享配置并结束待完成请求；已开始的文件操作按原队列收尾。 */
     @Override
     public void close() {
         domain.checkWrite();
@@ -328,13 +328,13 @@ public final class SettingsConfiguration implements AutoCloseable {
             request.completeExceptionally(new CancellationException("设置配置已关闭"));
     }
 
-    /** 旧调用仅应用原有字段，保留当前全局主题和合批选项。 */
+    /** 应用字体与宿主文字选项，其余字段沿用当前配置。 */
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace) {
         return apply(candidates, replace, current().theme());
     }
 
     public CompletableFuture<Void> apply(List<String> candidates, boolean replace, ThemeMode theme) {
-        // 旧调用未选择合批策略；异步校验期间发布的新值必须在真正提交时保留。
+        // 此入口沿用当前合批与滚动值，在异步校验完成后的实际提交时读取。
         return applySelection(candidates, replace, theme, () -> current().aggressiveBatching(), () -> current().scrollStep());
     }
 
@@ -382,7 +382,7 @@ public final class SettingsConfiguration implements AutoCloseable {
     }
 
     /** 只在原域捕获当次完整值；编码和真实 Files 写入在后台完成。
-     * 保存基线永远对应此请求写入的值，不读取完成时后来发布的配置。 */
+     * 保存基线对应本请求实际写入的快照。 */
     public CompletableFuture<Void> save() {
         domain.checkWrite();
         checkOpen();
@@ -395,7 +395,7 @@ public final class SettingsConfiguration implements AutoCloseable {
     }
 
     /** 后台先全量读取、解析和校验，原域一次发布并更新文件基线。
-     * 操作归宿主持有的配置对象，页面关闭不撤销已接受的文件请求。 */
+     * 已接受的文件请求归宿主配置对象管理，页面关闭后仍按原队列完成。 */
     public CompletableFuture<Void> reload() {
         domain.checkWrite();
         checkOpen();
@@ -423,8 +423,8 @@ public final class SettingsConfiguration implements AutoCloseable {
     @FunctionalInterface
     private interface FileOperation { ConfigDocument run() throws IOException; }
 
-    /** 同一配置来源按请求顺序执行真实 I/O 及域内结算；不重试，不取消在途写入。
-     * 复用公共后台执行器，不另建线程或资源运行时；只有文档和声明进入后台阶段。 */
+    /** 同一配置来源按请求顺序执行 I/O 与域内结算。
+     * 后台执行器只处理文档与声明，已开始的 I/O 完成后再结算请求结果。 */
     private CompletableFuture<Void> fileOperation(FileOperation operation, Consumer<ConfigDocument> publish) {
         CompletableFuture<Void> settled = new CompletableFuture<>();
         requests.add(settled);
@@ -454,9 +454,9 @@ public final class SettingsConfiguration implements AutoCloseable {
                 }, problem -> outcome[0] = problem);
             }
         });
-        // 先接齐真实I/O与结算，再通知观察者；忙碌通知失败不能留下未启动的串行尾部。
+        // 先连接 I/O 与结算链，再发布忙碌事实，使观察者失败时队列仍可完成。
         persisting.set(true);
-        // 调用者取消自己的等待，不改变内部串行关系或已接受的文件事实。
+        // 对外等待与内部串行链分别持有，取消等待后已接受操作仍按序完成。
         return settled.thenApply(ignored -> null);
     }
 }

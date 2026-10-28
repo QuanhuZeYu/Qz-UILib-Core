@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.reactive.Owner;
 import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 可重新激活的逻辑声明。绑定值失效只唤醒呈现，不运行业务 Effect。 */
+/** 可重新激活的逻辑声明，绑定值失效由呈现运行时重新结算。 */
 public interface NodeBinding {
     BindingActivation activate(SceneRuntime runtime, SceneNode node, Owner owner);
 
@@ -22,7 +22,7 @@ public interface NodeBinding {
         return new RepeatBinding<>(source, key, declaration);
     }
 
-    /** SceneMotion.enter 的同概念运行时桥接，不占普通属性通道。 */
+    /** 将 SceneMotion.enter 接入独立的挂载入场呈现层。 */
     static NodeBinding enter(ReadableSignal<club.heiqi.uilib.ui.scene.motion.EntranceOptions> options) {
         java.util.Objects.requireNonNull(options, "入场策略来源");
         return (runtime, node, owner) -> runtime.bindEntrance(node, options, owner);
@@ -57,8 +57,8 @@ public interface NodeBinding {
     }
 
     /** 有限呈现值过渡。初挂/重挂直接消费目标，反向从当前值续接，卸载结束推进。
-     * 曲线将0到1映射到0到1；apply只更新呈现声明或所属呈现Signal，不执行业务动作。
-     * 时间由帧准备统一采样，apply不在布局、绘制或纯派生内执行。 */
+     * 曲线将 0 到 1 映射到 0 到 1；apply 负责呈现声明或所属呈现 Signal。
+     * 帧准备统一采样时间，并在可写呈现阶段调用 apply。 */
     static NodeBinding transition(ReadableSignal<Float> source, long durationNanos,
             java.util.function.DoubleUnaryOperator easing, BiConsumer<SceneNode, Float> apply) {
         return new TransitionBinding(source, durationNanos, easing, apply);
@@ -135,7 +135,7 @@ public interface NodeBinding {
         return new HoverBinding(enabled,enterDelayNanos,apply);
     }
 
-    /** 补充说明依原触发器挂载，不建立焦点、点击或另一棵呈现树。 */
+    /** 补充说明随原触发器挂载，提示呈现由页面唯一协调者管理。 */
     static NodeBinding tooltip(ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTooltip.Content> content,
             ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTooltip.Options> options,
             ReadableSignal<club.heiqi.uilib.ui.scene.control.SceneTheme> theme){

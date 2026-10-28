@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
 
-// 仅测试oracle：固定外部解析器实际执行，生产实现与parser库不参与期望生成。
+// 以固定外部解析器实际执行结果生成测试期望。
 const output = new URL('./reading-corpus.json', import.meta.url);
 const corpus = JSON.parse(await fs.readFile(output, 'utf8'));
 const pinned = [
@@ -44,7 +44,7 @@ function token(value) {
     };
 }
 for (const item of corpus.cases) {
-    // 同时执行renderer以核对行内数学内容入口；巨大HTML不进入字面快照断言。
+    // 同时执行 renderer 核验行内数学入口，快照只保留后续 token 事实。
     md.render(item.source);
     item.tokens = md.parse(item.source, {}).map(token);
 }

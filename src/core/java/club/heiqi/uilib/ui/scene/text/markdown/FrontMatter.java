@@ -81,7 +81,7 @@ final class FrontMatter {
         this.contentStart = contentStart;
         this.prefixEnd = prefixEnd;
         // yaml 2.9 在 EOF 仍保留 block scalar 的 clip LF；SnakeYAML 需要真实终换行。
-        // 闭分隔前的换行原本就在输入中，保留它用于解析与 Mark，绝不为正文挪动坐标。
+        // 保留闭分隔前的真实换行，解析与 Mark 沿用原正文坐标。
         yaml = input.text.substring(contentStart, contentEnd).replace('\0', '\ufffd');
         char[] mask = input.text.toCharArray();
         // 两次成熟 Markdown 解析共用同宽 mask，源码和所有行结束符保持原坐标。
@@ -92,7 +92,7 @@ final class FrontMatter {
             options.setTagInspector(tag -> true);
             boolean legacy = false;
             Deque<AliasToken> aliases = new ArrayDeque<>();
-            // 指令和 alias 位置来自成熟事件/Token；不自行解析 YAML 字符词法。
+            // 从成熟事件与 Token 读取指令及 alias 位置。
             ParserImpl probe = new ParserImpl(new StreamReader(yaml), options);
             while (probe.peekEvent() != null) {
                 Event event = probe.getEvent();
@@ -138,7 +138,7 @@ final class FrontMatter {
             // 固定库容忍的控制字符可能超出成熟 Java 解析器边界；显式报告差异，保留原文与后文。
             fail(diagnostics, start, end, "成熟 YAML 解析器无法接受该字符：" + failure.getMessage());
         } catch (YAMLException failure) {
-            // 无 Mark 的成熟资源/解析限制仍归输入诊断；不吞任意程序异常。
+            // 将 YAMLException 归为输入诊断，其余程序异常沿原调用通道传播。
             fail(diagnostics, 0, prefixEnd, "成熟 YAML 解析器无法处理该前缀：" + failure.getMessage());
         } catch (ConversionFailure failure) {
             fail(diagnostics, start(failure.node), end(failure.node), failure.getMessage());
@@ -326,7 +326,7 @@ final class FrontMatter {
                 buffer.put("data", new Entry("data", values, values));
                 return buffer;
             }
-            // 固定库对未知 tag 发 warning 并保留其基础值，不调用 Java 对象构造器。
+            // 固定库对未知 tag 发 warning，此处保留其基础标量值。
             return text;
         }
 
@@ -365,7 +365,7 @@ final class FrontMatter {
             String zone = match.group(8);
             if (zone != null && !zone.equals("Z")) {
                 double offset = sexagesimal(zone);
-                // 有冒号的偏移已是分钟；无冒号才是小时，不能按数值大小猜单位。
+                // 按冒号格式解释偏移单位：有冒号为分钟，其余为小时。
                 if (zone.indexOf(':') < 0) offset *= 60;
                 instant = instant.minusMillis((long) (offset * 60000));
             }
@@ -425,7 +425,7 @@ final class FrontMatter {
                 if (!active.add(items)) throw new ConversionFailure(value.node, "循环 YAML 序列无法展开为有限列表");
                 List<DocumentContent.Block> children = new ArrayList<>();
                 for (Value item : items) {
-                    // alias 的 cell 与生成内容共享引用自身来源，不倒退到定义位置。
+                    // alias 的 cell 与生成内容共用本次引用位置。
                     Value occurrence =
                             value.start != start(value.node)
                                     ? item.at(value.start, value.end)
@@ -457,7 +457,7 @@ final class FrontMatter {
         }
     }
 
-    /** 值的属性顺序、JS 标量文本与 canonical YAML；不消费 alias token 或内容来源。 */
+    /** 生成属性顺序、JS 标量文本与 canonical YAML，来源由原 Value 单独维护。 */
     private static final class ValueFormat {
         private static String keyLabel(Value key) {
             return key.data instanceof Map || key.data instanceof List
@@ -605,7 +605,7 @@ final class FrontMatter {
             if (Double.isNaN(value)) return "NaN";
             if (Double.isInfinite(value)) return value < 0 ? "-Infinity" : "Infinity";
             if (value == 0) return "0";
-            // Java8 Double.toString 的最短表示不总等于 JS；先从精确二进制值取最近十进制。
+            // 从精确二进制值选择 JS 需要的最近十进制表示。
             // 最多 17 位足以 round-trip binary64；最短候选的中点沿 ties-to-even 选取。
             BigDecimal exact = new BigDecimal(value), decimal = exact;
             for (int precision = 1; precision <= 17; precision++) {
@@ -622,7 +622,7 @@ final class FrontMatter {
 
     private static final class Value {
         final Node node;
-        // 容器 data 是图身份；start/end 只表示本次出现，不因 alias 复制容器。
+        // data 保留容器图身份，start/end 标记本次出现位置。
         Object data;
         final int start, end;
 
@@ -669,7 +669,7 @@ final class FrontMatter {
 
     private DocumentContent.Block paragraph(String text, int start, int end, boolean mono) {
         int[] starts = new int[text.length()], ends = new int[text.length()];
-        // 生成值允许完整范围共享；每个 cell 独立映射，不按显示字符串回搜来源。
+        // 生成值可共享完整来源范围，每个 cell 保留独立映射。
         Arrays.fill(starts, start);
         Arrays.fill(ends, end);
         List<TextInput.SourceSegment> gaps = new ArrayList<>();

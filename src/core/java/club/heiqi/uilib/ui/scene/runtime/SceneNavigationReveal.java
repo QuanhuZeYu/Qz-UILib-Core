@@ -63,7 +63,7 @@ final class SceneNavigationReveal {
         return runtime.revealScrollPosition(ancestor, entry, delta);
     }
 
-    /** 视口包络里的洞不能当成已显露。用三角形的平移相交区间求最近合法整数偏移。 */
+    /** 用实际三角形与视口的平移相交区间求最近合法整数偏移。 */
     private static long shapeVisibleDelta(SceneGeometryView.Entry entry, club.heiqi.uilib.ui.scene.geometry.SceneMesh subject,
             LayoutBox window, long preferred, boolean row) {
         club.heiqi.uilib.ui.scene.geometry.SceneTransform inverse = entry.inverse;

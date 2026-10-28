@@ -2,13 +2,13 @@ package club.heiqi.uilib.ui.scene.text.math;
 
 import club.heiqi.uilib.ui.scene.text.math.MathLexer.Token;
 
-/** 每式共享的资源账本；暂停的输入队列仍占待处理额度，临时展开不能重置累计量。 */
+/** 每式共用生成、驻留与累计工作账本，暂停队列继续计入驻留额度。 */
 final class MathExpansionBudget {
     static final int SOURCE_UNITS = 16384;
 
-    // 源长不代表展开成本：生成量和同时待处理量各允许原源长界限的四倍。
+    // 生成量与同时待处理量分别按源长上限的四倍设限。
     // 累计访问/复制允许十六轮完整额度，防止少量替换反复搬运大参数。
-    // 三项分别约束新生成、同时驻留与累计成本，不能用替换次数互相抵扣。
+    // 新生成、同时驻留与累计成本分别计费。
     private static final long TOKEN_LIMIT = 4L * SOURCE_UNITS;
     private static final long WORK_LIMIT = 16L * TOKEN_LIMIT;
     private long generated, pending, work;
@@ -33,7 +33,7 @@ final class MathExpansionBudget {
         pending -= count;
     }
 
-    // 长控制词与 verb 正文也是工作量，不能把一个 token 一律当作一个字符。
+    // 工作量按 token 文本长度计费，包含长控制词与 verb 正文。
     static int weight(Token token) {
         return Math.max(1, token.text.length());
     }

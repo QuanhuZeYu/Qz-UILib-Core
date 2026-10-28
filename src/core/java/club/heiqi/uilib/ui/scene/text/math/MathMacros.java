@@ -34,7 +34,7 @@ public final class MathMacros {
         }
 
         static Definition string(String value) {
-            // 固定 KaTeX 使用连续出现的 #1、#2… 计数，先移除 ##，不是最大 #n。
+            // 固定 KaTeX 先移除 ##，再按连续出现的 #1、#2… 计数参数。
             String stripped = value.replace("##", "");
             int n = 0;
             while (n < 9 && stripped.contains("#" + (n + 1))) n++;

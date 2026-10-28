@@ -21,7 +21,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 正式PageSession/唯一输入上的提示反例；软件度量只用于确定空间，不冒充GPU字形。 */
+/** 以软件空间度量在正式 PageSession 与唯一输入路径中核验提示。 */
 public final class TooltipScenario extends TestApplication {
     static final class Host implements SceneHost,SceneTextMeasurer {
         int width=440,height=240;PaintPlan last;

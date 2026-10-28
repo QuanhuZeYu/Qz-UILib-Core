@@ -1,4 +1,4 @@
-// 固定 JS 只运行于测试 oracle；不复制其 parser/layout 算法到生产。
+// 在测试 oracle 中运行固定 JS，记录实际行为供独立实现核验。
 // 用法：node src/galleryVerification/resources/math/reference/generate-coverage.mjs [固定 bundle 路径]
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -13,7 +13,7 @@ const matrix=JSON.parse(await fs.readFile(path.join(here,'support-matrix.json'),
 const bundle=await fs.readFile(process.argv[2]||path.join(root,'build/math-complete/reference/katex/dist-katex.js'),'utf8');
 if(crypto.createHash('sha256').update(bundle).digest('hex')!==facts.reference.bundleSha256)throw Error('固定 bundle hash 不符');
 let calls=[],expansions=[],warnings=[],unsupported=[];
-// 仅记录固定引擎实际消费；内部命令由合法 public 构建路径触达，绝不把其 token 注入 UILib。
+// 记录固定引擎的实际消费，内部命令通过合法 public 构建路径触达。
 const instrumented=bundle.replace('  callFunction(name, args, optArgs, token, breakOnTokenText) {',
     '  callFunction(name, args, optArgs, token, breakOnTokenText) { observeFunction(name);')
     .replace('  formatUnsupportedCmd(text) {','  formatUnsupportedCmd(text) { observeUnsupported(text);')
@@ -155,7 +155,7 @@ function macroSource(m) {
     let args=0;while(stripped.includes('#'+(args+1)))args++;
     return [n+' '+Array.from({length:args},()=>'{x}').join('')+' y','macro-expansion:'+m.kind];
 }
-// 所有 symbol 身份都进入其实际 math/text 模式。保留宏遮蔽和模式切换的实际 oracle，不能用 registry 代替运行。
+// 在实际 math/text 模式执行所有 symbol，保留宏遮蔽与模式切换结果。
 for(const s of facts.symbols) {
     let source=wrap(s.mode,s.name),tag='mode:'+s.mode;
     // Registry 中 active/grouping/script token 在合法结构中消费；字符的独立 glyph 另由显式 char 事实检查。
@@ -183,7 +183,7 @@ for(const m of facts.macros) {
     p.constructedIdentity=p.expansions.includes(m.name);
     if(p.outcome==='error')unresolved.push({id:p.id,kind:'macro',token:m.name,error:p.error});
 }
-// Unicode text、真实字族成员和显式候选覆盖另有视觉身份，不以 font alias 名字存在算 PASS。
+// 为 Unicode text、真实字族成员与显式候选记录各自视觉身份。
 for(const family of ['textrm','textsf','texttt'])for(const member of ['normal','bold','italic','bolditalic']) {
     const raw=B+family+'{AΩ中}';
     const source=member==='normal'?raw:member==='bold'?tex`\textbf{${raw}}`:member==='italic'?tex`\textit{${raw}}`:tex`\textbf{\textit{${raw}}}`;

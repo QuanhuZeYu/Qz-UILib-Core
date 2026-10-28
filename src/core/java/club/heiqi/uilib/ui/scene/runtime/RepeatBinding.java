@@ -94,7 +94,7 @@ final class RepeatBinding<T, K> implements NodeBinding {
                                                 state.keys.put(created, identity);
                                             } else cell.set(value);
                                             SceneNode entry = state.nodes.get(identity);
-                                            // 已明确迁移的条目不再被旧集合重新取得或销毁。
+                                            // 只协调仍归本集合拥有的条目。
                                             if (entry.logicalOwner() == state) next.add(entry);
                                         }
                                         runtime.reconcile(node, next, state, true, exits == null ? null : exits.get(), state.keys);

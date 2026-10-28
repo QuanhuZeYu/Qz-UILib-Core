@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.geometry;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 描边先生成同向轮廓，再求一次非零填充，交叠笔段不会重复混合透明度。 */
+/** 从描边生成同向轮廓，再以非零填充合并覆盖，使交叠笔段只混合一次。 */
 final class SceneStrokeTessellator {
     static SceneMesh stroke(List<ScenePath.Contour> contours,SceneStroke style,double error){
         if(style.width==0)return SceneMesh.EMPTY;double radius=style.width*0.5;List<ScenePath.Contour> outlines=new ArrayList<>();

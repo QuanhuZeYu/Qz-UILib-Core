@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintPlan;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import java.util.function.ToDoubleFunction;
 
-/** 退场片段的来源空间与祖先事实；只投影被动画面，不持有输入或活跃身份。 */
+/** 保存退场片段的来源空间与祖先事实，供被动画面投影使用。 */
 final class PresenceSnapshot {
     private final PresencePaint paint;
     private final SceneNode parent;
@@ -23,7 +23,7 @@ final class PresenceSnapshot {
         parentTransform = entry == null ? club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY : entry.transform;
         scroll = entry == null ? 0 : entry.scrollOffset - runtime.scrollPresentationOffset(parent);
     }
-    // 几何基准来自捕获时刻，资格与资源归属沿持续挂载的来源父链，明确移动不能冻结旧祖先。
+    // 几何基准取捕获时刻，资格与资源归属沿持续挂载来源的当前父链。
     boolean descendedFrom(SceneNode node) {
         for (SceneNode ancestor = parent; ancestor != null; ancestor = ancestor.parent())
             if (ancestor == node) return true;
@@ -60,7 +60,7 @@ final class PresenceSnapshot {
                 club.heiqi.uilib.ui.scene.geometry.SceneClipRegion.rectangle(viewport));
     }
     private int scrollShift(SceneRuntime runtime, SceneGeometryView.Entry current, SceneNode.Axis axis) {
-        // 与正式子排列使用同一有效偏移：合法 scroll 减去暂态回弹，不能冻结捕获时的形变。
+        // 使用当前正式子排列的有效偏移：合法 scroll 减去暂态回弹。
         return parent.scrollable() && parent.axis() == axis
                 ? scroll - (current.scrollOffset - runtime.scrollPresentationOffset(parent)) : 0;
     }

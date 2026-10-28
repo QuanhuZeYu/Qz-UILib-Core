@@ -83,13 +83,13 @@ public final class SceneEditEvent {
                 null, Objects.requireNonNull(value, "text"), false, false, null, false, false);
     }
 
-    /** 原子普通文本是独立撤销步骤；不表达组字来源或动态目标隔离。 */
+    /** 将普通文本作为独立撤销步骤递交，目标由当前普通编辑路由确定。 */
     public static SceneEditEvent committed(String value) {
         return new SceneEditEvent(
                 null, Objects.requireNonNull(value, "text"), false, false, null, false, true);
     }
 
-    /** 旧宿主兼容入口缺少来源事实，不能承诺失效组字隔离；迁移到带来源的接口。 */
+    /** 兼容当前目标组字入口；动态目标隔离需使用带来源的接口。 */
     @Deprecated
     public static SceneEditEvent composition(String value, boolean active) {
         return new SceneEditEvent(

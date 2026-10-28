@@ -54,7 +54,7 @@ public final class SceneCheckBox {
         @Override public List<ReadableSignal<?>> paintDependencies(SceneNode node) { return Arrays.asList(theme, state); }
         @Override void symbol(LayoutBox box, PaintPlanBuilder target, LayoutBox clip, int color, boolean enabled) {
             SceneIconGlyph.paint(SceneIconButton.Symbol.CHECK_BOX, box, target, clip, color);
-            // 两个标记各自从当前可见权重续接；交叉期间不创造第四个业务状态。
+            // 两个标记从当前权重交叉续接，业务仍使用原三态。
             SceneIconGlyph.paint(SceneIconButton.Symbol.CHECK, box, target, clip,
                     SceneMotion.alpha(color, Math.max(0, Math.min(1, check.get()))));
             SceneIconGlyph.paint(SceneIconButton.Symbol.MINUS, box, target, clip,

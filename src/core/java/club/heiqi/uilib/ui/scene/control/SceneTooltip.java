@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.scene.text.TextContent;
 import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import java.util.Objects;
 
-/** 补充说明绑定在原触发器上；不替换控件、焦点或业务动作。 */
+/** 将补充说明登记到原触发器，输入与业务动作继续归该控件。 */
 public final class SceneTooltip {
     public enum Side { TOP, BOTTOM, LEFT, RIGHT }
     public enum Align { START, CENTER, END }
@@ -50,7 +50,7 @@ public final class SceneTooltip {
         public Options enabled(boolean value){return new Options(side,align,sideOffset,alignOffset,maxWidthEm,openDelayNanos,closeDelayNanos,skipDelayNanos,arrow,hoverable,value,direction);}
         public Options direction(TextPolicy.Direction value){return new Options(side,align,sideOffset,alignOffset,maxWidthEm,openDelayNanos,closeDelayNanos,skipDelayNanos,arrow,hoverable,enabled,value);}
     }
-    /** 正式控件可提供当前纯值事实，自动省略/图标/物品提示不另建一套呈现。 */
+    /** 接受控件当前纯值事实，统一呈现省略、图标与物品提示。 */
     public static final class Hint {
         public final Content content;
         public final Options options;

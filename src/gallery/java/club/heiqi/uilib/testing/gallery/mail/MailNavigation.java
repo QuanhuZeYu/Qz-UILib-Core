@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.motion.SceneMotion;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 导航声明只消费内容与动作；内部过渡、悬停和裁剪不依赖邮箱业务模型。 */
+/** 按内容与动作声明导航，内部自行组合正式过渡、悬停与裁剪。 */
 final class MailNavigation {
     private final ScenePageContext p;
     private final ReadableSignal<SceneTheme> theme,mutedTheme;
@@ -27,7 +27,7 @@ final class MailNavigation {
         ReadableSignal<Boolean> preview=() -> wide.get()&&collapsed.get()&&hovered.get();
         labeled=() -> !wide.get()||!collapsed.get()||preview.get();
         mutedTheme=() -> theme.get().withTextStyle(theme.get().textStyle.withColor(theme.get().disabledText));
-        // 导航覆盖区自身接住空白点击和滚轮，正式路由不会继续落到下面的邮件列表。
+        // 导航覆盖区接住空白点击与滚轮，输入在该区域结束消费。
         node=MailStyle.surface(theme, new MailSurface(theme,() -> SceneMotion.alpha(palette.get().canvas,hoverWidth.get()),0,false) {
             @Override public boolean passiveHover() {return true;}
         }).clip(true).onClick(() -> {}).onScroll(delta -> {});

@@ -5,7 +5,7 @@ import java.util.Arrays;
 /**
  * 性能压测的有界纳秒样本；宿主在帧计时区内只追加，运行边界再计算或导出。
  * 采样口径见 specs/verification/2026-10-14-uilib-performance-testing-spec.md。
- * 实例由单个宿主线程持有，完成或中断状态由所属运行管理，不能由样本数推断。
+ * 实例由单个宿主线程持有，运行对象单独维护完成或中断状态。
  */
 public final class PerformanceSamples {
     private static final long THRESHOLD_16 = 16_667_000L;
@@ -41,12 +41,12 @@ public final class PerformanceSamples {
         return frameNanos.length;
     }
 
-    /** 在计时区外调用；只对有效样本的副本排序，不改变采集顺序。 */
+    /** 在计时区外对有效样本副本排序，原采集顺序保留。 */
     public Summary frame() {
         return summarize(frames());
     }
 
-    /** 在计时区外调用；帧间隔独立统计，不混入宿主处理耗时。 */
+    /** 在计时区外独立统计帧间隔，宿主处理耗时由 frame 单独统计。 */
     public Summary interval() {
         return summarize(intervals());
     }
@@ -59,7 +59,7 @@ public final class PerformanceSamples {
         return Arrays.copyOf(intervalNanos, size);
     }
 
-    /** 保留原始顺序和纳秒单位；只导出采样事实，不宣称运行完成。 */
+    /** 按原顺序与纳秒单位导出采样事实，运行状态由所属运行报告。 */
     public String toJson() {
         StringBuilder json = new StringBuilder();
         json.append("{\"frameNanos\":");
@@ -77,7 +77,7 @@ public final class PerformanceSamples {
         int count = samples.length;
         if (count == 0) return new Summary(0, 0d, 0L, 0L, 0L, 0L, 0, 0, 0);
         Arrays.sort(samples);
-        // 使用 double 累加，避免合法 long 样本之和溢出成负值。
+        // 使用 double 累加，承接多个合法 long 样本的总和。
         double sum = 0d;
         int above16 = 0;
         int above33 = 0;
@@ -128,7 +128,7 @@ public final class PerformanceSamples {
                 .append('}');
     }
 
-    /** 不可变统计结果；count=0 的全零值表示尚无样本，不代表完成。 */
+    /** 不可变统计结果，count=0 表示尚无样本，运行状态单独维护。 */
     public static final class Summary {
         public final int count;
         public final int above16;

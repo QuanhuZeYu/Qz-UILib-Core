@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
-/** 一次测试宿主拥有的媒体服务与按需示例文件；共享广场不依赖任何native绑定。 */
+/** 管理测试宿主的媒体服务与按需示例文件，native 适配由宿主提供。 */
 public final class GalleryMediaResources implements AutoCloseable {
     private final MediaService service;
     private final club.heiqi.uilib.ui.media.MediaResolver networkResolver;

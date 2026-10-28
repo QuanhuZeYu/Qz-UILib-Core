@@ -18,7 +18,7 @@ public final class SceneTheme {
     private final int basePadding, baseGap;
     private final boolean inheritedText, inheritedPadding, inheritedGap;
 
-    /** 旧构造的字体和像素是作者值；角色只解析尚未明确指定的控件度量。 */
+    /** 将传入字体与像素作为作者值，角色仅解析继承的控件度量。 */
     public SceneTheme(TextStyle textStyle, int panel, int button, int hover, int pressed, int focus,
             int disabled, int disabledText, int tooltip, int tooltipText, int padding, int gap) {
         this(textStyle, panel, button, hover, pressed, focus, disabled, disabledText, tooltip, tooltipText,
@@ -94,7 +94,7 @@ public final class SceneTheme {
     int symbolPadding() { int value = Math.max(4, basePadding / 2); return inheritedPadding ? spacing(value) : value; }
     int spacing(int value) { return Math.round(value * density.spacingScale * controlSize.spacingScale); }
     public SceneControlMetrics metrics(SceneControlMetrics.Kind kind) { return metrics(kind, textStyle); }
-    /** effectiveStyle为节点已经解析的完整字体，不再按角色缩放。 */
+    /** effectiveStyle 为节点已解析的完整字体，几何度量按该字体计算。 */
     public SceneControlMetrics metrics(SceneControlMetrics.Kind kind, TextStyle effectiveStyle) {
         return new SceneControlMetrics(this, Objects.requireNonNull(kind, "控件族"), Objects.requireNonNull(effectiveStyle, "有效字体"));
     }

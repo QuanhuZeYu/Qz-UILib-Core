@@ -94,7 +94,7 @@ public class SceneAppearance {
                     true);
         }
 
-        /** 弹出列表沿完整来源派生独立表面，触发器去框不传播到所属层。 */
+        /** 弹出列表从完整主题派生独立表面，触发器单独控制框饰。 */
         SceneTheme popupTheme() {
             return source.appearance(typography.withColor(text), background, 0, hover, selected,
                     muted, border, muted, primary, onPrimary, 11, 8, true);
@@ -393,7 +393,7 @@ public class SceneAppearance {
         return node;
     }
 
-    /** 自定义背景直接进入同一标准动效及绘制依赖，不经普通节点属性二次同步。 */
+    /** 将自定义背景直接接入标准动效与绘制依赖。 */
     public SceneNode card(SceneNode content, ReadableSignal<Integer> background) {
         Surface surface = new Surface(colors, Role.CARD, null, () -> false, null,
                 Objects.requireNonNull(background, "卡片背景来源"));
@@ -423,7 +423,7 @@ public class SceneAppearance {
                             () -> new SceneScrollbar.Options().dimensions(4, 24, 1)
                                     .colors(0, colors.get().border, colors.get().muted),
                             () -> colors.get().editorTheme()).size(Size.fill(1), Size.natural());
-                    // 同一视口的底条只占圆角内的安全宽度，不覆盖正文。
+                    // 底条在同一视口的圆角安全宽度内占用独立装饰槽。
                     return row(0).size(Size.fill(1), Size.natural())
                             .add(fieldGutter(fieldTheme)).add(scrollbar).add(fieldGutter(fieldTheme));
                 })));
@@ -538,7 +538,7 @@ public class SceneAppearance {
 
         private boolean focused() {
             if (target == null || target.runtime() == null) return false;
-            // 只读编辑仍可定位/选择；外表面读取同一个逻辑焦点，不改变路由器的输入方式语义。
+            // 只读编辑继续支持定位与选择，外表面按同一逻辑焦点及原输入方式呈现。
             if (role == Role.FIELD && target.control() instanceof club.heiqi.uilib.ui.scene.edit.SceneCompositionTarget)
                 return target.runtime().focusRouter().focused().get() == target;
             SceneNode focus = role == Role.FIELD ? target.runtime().semanticFocusTarget(target) : target;

@@ -8,7 +8,7 @@ import club.heiqi.uilib.ui.media.MediaSession;
 
 import java.util.function.Predicate;
 
-/** 纯中性测试辅助，不连接adapter或native类。 */
+/** 为纯核心媒体场景提供中性等待与断言。 */
 final class MediaTestSupport {
     static MediaSnapshot await(MediaSession session,Predicate<MediaSnapshot> condition,long millis) throws Exception {
         long end=System.nanoTime()+millis*1_000_000L; MediaSnapshot snapshot;

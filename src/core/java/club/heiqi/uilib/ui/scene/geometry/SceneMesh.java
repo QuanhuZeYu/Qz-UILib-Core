@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.geometry;
 
 import java.util.Arrays;
 
-/** 已准备的平面三角形纯值；坐标不含资源和节点，可同时消费于绘制与精确覆盖判断。 */
+/** 已准备的平面三角形纯值，绘制与精确覆盖判断共同消费。 */
 public final class SceneMesh {
     public static final SceneMesh EMPTY=new SceneMesh(new double[0]);
     private final double[] positions;
@@ -39,7 +39,7 @@ public final class SceneMesh {
     }
     public SceneMesh intersection(SceneMesh other){
         if(empty()||other.empty()||maxX<=other.minX||other.maxX<=minX||maxY<=other.minY||other.maxY<=minY)return EMPTY;
-        // 保留精确小数边界，避免矩形的内部对角线在嵌套交集中反复切出碎片。
+        // 轴对齐交集直接保留精确小数边界，减少嵌套裁剪产生的三角形碎片。
         if(axisRectangle&&other.axisRectangle)return rectangleBounds(Math.max(minX,other.minX),Math.max(minY,other.minY),Math.min(maxX,other.maxX),Math.min(maxY,other.maxY));
         ScenePathTessellator.Triangles output=new ScenePathTessellator.Triangles();
         for(int i=0;i<positions.length;i+=6){double[] triangle=Arrays.copyOfRange(positions,i,i+6);
@@ -47,7 +47,7 @@ public final class SceneMesh {
         return output.mesh();
     }
     public boolean intersects(SceneMesh other){return !intersection(other).empty();}
-    /** 裁剪凸输入多边形并线性插值附加顶点属性；输出数组归消费者，不进入任何活场景状态。 */
+    /** 裁剪凸多边形并线性插值顶点属性，输出数组交由消费者持有。 */
     public void clipPolygon(double[] polygon,int stride,java.util.function.Consumer<double[]> output){
         if(stride<2||polygon.length%stride!=0)throw new IllegalArgumentException("多边形顶点格式无效");
         if(axisRectangle){

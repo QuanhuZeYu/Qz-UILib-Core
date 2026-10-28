@@ -31,7 +31,7 @@ final class SceneSortableProjection<T, K, C> {
         return revision == next && row == source && (target == position || target != null && target.same(position));
     }
 
-    /** 一次投影的完整顺序；不把临时顺序写回权威 rows 或 container。 */
+    /** 从权威 rows 与 container 派生本次临时展示顺序。 */
     private final class DisplayOrder {
         private final Map<SceneSortableModel.ContainerEntry<T, K, C>, List<SceneSortableModel.RowEntry<T, K, C>>> containers = new LinkedHashMap<>();
         DisplayOrder() {

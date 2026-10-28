@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** 只有键和纯高度事实的前缀索引，不持有节点、布局服务或输入联系。 */
+/** 从稳定键与纯高度事实维护前缀索引。 */
 final class VirtualHeightIndex<K> {
     private List<K> keys = Collections.emptyList();
     private final Map<K, Integer> positions = new HashMap<>();

@@ -1,5 +1,4 @@
-// 只转换固定静态 facts；不加载或执行 KaTeX，不复制解析/布局算法。
-// DSH 调用方以 tools.read 分页读 JSON（下一页实际 last line + 1），再逐文件 tools.write。
+// 将固定参照的静态 facts 转为 UILib 资源表。
 export function escapeField(value) {
     if (value === null || value === undefined) return '\\N';
     return String(value).replace(/\\/g, '\\\\').replace(/\t/g, '\\t')

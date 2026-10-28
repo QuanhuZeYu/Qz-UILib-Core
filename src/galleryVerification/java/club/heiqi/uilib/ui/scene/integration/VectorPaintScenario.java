@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** 新绘制状态保持原资源和分支值身份，旧plan被保留时不发生隐式修改。 */
+/** 核验新绘制状态复用原资源与分支身份，并保持已保留 plan 的值完整。 */
 public final class VectorPaintScenario extends TestApplication {
     @Override protected void runTests()throws Exception{
         scenario("局部clip和外层矩阵组合保持曲线网格与同代覆盖",this::states);

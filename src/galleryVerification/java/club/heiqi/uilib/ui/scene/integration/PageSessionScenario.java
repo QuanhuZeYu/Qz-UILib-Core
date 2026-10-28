@@ -648,7 +648,7 @@ public final class PageSessionScenario extends TestApplication {
                 Success first = new Success("操作成功"), repeated = new Success("操作成功");
                 result.set(first); runtime.preparePresentation(10); runtime.preparePresentation(109);
                 require(presented.get(presented.size()-1) == first, "到期前成功提示消失");
-                // 旧期限已经到达，但来源在同批变成同文案新身份；不能先发布旧到期空值。
+                // 到期同批来源切到同文案新身份时，核验呈现直接沿新期限续接。
                 int before = presented.size();
                 result.set(repeated); runtime.preparePresentation(110);
                 require(presented.size() == before+1 && presented.get(before) == repeated,

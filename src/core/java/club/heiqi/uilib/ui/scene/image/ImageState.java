@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.image;
 
-/** 状态带来源与处理阶段；失败/不支持不会伪装为零尺寸成功。 */
+/** 按来源与阶段区分加载、就绪、失败及不支持事实。 */
 public final class ImageState {
     public enum Status {
         LOADING,

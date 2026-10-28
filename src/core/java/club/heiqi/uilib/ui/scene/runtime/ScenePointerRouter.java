@@ -8,9 +8,9 @@ import java.util.Set;
 import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** runtime唯一的指针手势权威，复用现有HitTester与挂载token，不维护第二棵树。
- * 所有操作在runtime的ReactiveDomain内；调用route前由帧管线prepare同代几何。
- * owner失活只释放目标，物理集合继续保留；因此第二键尾部不能变成新手势。 */
+/** 维护 runtime 唯一指针手势，复用 HitTester 与挂载 token。
+ * 操作限所属 ReactiveDomain，帧管线在路由前准备同代几何。
+ * owner 失活时释放目标，物理集合保留至实际释放，以吞掉本段第二键尾部。 */
 public final class ScenePointerRouter implements AutoCloseable {
     private final SceneRuntime runtime;
     private final club.heiqi.uilib.ui.reactive.Signal<SceneNode> hoverTarget, pressedTarget;
@@ -37,7 +37,7 @@ public final class ScenePointerRouter implements AutoCloseable {
     private final java.util.Set<HoverInterest> hoverInterests = new java.util.LinkedHashSet<>();
     private final java.util.Map<SceneNode, Integer> hoverNodes = new java.util.IdentityHashMap<>();
 
-    /** 只订阅正式被动命中到逻辑祖先的投影，不建立新的区域或手势owner。 */
+    /** 将正式被动命中投影到逻辑祖先，供挂载期悬停订阅使用。 */
     final class HoverInterest implements AutoCloseable {
         final SceneNode node;
         final Runnable changed;
@@ -70,7 +70,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         }
     }
 
-    /** 多个控件在同一呈现中读取同一指针投影；不能为每个文字重新扫描整页和模态树。
+    /** 同一呈现中的控件共用当前指针命中投影。
      * 几何身份、声明/交互代际和坐标共同失效，仍由正式HitTester裁决。只保留各一种当前查询。 */
     private final class HoverProjection {
         private SceneGeometryView geometry;
@@ -92,7 +92,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         void clear() { geometry = null; node = null; within = null; }
     }
 
-    /** 悬停只是已有指针位置在当前范围的投影，不建立另一个输入owner。 */
+    /** 将当前指针位置投影为有效范围内的悬停目标。 */
     public SceneNode hovered(SceneGeometryView geometry) {
         runtime.domain().checkAccess();
         return closed || !positionKnown ? null : hover.get(geometry.world(), false);
@@ -109,7 +109,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if(closed||!positionKnown)return null;
         return passive.within(geometry.world());
     }
-    /** 只观察已发布的提示矩形与连接走廊；不赋予输入资格，也不改变click/wheel命中。 */
+    /** 按已发布提示矩形与连接走廊保留被动提示，click/wheel 继续使用正式命中。 */
     boolean observesTooltip(club.heiqi.uilib.ui.scene.layout.LayoutBox anchor,club.heiqi.uilib.ui.scene.layout.LayoutBox popup){
         if(closed||!positionKnown)return false;
         if(popup.contains(x,y))return true;
@@ -144,14 +144,14 @@ public final class ScenePointerRouter implements AutoCloseable {
         runtime.invalidatePaint();
     }
 
-    /** 先结束唯一 owner，再通知内部清理；状态失效引发重验也不会重复取消。 */
+    /** 先结束 owner 再通知内部清理，使取消支持重入核验。 */
     private void cancelOwner() {
         MountHandle cancelled = owner;
         setOwner(null);
         if (cancelled != null) runtime.dispatchControlCaptureLost(cancelled.node());
     }
 
-    /** 即使本帧没有事件，也检查来源更新后的owner资格；失活后本段不再恢复。 */
+    /** 几何准备后重验 owner 资格，失活时结束原捕获并保留物理占位。 */
     public void prepare(SceneGeometryView geometry) {
         geometry = geometry.world();
         checkAccess();
@@ -162,8 +162,8 @@ public final class ScenePointerRouter implements AutoCloseable {
         publishHover(geometry);
     }
 
-    /** 生命周期/声明已生效时即时复核当前owner，不依赖几何重建。
-     * 只检查当前owner及既有有效范围；失活随后恢复也不会复活本段。 */
+    /** 生命周期与声明生效后即时复核当前 owner 及原有效范围。
+     * 资格失效即结束原捕获，后续恢复须等待新的完整物理段。 */
     void revalidate() {
         runtime.domain().checkAccess();
         wheel.revalidate();
@@ -186,8 +186,8 @@ public final class ScenePointerRouter implements AutoCloseable {
         return false;
     }
 
-    /** 释放坐标先交给原 owner 声明位置；不结束物理段、不合成 MOVE、不建立新 owner。
-     * 帧管线在此操作及其 Effect 结算后重新 prepare，再沿 routeUp 正常结束。 */
+    /** 将释放坐标交给原 owner 更新位置意图，原物理段保持至 routeUp。
+     * 帧管线结算本操作与 Effect 后重新 prepare，再正式派发 UP。 */
     public void prepareRelease(ScenePointerEvent event, SceneGeometryView geometry) {
         checkAccess();
         prepare(geometry);
@@ -306,7 +306,7 @@ public final class ScenePointerRouter implements AutoCloseable {
             runtime.dispatchControlPointer(owner.node(), event, geometry);
     }
 
-    /** 仅已知主键的原目标可激活；handler 前结束 owner，异常也不能留下可复活联系。 */
+    /** 已知主键释放时核验原目标，handler 前结束 owner，确保本段只激活一次。 */
     private void routeUp(ScenePointerEvent event, SceneGeometryView geometry) {
         if (!buttons.remove(event.button)) return;
         if (event.button != 0 || owner == null) return;
@@ -341,8 +341,8 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (target != null) runtime.dispatchPointerTarget(target.node, target.identity);
     }
 
-    /** 仅首次主键空命中离开；保留物理占位，尾部不能激活拖入的邻控件。
-     * clip 与 viewport 均来自同代几何，裁掉的旧 box 不能阻止正常失焦。 */
+    /** 首次主键空命中时按同代 clip 与 viewport 处理失焦。
+     * 物理占位保留至释放，尾部只结束本段。 */
     private void blurOutsideFocus(SceneGeometryView geometry) {
         if (!geometry.viewport().contains(x, y)) return;
         SceneNode modal = runtime.activeModal();
@@ -365,14 +365,14 @@ public final class ScenePointerRouter implements AutoCloseable {
                 && (entry.clip == null || entry.clip.contains(x, y));
     }
 
-    /** 本批次handler失败后只记物理尾部，不再执行业务handler；原异常由管线上抛。
-     * 已采集第二DOWN不能因为中断批次而丢失，否则下一帧会误建owner。 */
+    /** handler 失败后登记本批完整物理尾部，业务原异常由管线传播。
+     * 第二 DOWN 保留物理占位，后续帧继续吞到实际释放。 */
     public void discardAfterFailure(ScenePointerEvent event) {
         runtime.domain().checkAccess();
         wheel.clear();
         try { cancelOwner(); }
         finally {
-            // 清理扩展失败也保留物理尾部，不能让第二键变成后来的新手势。
+            // 清理扩展失败后仍保留完整物理尾部。
             if (!closed) {
                 switch (event.kind) {
                     case DOWN:
@@ -391,7 +391,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         }
     }
 
-    /** 当前范围的捕获可明确消费 ESC；保留物理占位，后续 MOVE/UP 不能复活。 */
+    /** 当前范围捕获消费 ESC 后结束目标，保留物理占位至实际释放。 */
     boolean cancelOnEscape() {
         checkAccess();
         wheel.clear();
@@ -412,7 +412,7 @@ public final class ScenePointerRouter implements AutoCloseable {
         if (closed) throw new IllegalStateException("指针路由器已释放");
     }
 
-    /** runtime关闭时解除目标与按钮引用，不提交业务意图。 */
+    /** runtime 关闭时取消目标并解除按钮引用，业务意图仅由正常激活路径提交。 */
     @Override
     public void close() {
         runtime.domain().checkAccess();

@@ -122,7 +122,7 @@ final class MathArrayLayout {
             for (LineSpec line : spec.lines)
                 if (line.beforeRow == r) {
                     if (!first) total += .25f * em;
-                    // 线厚也进入净空，不能覆盖紧邻的高 Item。
+                    // 线厚计入净空，使横线与相邻高 Item 保持分离。
                     horizontalY.add(total);
                     horizontalDashed.add(line.dashed);
                     total += rule;
@@ -264,7 +264,7 @@ final class MathArrayLayout {
         return result;
     }
 
-    /** 只在本次求盒内交接原有测量数组，不保存 Session 或增加测量入口。 */
+    /** 在本次求盒内交接已有测量数组。 */
     private static final class Measurement {
         final List<ColumnSpec> descriptions;
         final MathBox[][] cells;

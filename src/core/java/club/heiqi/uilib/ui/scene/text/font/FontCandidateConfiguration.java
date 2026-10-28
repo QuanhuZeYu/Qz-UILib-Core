@@ -15,7 +15,7 @@ import club.heiqi.uilib.ui.config.ConfigKey;
 public final class FontCandidateConfiguration {
     public static final String KEY = "font.candidates";
 
-    /** 系统文件按明确声明解析；不得借此追加其他候选或改变跨候选顺序。 */
+    /** 解析当前声明的系统文件位置，返回该位置的候选。 */
     public interface FileResolver {
         FontSource resolve(String path, int position) throws IOException;
     }

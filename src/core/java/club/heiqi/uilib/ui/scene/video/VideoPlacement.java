@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.media.MediaVideoFrame;
 import club.heiqi.uilib.ui.scene.layout.LayoutBox;
 import java.util.Objects;
 
-/** VIDEO 的纯值定位；帧私有像素由媒体合同保持不可变，不引用会话或 GPU。 */
+/** VIDEO 的纯值定位，引用媒体合同保证不可变的帧像素。 */
 public final class VideoPlacement {
     public enum Fit { CONTAIN, COVER, STRETCH }
     public final MediaVideoFrame frame;

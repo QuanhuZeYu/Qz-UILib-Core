@@ -9,14 +9,14 @@ import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/** 轴端口和旧Entry适配共用范围发布与输入接管的订阅生命周期，不持有位置权威。 */
+/** 轴端口和 Entry 适配共用范围发布与输入接管订阅，位置由 runtime 维护。 */
 final class SceneScrollObservers {
     private final Set<Observation<?>> observers = new LinkedHashSet<>();
     private final Set<InputObservation> inputs = new LinkedHashSet<>();
     private SceneGeometryView publishedGeometry;
     private long publishedRevision;
     <T> AutoCloseable observe(T initial, Function<SceneGeometryView, T> read, BiPredicate<T, T> same, Consumer<T> changed) {
-        // 初值回调成功才登记，失败不会留下无法释放的订阅。
+        // 初值回调成功后再登记订阅，使失败路径保持资源归属完整。
         changed.accept(initial);
         Observation<T> observation = new Observation<>(initial, read, same, changed);
         observers.add(observation); publishedGeometry = null;
@@ -33,7 +33,7 @@ final class SceneScrollObservers {
         inputs.add(observation);
         return () -> inputs.remove(observation);
     }
-    /** 输入接管与范围发布分离：限位、布局和呈现自身写回都不是新输入。null沿原全局取消路径。 */
+    /** 输入接管独立于范围发布；限位、布局与呈现写回走范围通道，null 沿全局取消路径。 */
     void input(SceneNode viewport) {
         Throwable failure = null;
         for (InputObservation observation : new ArrayList<>(inputs)) {

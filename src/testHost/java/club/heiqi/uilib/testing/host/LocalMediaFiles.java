@@ -10,7 +10,7 @@ public final class LocalMediaFiles {
     private LocalMediaFiles() {}
     public static MediaSource resolve(String text) {
         String value=text.trim();
-        // Windows盘符与UNC优先按平台路径处理，避免盘符误认成URI scheme；网络URL原样保留。
+        // Windows 盘符与 UNC 优先解析为平台路径，网络 URL 沿用原 URI。
         boolean drive=value.length()>=3&&Character.isLetter(value.charAt(0))&&value.charAt(1)==':'
                 &&(value.charAt(2)=='\\'||value.charAt(2)=='/');
         if(drive||value.startsWith("\\\\")||value.startsWith("/")) {

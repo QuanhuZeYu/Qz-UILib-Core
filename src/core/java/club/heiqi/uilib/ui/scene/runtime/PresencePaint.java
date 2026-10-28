@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** 框架捕获的被动片段，显式保留所属层逃离来源裁剪的事实；不持输入或重新激活层。 */
+/** 框架捕获的被动绘制片段，保留所属层使用页面视口裁剪的事实。 */
 public final class PresencePaint {
     public static final class Part {
         public final PaintPlan paint;

@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.control;
 
 import java.util.Objects;
 
-/** 来源、行目标、容器目标各自带角色；C 与 K 即使 equals 也不会互相排除。 */
+/** 以角色区分来源、行目标与容器目标，允许 C 与 K 使用相等的业务值。 */
 final class SceneSortableKeys {
     private SceneSortableKeys() {}
     static final class SourceKey<K> {

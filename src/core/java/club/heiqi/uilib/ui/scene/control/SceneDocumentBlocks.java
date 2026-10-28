@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.scene.text.TextStyle;
 import java.util.Collections;
 import java.util.function.Consumer;
 
-/** 文档块语义转为同一scene树；不在转换器内保存排版、输入或资源生命周期。 */
+/** 将共同文档块转换为 scene 声明，生命周期由正式节点与绑定承接。 */
 final class SceneDocumentBlocks {
     private SceneDocumentBlocks() {}
 
@@ -156,7 +156,7 @@ final class SceneDocumentBlocks {
             Consumer<String> activate) {
         SceneNode row = new SceneNode().axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural());
         row.bind(NodeBinding.value(theme, (node, value) -> node.gap(value.gap)));
-        // 编号是独立标记列，层级来自树布局；正文原文中不插入空格模拟缩进。
+        // 编号使用独立标记列，正文按树层级布局，保持原文完整。
         SceneNode marker =
                 SceneLabel.create(
                         context,

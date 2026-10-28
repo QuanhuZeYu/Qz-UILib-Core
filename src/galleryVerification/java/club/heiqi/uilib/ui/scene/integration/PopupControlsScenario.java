@@ -32,7 +32,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-/** 弹出选择、共享动作和关闭都走正式页面输入；不使用平台窗口或系统输入。 */
+/** 通过正式页面输入核验弹出选择、共享动作与关闭。 */
 public final class PopupControlsScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("打开当前选择方向只预览且确认读取业务拒绝", this::selection);

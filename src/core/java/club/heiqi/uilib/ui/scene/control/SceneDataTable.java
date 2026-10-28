@@ -177,7 +177,7 @@ public final class SceneDataTable<T, K, C> {
     public SceneVirtualList<T, K> rows() { return rows; }
     public SceneScrollViewport horizontalViewport() { return horizontal; }
 
-    /** 只定位外框内的原滚动条，不保有第二偏移或跨批子测量入口。 */
+    /** 在外框中定位原滚动条，偏移由原端口维护，子测量限本次调用使用。 */
     private static final class Frame implements SceneControl {
         private final SceneNode content, bar;
         private final ReadableSignal<Integer> headerHeight;

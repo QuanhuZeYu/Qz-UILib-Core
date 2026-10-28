@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.media.MediaInfo;
 public interface MediaDecoder extends AutoCloseable {
     MediaInfo info();
     MediaDecoded read() throws Exception;
-    /** 无需求意识的顺序实现可返回任一轨；core立即冻结并按独立raw延后预算保存，不在该项上等待。 */
+    /** 顺序实现可返回任一轨，core 立即冻结并在暂缓时计入独立 raw 预算。 */
     default MediaDecoded read(MediaDecodeRequest request) throws Exception { return read(); }
     default MediaInputState inputState() { return MediaInputState.UNKNOWN; }
     default MediaDecoderBuffering buffering() { return MediaDecoderBuffering.EMPTY; }

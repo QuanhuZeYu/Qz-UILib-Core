@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.layout.SceneGeometryView;
 import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 
-/** 让位和落下共用活跃呈现调度，运动不拥有业务顺序或输入会话。 */
+/** 用活跃呈现调度推进让位与落下，业务顺序和输入会话由原模型维护。 */
 final class SceneSortableMotion<T, K, C> {
     static final class Offset {
         static final Offset ZERO = new Offset(0, 0);
@@ -30,7 +30,7 @@ final class SceneSortableMotion<T, K, C> {
             width.retarget(to.width, strategy, now); height.retarget(to.height, strategy, now);
             elevation.retarget(0, strategy, now);
         }
-        /** 与让位相同，插槽保留父局部基准；父滚动只换基，不成为新的落下目标或速度。 */
+        /** 插槽保留父局部基准，父滚动时换基以延续原落下目标与速度。 */
         private void rebase(SceneNode nextAnchor, SceneGeometryView geometry, LayoutBox slot) {
             SceneGeometryView.Entry parent = geometry.get(nextAnchor);
             if (parent == null || parent.inverse == null) { anchor = null; return; }
@@ -95,7 +95,7 @@ final class SceneSortableMotion<T, K, C> {
         SceneSortableInteraction.Feedback<T, K, C> value = preview.get();
         if (value == null || landing != null) return;
         prepare(); long now = model.runtime.inputNanos();
-        // 采集时间只负责估速；落下仍从同批呈现时间启动，不能拿合批延迟稀释速度。
+        // 采集时间用于估速，落下从同批呈现时刻启动。
         long eventTime = samples.time();
         landing = new Landing(value.box, samples.speed(true, eventTime), samples.speed(false, eventTime), dropStrategy, now);
         samples.clear(); sampleToken = null;
@@ -164,7 +164,7 @@ final class SceneSortableMotion<T, K, C> {
         try {
             geometryObservation = model.runtime.observeGeometry(model.root, geometry -> {
                 if (geometry != null) currentGeometry = geometry.world();
-                // observe 的首个同步通知仍可能是重排前的几何，不能提前消耗 pending 插槽。
+                // 首个同步通知先保存几何，pending 插槽待正式重排发布后消费。
                 if (observingGeometry) return;
                 if (geometry == null) clear(); else synchronize(geometry);
             });
@@ -186,13 +186,13 @@ final class SceneSortableMotion<T, K, C> {
     }
     private void stopLanding() { landing = null; }
     private void endPreview() { stopLanding(); preview.set(null); samples.clear(); sampleToken = null; }
-    /** 普通呈现已脱离输入帧；曲线/观察失败必须由本实例结束资源，不能等输入取消。 */
+    /** 普通呈现由本实例持有，曲线或观察失败时立即结束所属资源。 */
     private void failed(Throwable failure) {
         try { clear(); } catch (Throwable cleanup) { if (cleanup != failure) failure.addSuppressed(cleanup); }
     }
     void clear() {
         stopLanding(); samples.clear(); sampleToken = null;
-        // 先解除可再次调用的登记；每项独立清理，Signal 外部观察者失败不能截断其余资源。
+        // 先解除可重入登记，再逐项清理资源，外部观察者失败后继续收尾。
         Throwable failure = cleanup(null, this::stopSchedule);
         failure = cleanup(failure, this::stopGeometry);
         failure = cleanup(failure, flights::clear);

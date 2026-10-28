@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
 import java.util.Collections;
 
-/** 工作区拥有列表/阅读组合规则，业务页面无需同步可见性、滚动、分页挂载与分隔线。 */
+/** 按列表与阅读模式统一组合可见性、滚动、分页挂载与分隔线。 */
 final class MailWorkspace {
     private MailWorkspace() {}
 

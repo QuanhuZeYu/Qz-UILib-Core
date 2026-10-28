@@ -148,8 +148,8 @@ class Face:
                         "Invalid assembly part: " + repr((glyph, start, end, full, flags)))
                 parts.append({"glyphId": glyph, "startConnector": start,
                               "endConnector": end, "fullAdvance": full, "extender": bool(flags)})
-            # Preserve upstream numbers, including connector lengths above fullAdvance.
-            # The flag records this comparison only; it does not define runtime overlap policy.
+            # 保留上游原值，包含超过 fullAdvance 的连接长度。
+            # 标志仅记录数值比较，运行时独立解析重叠策略。
             assembly = {"italicCorrection": self.value(a), "parts": parts,
                         "validConnectorLengths": all(part["startConnector"] <= part["fullAdvance"]
                                                      and part["endConnector"] <= part["fullAdvance"]

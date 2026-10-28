@@ -12,7 +12,7 @@ import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 分类内容与计数均来自模型，装饰沿同一正式几何，不把标签带变成第二份邮箱。 */
+/** 从模型读取分类与计数，按正式几何呈现分类装饰。 */
 final class MailCategories {
     private MailCategories() {}
     static SceneNode create(ScenePageContext p,ReadableSignal<SceneTheme> theme,

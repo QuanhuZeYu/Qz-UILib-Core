@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 
-/** 页面只声明目标与策略；常见属性负责自己的失效归属，业务不维护进度。 */
+/** 页面声明目标与策略，各属性通道负责失效，运行时统一推进呈现。 */
 public final class SceneMotion {
     private SceneMotion() {}
     /** 挂载入场与普通位移、透明度组合；初始位移只采样一次，策略继续响应来源。 */
@@ -32,7 +32,7 @@ public final class SceneMotion {
     public static NodeBinding background(ReadableSignal<Integer> target, ReadableSignal<MotionSpec> spec) {
         return color(target, spec, "background", SceneNode::background);
     }
-    /** 预乘 alpha 的合法颜色插值；透明端点不带入不可见 RGB。 */
+    /** 按预乘 alpha 插值颜色，透明端点仅贡献自身 alpha。 */
     public static NodeBinding color(ReadableSignal<Integer> target, ReadableSignal<MotionSpec> spec,
             Object channel, BiConsumer<SceneNode, Integer> apply) {
         Objects.requireNonNull(target, "颜色目标"); Objects.requireNonNull(apply, "颜色呈现");

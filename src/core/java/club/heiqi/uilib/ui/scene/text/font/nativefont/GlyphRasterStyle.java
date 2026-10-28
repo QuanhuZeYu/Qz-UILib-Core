@@ -35,7 +35,7 @@ public final class GlyphRasterStyle {
     }
 
     /** native 像素格包络。双线性核留一像素保护；shear 也映射核的纵向支撑。
-     * bounds 与 pixels 必须共用这里，不能用 em 经验比例代替真实 pixelScale。
+     * bounds 与 pixels 共用此计算，按真实 pixelScale 换算采样支撑。
      */
     public double[] envelope(
             double left, double top, double right, double bottom, float pixelScale) {

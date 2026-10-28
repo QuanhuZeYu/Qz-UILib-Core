@@ -30,7 +30,7 @@ public final class SceneRichText {
         return SceneDocument.paragraph(context, content, theme, null, activate);
     }
 
-    /** 图像声明使用正式图像服务及结构化来源引用；不让业务补下载或命中几何。 */
+    /** 以正式图像服务与结构化来源提供富文本图像声明。 */
     public static SceneNode create(
             ScenePageContext context,
             ReadableSignal<TextContent> content,

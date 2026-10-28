@@ -29,7 +29,7 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 固定按钮区域验证生产导航/滚动/命中，不以宿主文字模拟显露算法。 */
+/** 以固定按钮区域核验正式导航、滚动与命中。 */
 public final class FocusRevealScenario extends TestApplication {
     private static final class Host implements SceneHost, SceneTextMeasurer {
         public int width() {

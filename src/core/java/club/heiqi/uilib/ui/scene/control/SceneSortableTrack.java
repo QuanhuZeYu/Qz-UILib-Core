@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.motion.MotionSpec;
 import club.heiqi.uilib.ui.scene.motion.MotionValue;
 
-/** 每个呈现量只选一个驱动；旧曲线允许过冲，显式运动复用公共解析求解器。 */
+/** 每个呈现量使用单一驱动：有限曲线允许过冲，显式运动使用公共解析求解器。 */
 final class SceneSortableTrack {
     static final class Strategy {
         final SceneSortable.Transition finite;

@@ -18,7 +18,7 @@ final class SceneEditBindings {
         // snapshot同时通知光标、组字与文本代际，只在正式挂载刷新中更新节点。
         node.bind(NodeBinding.value(state.snapshot(),
                 (target, value) -> target.text(SceneEditCommands.display(value))));
-        // 字体/字号由正式节点样式分类；配色只影响绘制，同值padding不能扩大为重新测量。
+        // 按字体与字号分类测量失效，配色仅更新绘制，同值 padding 保留原测量。
         node.bind(NodeBinding.value(theme, (target, value) -> {
             SceneControlMetrics metrics = value.metrics(SceneControlMetrics.Kind.FIELD);
             target.defaultStyle(metrics.textStyle).defaultPadding(metrics.padding);

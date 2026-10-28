@@ -81,10 +81,10 @@ public interface MathFont {
     /** 当前具名数学字体正常整形的文字，沿现有 TEXT 管线绘制。 */
     TextLayout text(String value);
 
-    /** 真实竖向 variant 或部件构建；超出能力时明确报告，不任意变形。 */
+    /** 使用真实竖向 variant 或部件构建，能力缺口沿字体入口报告。 */
     TextLayout stretch(int codepoint, float minimumHeight);
 
-    /** 明确轴的真实伸缩；旧实现保留竖向能力，横向不伪造支持。 */
+    /** 按指定轴请求真实伸缩，默认仅转交竖向能力，横向须由实现提供。 */
     default TextLayout stretch(int codepoint, float minimumAdvance, MathAxis axis) {
         java.util.Objects.requireNonNull(axis, "axis");
         if (axis == MathAxis.VERTICAL) return stretch(codepoint, minimumAdvance);
@@ -115,7 +115,7 @@ public interface MathFont {
         return InkBounds.UNKNOWN;
     }
 
-    /** 显示型大算子选择真实完整字形：优先满足建议高度，否则使用最大的可用变体。 算子并非须覆盖内容的定高根号；不做非等比拉伸。 */
+    /** 显示型大算子选择真实完整字形，优先满足建议高度，否则采用最大可用变体。 */
     default TextLayout displayOperator(int codepoint, float preferredHeight) {
         return stretch(codepoint, preferredHeight);
     }

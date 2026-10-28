@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 
 /** 一次选择的唯一状态与目录工作 owner；界面只消费这些信号并发布选择意图。 */
 final class FilePickerSelection {
-    /** 正常状态不占反馈行；视图只消费此值，不从目录或编辑细节重建显隐。 */
+    /** 提供反馈文字与可见事实，正常状态使用 NONE。 */
     static final class Feedback {
         static final Feedback NONE = new Feedback(null);
         final String text;
@@ -77,7 +77,7 @@ final class FilePickerSelection {
     }
     private boolean active() { return attached && !finished; }
     boolean waiting() { return active() && busy.get(); }
-    /** 只在宿主正式输入帧领取；工作线程不访问选择信号或节点。 */
+    /** 在宿主正式输入帧领取 worker 结果，并更新本域选择状态。 */
     void receiveCompletion() {
         if (!active()) return;
         FilePickerDirectory.Result result = reader.take();
@@ -111,7 +111,7 @@ final class FilePickerSelection {
         if (entry.directory) browse(entry.path, FilePickerQuery.first());
         else {
             selected.set(entry.path); path.reset(entry.path.toString());
-            // 核验时列表仍可选择；后来选择只更换目标，不抹掉在途反馈。
+            // 核验期间允许选择新目标，在途反馈保持至所属请求结算。
             if (!busy.get()) status.set(Feedback.NONE);
         }
     }
@@ -162,7 +162,7 @@ final class FilePickerSelection {
         FilePickerQuery changed=FilePickerQuery.first().filter(searchTerm.get(),extension.get()).order(order.get());
         boolean same=readingQuery.text.equals(changed.text)&&readingQuery.extensions.equals(changed.extensions)&&readingQuery.order==changed.order;
         if(!listingPending||!same)history.refresh(!listingPending&&same?history.snapshot(currentSelection(),scrollPosition.getAsInt()):null);
-        // 读取期间的新查询沿当前请求范围；不借最后完成的列表重建导航意图。
+        // 读取期间的新查询沿当前请求范围与查询代际执行。
         read(readingScope,same?readingQuery:changed,"正在刷新当前范围…",false,false,null);
     }
     void turn(int direction) {
@@ -191,7 +191,7 @@ final class FilePickerSelection {
             history.beginNavigation();
             status.set(submission==null||path.reject(submission,reason)?Feedback.show(reason):RECONFIRM);
         } else if (result.verified != null) {
-            // 编辑状态已拥有当前提交判断；旧核验不能关闭用户后来编辑的路径。
+            // 按原编辑提交代际接受核验结果，后续路径编辑保留自己的会话。
             if(submission==null||!path.accept(submission,result.verified.toString())){
                 status.set(RECONFIRM);return;
             }
@@ -209,11 +209,11 @@ final class FilePickerSelection {
         publishListing(result,submission,normalized);
         restoreSelection(result,restore);
         int position=restore==null?0:restore.scroll;
-        // locate实际可能执行AROUND；历史保存worker已执行边界，不保存前往时的FIRST意图。
+        // locate 可能转为 AROUND，历史记录 worker 实际执行的查询边界。
         readingQuery=result.query;readingScope=result.roots?Scope.rootsAt(directory.get()):Scope.directory(result.directory);scroll.set(position);
         history.current(directory.get(),result.roots,result.query,selected.get(),position);
         status.set(listingFeedback(result));
-        // 仅显式路径定位发布显露意图；历史与刷新沿原滚动位置，不追随选择。
+        // 显式路径定位发布显露意图，历史与刷新复用原滚动位置。
         if(result.selected!=null)revealTarget.set(result.selected);
     }
     private void publishListing(FilePickerDirectory.Result result,SceneEditState.Submission submission,String normalized){
@@ -244,7 +244,7 @@ final class FilePickerSelection {
     }
     Feedback feedback(){
         Feedback current = status.get();
-        // 忙、拒绝和过时结果的重新确认先于旧选择提示；正常目录不保留说明占行。
+        // 优先显示在途、拒绝与重新确认反馈，正常目录使用 NONE。
         if (current.visible) return current;
         return selected.get()!=null&&currentSelection()==null ? PATH_EDITED : current;
     }

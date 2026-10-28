@@ -16,7 +16,7 @@ import club.heiqi.uilib.ui.scene.motion.MotionPolicy;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 
-/** 实际卡片回放颜色沿主题和自定义背景同批更新，不以节点声明值代替已绘结果。 */
+/** 按实际卡片回放颜色核验主题与自定义背景同批更新。 */
 public final class SceneAppearanceScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("半透明卡片主题与独立背景变化进入同一绘制目标", this::cardBackground);

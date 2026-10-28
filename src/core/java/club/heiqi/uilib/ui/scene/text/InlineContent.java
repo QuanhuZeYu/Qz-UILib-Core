@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.scene.text.math.MathStyle;
 
 import java.util.Objects;
 
-/** 源内容中的原子声明；尺寸由当前字体/图像测量产生，声明不持有节点或资源租约。 */
+/** 保存源内容中的原子声明，尺寸由当前字体与图像测量解析。 */
 public final class InlineContent {
     public enum Kind {
         MATH,
@@ -19,7 +19,7 @@ public final class InlineContent {
     public final MathStyle mathStyle;
     public final String source, alt;
 
-    /** 原内容的可选说明；不隐含浏览器tooltip或独立输入层。 */
+    /** 原内容的可选说明，由所属控件决定呈现。 */
     public final String title;
 
     public final Integer width, height;

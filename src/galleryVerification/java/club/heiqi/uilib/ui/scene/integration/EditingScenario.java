@@ -30,9 +30,9 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 import club.heiqi.uilib.ui.scene.text.font.FontSource;
 
-/** 编辑规格的独立状态与正式页面验收；软件字体事实不冒称原生IME或GPU验证。 */
+/** 以软件字体事实核验编辑规格中的独立状态与正式页面输入。 */
 public final class EditingScenario extends TestApplication {
-    /** 非等宽字体事实含一个fi文字簇，刻意使UTF-16偏移不能当作像素位置。 */
+    /** 以非等宽字体与 fi 文字簇区分 UTF-16 位置和像素几何。 */
     private static final class TextHost implements SceneHost, SceneTextMeasurer {
         final FontSource font =
                 new FontSource(
@@ -503,7 +503,7 @@ public final class EditingScenario extends TestApplication {
     private void pageEditing() {
         ReactiveDomain d = ReactiveDomain.direct();
         Page p = new Page(d, state(d, ""), SceneTextField.SubmitPolicy.CONFIRM);
-        // 同帧采集文字与空格，正式队列逐事件结算，不能只保留末项。
+        // 同帧采集文字与空格，核验正式队列逐项结算。
         p.session.edit(SceneEditEvent.text("甲\r\n乙"));
         p.session.edit(SceneEditEvent.command(Command.SPACE, false, null));
         p.session.frame();
@@ -604,7 +604,7 @@ public final class EditingScenario extends TestApplication {
                     value.select(2, 2);
                     value.replaceSelection("X", false);
                     value.select(3, 3);
-                    value.replaceSelection("", false); // 不增加历史，保留既有插入位置。
+                    value.replaceSelection("", false); // 同文替换保留历史与既有插入位置。
                     value.undo();
                     require(
                             value.text().get().equals(pair) && value.snapshot().get().caret == 2,

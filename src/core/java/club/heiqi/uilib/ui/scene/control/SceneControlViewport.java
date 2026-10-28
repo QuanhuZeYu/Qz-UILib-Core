@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.control;
 
-/** 局部内容视口的纯范围运算；位置仍由所属控件管理，不参与输入路由。 */
+/** 纯计算局部内容视口范围，位置与输入归所属控件。 */
 final class SceneControlViewport {
     private SceneControlViewport() {}
 

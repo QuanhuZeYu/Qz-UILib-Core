@@ -11,7 +11,7 @@ import club.heiqi.uilib.ui.reactive.ReadableSignal;
 import club.heiqi.uilib.ui.reactive.ReactiveDomain;
 import club.heiqi.uilib.ui.reactive.Signal;
 
-/** 借用应用唯一配置；跨页面/状态域投影通过既有Effect递交，不轮询文件。
+/** 借用应用唯一配置，通过既有 Effect 向页面所属状态域递交。
  * 共享配置归宿主，页面只拥有自己的订阅。持久化沿ConfigSession显式保存。 */
 public final class ThemeConfiguration {
     public static final ConfigKey<ThemeMode> KEY = new ConfigKey<>("ui.theme", new ConfigCodec<ThemeMode>() {
@@ -39,7 +39,7 @@ public final class ThemeConfiguration {
         domain.effect(scope, () -> published = session.get(KEY));
     }
 
-    /** 返回调用页面域内可追踪的选择；异步通知关闭后无效，迟到旧批次不能覆盖新值。 */
+    /** 返回调用页面域内可追踪的选择，异步递交时核验页面与通知代际。 */
     public ReadableSignal<ThemeMode> bind(ReactiveDomain target, Owner owner) {
         Objects.requireNonNull(target, "target").checkWrite();
         Objects.requireNonNull(owner, "owner");

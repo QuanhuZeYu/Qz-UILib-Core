@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 尺寸先参与真实分配，重排轨迹再作用于局部原点；滚动不进入重排目标。 */
+/** 尺寸参与真实分配，重排轨迹作用于去除滚动后的局部原点。 */
 final class SceneLayoutMotions implements SceneTransitions.Step {
     private static final class Scope {
         MotionSpec spec;
@@ -67,7 +67,7 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
             this.spec = spec;
             if (this.parent != parent) {
                 rebasing = published; precise |= published;
-                // 只换算本布局轨迹的速度，不把父运动或滚动伪造成输入速度。
+                // 将本布局轨迹速度转换到世界坐标，父运动与滚动由坐标换基处理。
                 worldVelocityX = publishedFrame.a * x.velocity() + publishedFrame.c * y.velocity();
                 worldVelocityY = publishedFrame.b * x.velocity() + publishedFrame.d * y.velocity();
                 x.snap(0, now); y.snap(0, now); this.parent = parent;
@@ -148,7 +148,7 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
             SceneNode node = entry.getKey(); SceneGeometryView.Entry box = target.get(node);
             if (box == null) { dimensions.remove(node); continue; }
             Dimensions state = dimensions.computeIfAbsent(node, ignored -> new Dimensions());
-            // 排版轨迹只跟随分配尺寸；world包络已含仿射变换，不能再次反灌自然测量。
+            // 尺寸轨迹跟随原布局分配盒，world 包络仅供呈现消费。
             state.retarget(node, box.layoutBox, entry.getValue(), now);
             overrides |= state.differs(node, box.layoutBox);
         }
@@ -169,7 +169,7 @@ final class SceneLayoutMotions implements SceneTransitions.Step {
         for (Map.Entry<SceneNode, Scope> entry : positions.entrySet()) {
             Scope scope = entry.getValue();
             scope.order(entry.getKey().children());
-            // 一个作用域的尺寸活动只求一次，避免每个孩子重复扫描全部兄弟。
+            // 每个作用域只求一次尺寸活动状态，供其孩子共同读取。
             scope.resizing = sizeMoves(entry.getKey());
         }
         Set<SceneNode> seen = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());

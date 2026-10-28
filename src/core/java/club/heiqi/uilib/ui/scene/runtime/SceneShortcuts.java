@@ -8,7 +8,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
-/** 挂载声明的有限索引；范围事实来自原runtime，不拥有焦点或第二棵输入树。 */
+/** 索引挂载期快捷键声明，按 runtime 的当前输入范围匹配。 */
 final class SceneShortcuts {
     private static final class Registration {
         final MountHandle mount;

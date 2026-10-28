@@ -479,7 +479,7 @@ public final class VectorPresentationPage {
                 .bind(NodeBinding.value(() -> theme.get().gap, SceneNode::gap));
     }
 
-    /** 图示的每个形状、标签和字段仍是直属节点；这里只按本批分配居中叠放，不绘制或处理输入。 */
+    /** 按本批分配居中叠放直属形状、标签与字段节点。 */
     private static final class Diagram implements SceneControl {
         private static final class Part {
             final SceneNode node;

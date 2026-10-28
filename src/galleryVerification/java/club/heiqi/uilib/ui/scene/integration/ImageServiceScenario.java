@@ -24,7 +24,7 @@ import club.heiqi.uilib.ui.scene.image.SharedImageService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** 共享图像服务的真实跨域递交；loader仅提供内存像素，不涉及宿主设备。 */
+/** 用内存像素 loader 核验共享图像服务的真实跨域递交。 */
 public final class ImageServiceScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("完成通知失败仍递交独立消费者并启动待处理请求", this::completion);

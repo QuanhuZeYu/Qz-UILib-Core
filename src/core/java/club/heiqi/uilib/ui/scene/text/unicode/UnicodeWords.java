@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.TreeSet;
 
-/** 当前语言的逻辑词段；只使用完整字素边界，不借用字体的视觉簇顺序。 */
+/** 按当前语言的逻辑词段与完整字素边界导航。 */
 public final class UnicodeWords {
     private UnicodeWords() {}
 

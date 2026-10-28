@@ -13,7 +13,7 @@ final class SceneTextAreaGeometry {
         this.text = text;
     }
 
-    /** 相同定位可由无缓存/带装饰的测量器返回新对象；对象身份变化本身不是重新排版。 */
+    /** 按实际行与簇度量比较定位，支持测量器返回等值新对象。 */
     boolean sameGeometry(TextLayout other) {
         return sameGeometry(text, other);
     }

@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.text.math;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 临时数学盒只保存基线坐标与有序绘制事实，不成为第二棵布局树。 */
+/** 按基线坐标组合本次求值的有序绘制事实。 */
 final class MathBox {
     enum Atom {
         ORD,

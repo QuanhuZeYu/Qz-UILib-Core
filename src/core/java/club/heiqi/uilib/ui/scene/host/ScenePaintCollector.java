@@ -118,7 +118,7 @@ final class ScenePaintCollector {
             SceneGeometryView.Entry entry = geometry.world().get(candidate.node);
             if (entry == null) continue;
             if (insideCaptured(entry.node, captured)) continue;
-            // 只消费已定位条目；按祖先关系关闭内容栈，不重走children补出幻影。
+            // 按已定位条目的祖先关系闭合内容栈，保持本批有效呈现顺序。
             while (!open.isEmpty() && !inSubtree(entry.node, open.peek()))
                 paintAfterChildren(open.pop(), geometry, content, opacityStop);
             open.push(entry.node);
@@ -210,7 +210,7 @@ final class ScenePaintCollector {
         return result;
     }
 
-    /** 退场片段只冻结自身裁剪；祖先视口在回放时按当前几何裁决，不能随内容一起平移。 */
+    /** 退场片段冻结自身裁剪，祖先视口在回放时使用当前几何。 */
     private static SceneGeometryView intrinsicCapture(SceneNode root, List<SceneGeometryView.Entry> entries, SceneGeometryView current) {
         Map<SceneNode, SceneGeometryView.Entry> intrinsic = new IdentityHashMap<>();
         for (SceneGeometryView.Entry entry : entries) {
@@ -252,7 +252,7 @@ final class ScenePaintCollector {
 
     private static SceneGeometryView fallbackGeometry(
             SceneGeometry local, SceneGeometryView geometry) {
-        // get提供备用区域，ordered仍为主输入事实，不能以备用子集重新裁决hover。
+        // get 提供备用绘制区域，ordered 保留主输入事实供 hover 查询。
         return new SceneGeometryView() {
             private final Map<SceneNode, SceneGeometryView> views = new IdentityHashMap<>();
             public SceneGeometryView asControl(SceneNode node) { return views.computeIfAbsent(node, key -> SceneGeometryView.super.asControl(key)); }
@@ -321,7 +321,7 @@ final class ScenePaintCollector {
         return PaintPlan.presentation(0, 0, opacity, null);
     }
 
-    /** 组内可按宿主策略合批，组间必须保序；否则底层文字会越过弹层的不透明背景。 */
+    /** 在呈现组之间插入提交屏障，保持底层内容与弹层背景的覆盖顺序。 */
     private static void appendGroup(PaintPlanBuilder target, PaintPlan plan) {
         if (plan.commands().isEmpty()) return;
         target.add(PaintCommand.orderBarrier());

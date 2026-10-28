@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** 宿主 prepareResources 消费挂载 consumer；后台媒体线程没有状态域或 scene 联系。 */
+/** 宿主 prepareResources 按挂载 consumer 领取媒体快照，再向所属页面域递交。 */
 public final class MediaViewPump implements AutoCloseable {
     private final Thread thread = Thread.currentThread();
     private final Map<MediaSession, List<Registration>> consumers = new LinkedHashMap<>();
@@ -31,7 +31,7 @@ public final class MediaViewPump implements AutoCloseable {
         }
         @Override public int hashCode() { return 31 * width + height; }
     }
-    /** 每个独立视图持自己的呈现信号，不持有会话关闭权。 */
+    /** 每个视图持有独立呈现信号，会话关闭权归原业务持有者。 */
     public static final class View {
         private final ReactiveDomain domain;
         private final MediaSession session;
@@ -76,7 +76,7 @@ public final class MediaViewPump implements AutoCloseable {
         }
         MediaSnapshot snapshot = view.session.snapshot();
         Publication initial = null;
-        // 初次挂载也共借同key联系，不能让多个视图占满预算而饿住正式Prepared。
+        // 初次挂载共借同 key 租约，为正式 Prepared 保留预算。
         for (Registration peer : peers) { initial = peer.borrow(snapshot); if (initial != null) break; }
         if (initial == null) initial = new Publication(view.session, snapshot);
         try { registration.publish(initial); return registration; }
@@ -147,7 +147,7 @@ public final class MediaViewPump implements AutoCloseable {
         }
         private synchronized void publish(Publication next) {
             Publication selected = next.active() ? next : null;
-            // snapshot与retain之间仍可能前移；不发布已经失去联系的帧，保留上次同代有效呈现到下次pump。
+            // snapshot 与 retain 之间可前移，帧联系失效时沿用上次同代有效呈现至下次 pump。
             if (selected == null && next.snapshot.video != null && published != null && published.active()
                     && published.snapshot.generation == next.snapshot.generation) selected = published;
             if (selected != null) selected.retain();

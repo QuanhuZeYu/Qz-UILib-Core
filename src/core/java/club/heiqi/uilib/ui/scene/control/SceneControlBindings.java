@@ -7,7 +7,7 @@ import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 import java.util.function.BiConsumer;
 
-/** 观测只读声明来源；apply 读取的临时呈现不能反过来重启结构或有限时间线。 */
+/** 跟踪只读声明来源，apply 在依赖收集外发布临时呈现。 */
 final class SceneControlBindings {
     private SceneControlBindings() {}
     /** 命令的可用呈现与执行时重验在同一标准动作节点装配；观察随该次挂载结束。 */

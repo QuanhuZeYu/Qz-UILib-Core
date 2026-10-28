@@ -9,7 +9,7 @@ import club.heiqi.uilib.ui.scene.layout.Size;
 import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
-/** 完整邮箱外壳；返回及局部预览是调用方提供的真实意图，嵌入页不伪造退出动作。 */
+/** 组合邮箱外壳，返回与局部预览由调用方提供实际意图。 */
 final class MailChrome {
     private MailChrome() {}
     static SceneNode header(ScenePageContext p,MailViewState view,

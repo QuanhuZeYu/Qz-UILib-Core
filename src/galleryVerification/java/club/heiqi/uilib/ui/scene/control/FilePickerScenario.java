@@ -898,7 +898,7 @@ public final class FilePickerScenario extends TestApplication {
         }
     }
 
-    /** 只等待真实文件worker；不为UI刷新引入固定延时，也不增添生产测试接口。 */
+    /** 等待本次实际文件 worker，随后由测试线程推进正式输入帧。 */
     private static void awaitWorker(FilePickerDirectory reader) throws Exception {
         Field latest = FilePickerDirectory.class.getDeclaredField("latest");
         latest.setAccessible(true);

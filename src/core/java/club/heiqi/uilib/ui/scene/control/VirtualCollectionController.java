@@ -80,7 +80,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         viewRevision = page.domain().signal(0L); logicalRevision = page.domain().signal(0L);
     }
 
-    /** 复合控件沿真实行提供所属角色，不再嵌入一层普通LIST/LIST_ITEM语义。 */
+    /** 复合控件按真实行声明所属语义角色。 */
     void semanticRoles(SceneSemantics.Role collection, SceneSemantics.Role item) { semanticRole = collection; itemSemanticRole = item; }
     int logicalPosition(K identity) { logicalRevision.get(); return heights.position(identity) + 1; }
     int logicalCount() { logicalRevision.get(); return order.size(); }
@@ -129,7 +129,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         long nextMetrics = runtime.metricsRevision().get();
         List<T> current = Objects.requireNonNull(source.get(), "集合数据");
         boolean changed = current != published;
-        // 显式估算不代表实际行高；密度改变内距时也必须结束屏外旧高度，沿原锚点重新准备。
+        // 高度条件包含当前角色度量，密度变化后沿原锚点重新准备实际行高。
         Object nextCondition = Arrays.asList(measurementCondition.get(), currentMetrics.layoutKey());
         boolean conditionChanged = !Objects.equals(measuredCondition, nextCondition);
         boolean reset = nextMetrics != metrics || estimate != nextEstimate || measuredWidth != width || conditionChanged;
@@ -162,7 +162,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         int from = heights.at(Math.max(0L, (long) offset - prefetch));
         long end = (long) offset + height + prefetch;
         for (int i = from; i < heights.size() && heights.start(i) < end; i++) needed.add(heights.key(i));
-        // 旧视口锚点在度量换代后仍须取得真实新行高，不能先被估算窗口淘汰。
+        // 度量换代后保留原视口锚点，待取得新行高再完成锚定。
         positioning.retain(needed);
         if (navigationKey != null && values.containsKey(navigationKey)) needed.add(navigationKey);
         for (K identity : directionalEntryKeys) if (values.containsKey(identity)) needed.add(identity);
@@ -189,7 +189,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                 } else row.value.set(values.get(identity));
                 nextRows.put(identity, row);
             }
-            // 集合内真实逻辑顺序与几何、Tab共用；有限保留行不被追加到错误位置。
+            // 准备行与有限保留行统一按真实逻辑顺序发布，供几何与 Tab 共用。
             List<K> sorted = new ArrayList<>(nextRows.keySet());
             sorted.sort((left, right) -> Integer.compare(heights.position(left), heights.position(right)));
             for (K identity : sorted) nextNodes.add(nextRows.get(identity).node);
@@ -406,7 +406,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                                 visible.add(row.node); visibleKeys.add(row.key);
                             }
                         }
-                        // 共享游标可等待内集合；其稳定根集合仍由本控件有限保留，不能被普通滚动淘汰。
+                        // 共享游标等待内集合期间，本控件有限保留其稳定根集合。
                         directionalEntryKeys = visibleKeys;
                         if (!visibleKeys.isEmpty()) viewRevision.set(++revision);
                         search = runtime.beginDirectionalTraversal(visible, from, direction, start);

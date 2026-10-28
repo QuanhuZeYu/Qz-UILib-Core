@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** 只推进挂载且活跃的有限呈现绑定；时间由帧协调采样，不扫描静止节点。 */
+/** 按帧协调采样的时间推进已挂载活跃绑定，完成时移出活跃集合。 */
 final class SceneTransitions {
     interface Step {
         boolean advance(long now);
@@ -21,7 +21,7 @@ final class SceneTransitions {
     void stop(Step step) { active.remove(step); }
     void clear() { active.clear(); }
 
-    /** 声明结算后只重验活跃轨迹；资格未变化且没有新轨迹时不做逐帧扫描。 */
+    /** 声明结算后，在资格修订或活跃集合变化时重验活跃轨迹。 */
     void settleVisibility(long revision) {
         if (visibilityRevision == revision && !visibilityDirty) return;
         visibilityRevision = revision; visibilityDirty = false;
@@ -30,7 +30,7 @@ final class SceneTransitions {
     }
 
     void advance(long frameNanos) {
-        // 已排队的输入批次保留原时刻；外部current()先准备时不能让时钟倒退。
+        // 排队输入保留采集批次时刻，已发布时钟按单调顺序推进。
         if (sampled && frameNanos - now <= 0) return;
         sampled = true;
         now = frameNanos;

@@ -12,7 +12,8 @@ import club.heiqi.uilib.ui.scene.text.math.MathLayoutEngine.Session;
 
 import java.util.Locale;
 
-/** 数学装饰与局部作用域：只展开为同一有序盒，不保存 AST 或第二棵几何树。 宽饰件沿 specs/content/uilib-math-content-spec.md 第 4 节的数学路径；括号仍请求真实 HORIZONTAL MATH。 */
+/** 将数学装饰与局部作用域展开为有序盒。
+ * 宽饰件沿 specs/content/uilib-math-content-spec.md 第 4 节求值，括号请求真实 HORIZONTAL MATH。 */
 final class MathDecorations {
     private MathDecorations() {}
 
@@ -135,7 +136,7 @@ final class MathDecorations {
                 {
                     MathContent.UnsupportedSpec spec = (MathContent.UnsupportedSpec) n.payload;
                     // 固定参照 Parser.formatUnsupportedCmd 只呈现命令名，默认 errorColor=#cc0000。
-                    // 这是合法局部拒绝，不附带 URL/子内容/交互，也不触发整式源文降级。
+                    // 合法局部拒绝只输出命令名的错误色文本。
                     TextStyle rejected = s.ordinaryTextStyle(c).withColor(0xffcc0000);
                     return s.glyph(
                             s.text.layout(
@@ -188,7 +189,7 @@ final class MathDecorations {
         return result;
     }
 
-    /** 局部颜色/字号共用派生规则，供顶层可见换行的透明作用域收集使用。 派生只消费当前节点，不布局 body，不缓存，不改变其他 family。 */
+    /** 从当前节点纯派生局部颜色与字号，供顶层可见换行的透明作用域收集使用。 */
     static MathLayoutContext scope(Session s, Node n, MathLayoutContext c) {
         switch (n.kind) {
             case COLOR:
@@ -271,7 +272,7 @@ final class MathDecorations {
                 w = b.width + 2 * inset,
                 top = -b.ascent - inset,
                 h = b.ascent + b.descent + 2 * inset;
-        // 背景先于 body/Item；边框明确四个 RECT，不能把整个盒涂成边框色。
+        // 背景先绘制，随后组合 body/Item，边框用四个 RECT 覆盖各边。
         if (spec.background != null)
             out.rule(0, top, w, h, color(spec.background, c, n), n.start, n.end);
         out.add(b, inset, 0);
@@ -319,7 +320,7 @@ final class MathDecorations {
     private static MathBox pmb(Session s, Node n, MathLayoutContext c) {
         MathBox b = body(s, n, c), out = new MathBox();
         float delta = .02f * c.em;
-        // 唯一显式 poor-man-bold：仅 TEXT 增添字形层，EMBED/背景/边框不复制。
+        // 显式 poor-man-bold 仅为 TEXT 添加字形层，其余条目沿用原绘制。
         out.width = b.width;
         out.ascent = b.ascent;
         out.descent = b.descent;
@@ -447,7 +448,7 @@ final class MathDecorations {
             // 明确请求最小真实完整 MATH glyph，不拉伸轮廓，不是字体失败后的替代。
             mark = s.glyph(s.font(c, n).stretch(cp, 0, MathAxis.HORIZONTAL), n, c, true);
             float ba = attachment(s, n, c, b), ma = attachment(s, n, c, mark);
-            // 单字形必须使用实际记录；复合盒按整体中心定位，不声称有 MATH 附件点。
+            // 单字形读取真实 MATH 附件点，复合盒使用整体中心。
             float x = ba - ma;
             return attach(s, n, c, b, mark, x, spec.below, false);
         }
@@ -593,7 +594,7 @@ final class MathDecorations {
             line(out, n, c, 0, edge, w / 2, center, t);
             line(out, n, c, w / 2, center, w, edge, t);
         } else {
-            // 一整周期波浪以宽度参数求几何，细分段只离散数学曲线，不接触 glyph 轮廓。
+            // 按宽度构造整周期数学波浪，细分段离散该曲线。
             float px = 0, py = -height / 2;
             for (int i = 1; i <= 32; i++) {
                 float x = w * i / 32f,
@@ -796,7 +797,7 @@ final class MathDecorations {
         if (harp <= 0) line(b, n, c, tail, y + h, x, y, t);
     }
 
-    /** 通用 LINE 是端点加法向半宽；真实横向墨迹也进入盒尺寸，避免宽饰件溢出原点。 不读取 live glyph/native，也不把路径包络包装为字体字形事实。 */
+    /** 按 LINE 端点与法向半宽求路径包络，将横向覆盖纳入装饰盒尺寸。 */
     private static MathBox pathEnvelope(MathBox b) {
         float left = 0, right = b.width;
         for (MathLayout.Entry e : b.entries)
@@ -860,7 +861,7 @@ final class MathDecorations {
                                 + hex.charAt(2);
             if (hex.length() == 6) return 0xff000000 | Integer.parseInt(hex, 16);
         }
-        // CSS 具名颜色是解析值，不依赖宿主/AWT 颜色表。
+        // 使用解析层固定的 CSS 具名颜色值。
         String[] names = {
             "black",
             "silver",

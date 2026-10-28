@@ -1,6 +1,6 @@
 package club.heiqi.uilib.ui.scene.input;
 
-/** 中性键只解释为既有编辑或导航意图；宿主不再各自复制编辑语义表。 */
+/** 将中性键统一解释为编辑或导航意图。 */
 public final class SceneKeyInterpreter {
     private SceneKeyInterpreter() {}
     public static SceneEditEvent edit(SceneKeyEvent event) {
@@ -48,7 +48,7 @@ public final class SceneKeyInterpreter {
         return command == null ? null : SceneEditEvent.command(command, event.shift, event.clipboard);
     }
 
-    /** 设备提供中性方向，沿相同编辑语义；不建立键盘物理段或伪造宿主事实。 */
+    /** 将设备中性方向投影为编辑键意图，物理按压仍由宿主入口维护。 */
     public static SceneKeyEvent direction(SceneNavigationEvent direction) {
         switch (direction) {
             case LEFT: return new SceneKeyEvent(SceneKey.LEFT, false, false, false, false, false, null);

@@ -41,7 +41,7 @@ final class MessageRow {
         ReadableSignal<Boolean> checked = () -> model.checked.get().contains(item.get().id);
         ReadableSignal<SceneTheme> contentTheme = () -> theme.get().withTextStyle(theme.get().textStyle
                 .withFontStyle(item.get().value.get().read ? FontStyle.NORMAL : new FontStyle(700, FontStyle.Posture.NORMAL)));
-        // 整行关联装饰即时反映业务与叶目标，不能额外安装未消费的颜色轨迹。
+        // 整行装饰直接读取当前业务与叶目标反馈。
         SceneNode row = MailStyle.surface(theme, () -> checked.get() ? palette.get().selected
                 : item.get().value.get().read ? palette.get().read : palette.get().unread, 0, false)
                 .axis(SceneNode.Axis.ROW).size(Size.fill(1), Size.natural());
@@ -91,7 +91,7 @@ final class MessageRow {
                 () -> "标为" + (item.get().value.get().read ? "未读：" : "已读：") + item.get().value.get().subject,
                 () -> MailStyle.buttonTheme(theme.get().withTextStyle(theme.get().textStyle.withColor(SceneMotion.alpha(palette.get().mutedText, actionOpacity.get()))),false), () -> model.setRead(item.get().id,!item.get().value.get().read));
         read.bind(NodeBinding.value(theme,(n,t) -> n.size(Size.fixed(MailStyle.px(t,32)),Size.fixed(MailStyle.px(t,32)))));
-        // 透明度属于可追踪的呈现来源，不能在父级paint中改字段让子控件下次碰巧读到。
+        // 透明度通过可追踪呈现来源发布，子控件沿正式依赖失效。
         read.bind((runtime, node, owner) -> NodeBinding.motion(
                 () -> hovered.get() || keyboardFocus(runtime, row) ? 1f : 0f,
                 () -> keyboardFocus(runtime, row) ? MotionSpec.instant() : MailMotion.STANDARD,
@@ -123,7 +123,7 @@ final class MessageRow {
             return width;
         }
     }
-    /** 当前展示集合同时测常规/未读字重，状态切换不使时间列边界漂移。 */
+    /** 从当前展示集合同时测量常规与未读字重，取共同时间列宽。 */
     private static final class TimeColumn implements SceneControl {
         private final TimeWidths widths;
         TimeColumn(TimeWidths widths){this.widths=widths;}
@@ -140,7 +140,7 @@ final class MessageRow {
         }
     }
 
-    /** 主题先取得自然宽度，余量才给摘要；只测量直属子项，不读回布局或截取原字符串。 */
+    /** 按直属子项度量先分配主题自然宽，再将余量交给摘要。 */
     private static final class SubjectLine implements SceneControl {
         @Override public TextLayout layoutText(SceneNode n, SceneTextMeasurer text, int width) { return text.layout("",n.style(),width); }
         @Override public MeasuredSize measure(SceneNode n, Constraints c, SceneTextMeasurer text) { return new MeasuredSize(0,0); }

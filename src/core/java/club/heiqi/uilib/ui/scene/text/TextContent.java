@@ -5,7 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 显式内容声明。实例身份也是链接手势的声明代际，不能以源码相等替代。 输入模式及失败合同见 specs/content/2026-10-07-uilib-text-content-spec.md 第 0、2 节。 */
+/** 显式内容声明，实例身份标识链接手势的声明代际。
+ * 输入模式与失败合同见 specs/content/2026-10-07-uilib-text-content-spec.md 第 0、2 节。 */
 public final class TextContent {
     public enum Mode {
         PLAIN,
@@ -57,7 +58,7 @@ public final class TextContent {
         return new TextContent(mode, input.text, input);
     }
 
-    /** typed 声明使用 PLAIN 源码语法，属性载荷不新增宿主格式模式。 */
+    /** 将 typed 属性文本作为 PLAIN 内容声明接入。 */
     public static TextContent styled(StyledText value) {
         return paragraph(
                 new ParagraphContent(
@@ -66,7 +67,7 @@ public final class TextContent {
                         Collections.<InlineContent>emptyList()));
     }
 
-    /** 完整 typed 声明；来源映射由 value.text.input 显式提供，不经 DSL 转换。 */
+    /** 直接接入完整 typed 段落，来源由 value.text.input 提供。 */
     public static TextContent paragraph(ParagraphContent value) {
         Objects.requireNonNull(value, "value");
         StyledText text = value.text;
@@ -134,7 +135,7 @@ public final class TextContent {
             this.serialized = serialized;
         }
 
-        /** 文本样式派生不重建语义声明；范围来源仍由 text.input 映射。 */
+        /** 样式派生复用原语义声明，范围由 text.input 映射。 */
         public List<TextSemanticSpan> semantics() {
             return semantics;
         }
@@ -214,7 +215,7 @@ public final class TextContent {
         return content;
     }
 
-    /** 稳定声明身份随源码替换；主题及宽度变化不重新解析或重建子内容。 */
+    /** 内容声明随源码换代，主题与宽度变化复用已解析子内容。 */
     public List<TextSemanticSpan> semantics() {
         return content().paragraph.semantics();
     }

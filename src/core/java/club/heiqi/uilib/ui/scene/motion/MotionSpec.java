@@ -3,7 +3,7 @@ package club.heiqi.uilib.ui.scene.motion;
 import java.util.Objects;
 import java.util.function.DoubleUnaryOperator;
 
-/** 目标跟随的不可变策略。弹簧以响应周期（秒）和阻尼比表达，不伪装成 easing。 */
+/** 不可变目标跟随策略，弹簧以响应周期（秒）与阻尼比表达。 */
 public final class MotionSpec {
     public enum Kind { INSTANT, TWEEN, SPRING, DECAY }
     public static final DoubleUnaryOperator LINEAR = value -> value;

@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.control.ThemeMode;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
-/** 邮箱视觉角色由明确的模式派生，不从文字颜色猜测主题。 */
+/** 按明确主题模式派生邮箱视觉角色。 */
 final class MailPalette {
     final int canvas, surface, read, unread, search, navigation, receive, subtleIcon, selected, selectedHover, selectedPressed, hover, pressed, outline, mutedText, text, accent;
     final SceneTheme theme;

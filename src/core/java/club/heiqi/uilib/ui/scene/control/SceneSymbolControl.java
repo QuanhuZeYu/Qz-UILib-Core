@@ -20,7 +20,7 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import java.util.Collections;
 import java.util.Objects;
 
-/** 名称、提示、命中与向量标记共用正式几何；不建立内部输入所有权。 */
+/** 名称、提示、命中与向量标记共用动作根及正式几何。 */
 abstract class SceneSymbolControl implements SceneControl {
     final ReadableSignal<SceneTheme> theme;
     private final boolean showLabel;
@@ -67,7 +67,7 @@ abstract class SceneSymbolControl implements SceneControl {
     /** 子类只装配自己的呈现目标；真实状态、语义和意图仍读原来源。 */
     void installPresentation(SceneNode node) { }
 
-    /** 装饰不额外朗读；正式符号按钮沿完整名称和原click动作。 */
+    /** 装饰语义归所属动作根，符号按钮沿完整名称与 click 动作。 */
     @Override public SceneSemantics semantics(SceneNode node) {
         if (node.clickAction() == null) return SceneSemantics.builder(SceneSemantics.Role.IMAGE).excluded(true).actions().build();
         SceneSemantics.Builder result = SceneSemantics.builder(SceneSemantics.Role.BUTTON).name(node.text());

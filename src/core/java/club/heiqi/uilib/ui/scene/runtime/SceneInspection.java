@@ -16,7 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 只汇总原失效与执行点；默认关闭，无日志树、历史节点或另一路输入。 */
+/** 按需汇总现有失效与执行点的有界计数，默认关闭。 */
 final class SceneInspection {
     private final SceneRuntime runtime;
     private Observation source;

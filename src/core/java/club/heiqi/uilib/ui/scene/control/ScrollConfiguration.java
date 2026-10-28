@@ -32,7 +32,7 @@ public final class ScrollConfiguration {
         domain.effect(scope, () -> published = session.get(KEY));
     }
 
-    /** 跨域通知归页面Owner；迟到旧批次和关闭后通知不覆盖当前值。 */
+    /** 页面 Owner 持有跨域订阅，递交时按通知代际与页面有效性核验。 */
     public ReadableSignal<Integer> bind(ReactiveDomain target, Owner owner) {
         Objects.requireNonNull(target, "target").checkWrite();
         Objects.requireNonNull(owner, "owner");

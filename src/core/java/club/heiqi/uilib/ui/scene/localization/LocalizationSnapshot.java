@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** 一次已完成加载的不可变语言资料；表和显式格式 locale 共同捕获。
- * 格式合同采用 Java8 Formatter，数值模板原样保留，求值不读取全局环境。 */
+ * 按显式 locale 使用 Java8 Formatter，数值模板原样保留。 */
 public final class LocalizationSnapshot {
     private final String language;
     private final Map<String, String> translations;

@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 真实Session验证普通子树变换、局部旧控件输入、精确clip及原所有权。 */
+/** 通过真实 Session 核验子树变换、局部控件输入、精确 clip 与原所有权。 */
 public final class TransformSceneScenario extends TestApplication {
     protected void runTests() throws Exception {
         scenario("旋转按钮与字段沿旧caret入口且计划只变换一次", this::buttonAndField);

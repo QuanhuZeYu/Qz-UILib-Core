@@ -6,7 +6,7 @@ import club.heiqi.uilib.ui.settings.SettingsConfiguration;
 @FunctionalInterface
 public interface GalleryEnvironment {
     SettingsConfiguration settings();
-    /** 未装配媒体的旧入口仍可浏览同一目录。 */
+    /** 按需装配媒体服务，目录浏览沿共同入口。 */
     default club.heiqi.uilib.ui.media.MediaService media() { return null; }
     default club.heiqi.uilib.ui.media.MediaSource resolveSource(String text) {
         return club.heiqi.uilib.ui.media.MediaSource.of(java.net.URI.create(text.trim()));

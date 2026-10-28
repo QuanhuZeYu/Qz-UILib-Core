@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 
 /** 正式页面运行环境；软件/GPU/游戏共用装配、事件结算与结束。
- * 初始化是独立域操作，构造末尾Effect失败也归同一清理边界；不依赖UI帧物化状态。 */
+ * 初始化在独立域操作中完成，构造末尾 Effect 失败也进入同一清理边界。 */
 public final class ScenePageSession implements AutoCloseable {
     private final ReactiveDomain domain;
     private volatile boolean ended;
@@ -63,7 +63,7 @@ public final class ScenePageSession implements AutoCloseable {
         return ended;
     }
 
-    /** 供正式扩展与底层合同验收观察同一权威；普通页面无需装配或关闭它们。 */
+    /** 扩展读取本页运行时；装配与释放由会话统一负责。 */
     public SceneRuntime runtime() {
         if (runtime == null) throw new IllegalStateException("页面尚未初始化");
         return runtime;
@@ -86,7 +86,7 @@ public final class ScenePageSession implements AutoCloseable {
         else action.run();
     }
 
-    /** 排入原输入序列；完成表示当前目标动作已处理，不代表业务提交已接受。 */
+    /** 将动作排入原输入序列；结果报告目标处理情况，业务接受结果由原业务状态表达。 */
     public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result> semantic(
             club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request) { return enqueueSemantic(request,null); }
     public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest.Result> semantic(
@@ -116,7 +116,7 @@ public final class ScenePageSession implements AutoCloseable {
         if(failure==null){if(first instanceof Error)throw (Error)first;if(first instanceof RuntimeException)throw (RuntimeException)first;}
     }
 
-    /** 沿原准备边界读取当前一致事实；稳定请求不推进时间或重放。 */
+    /** 沿原准备边界读取一致快照，稳定请求复用当前时间与呈现。 */
     public java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> inspect() {
         domain.checkDispatch();
         java.util.concurrent.CompletableFuture<club.heiqi.uilib.ui.scene.inspection.SceneInspectionSnapshot> result = new java.util.concurrent.CompletableFuture<>();
@@ -156,7 +156,7 @@ public final class ScenePageSession implements AutoCloseable {
 
     public void key(club.heiqi.uilib.ui.scene.input.SceneKeyEvent event) { key(event, null); }
 
-    /** 中性键和文本共用采集顺序；宿主继续动作不能越过页面结束或输入失败。 */
+    /** 中性键和文本共用采集顺序；宿主继续动作在当前页面有效且输入成功后执行。 */
     public void key(club.heiqi.uilib.ui.scene.input.SceneKeyEvent event, Runnable fallback) {
         Objects.requireNonNull(event, "event");
         dispatch(() -> pipeline().key(event, fallback == null ? null : () -> { if (!ended) fallback.run(); }));
@@ -180,7 +180,7 @@ public final class ScenePageSession implements AutoCloseable {
                                         }));
     }
 
-    /** 标准宿主输入回退在同一次事件中结算，避免后续文字投递旧焦点。 */
+    /** 标准宿主输入回退在当前事件中结算，使后续文字使用更新后的焦点。 */
     public void editOrNavigate(
             club.heiqi.uilib.ui.scene.input.SceneEditEvent event, SceneNavigationEvent fallback) {
         Objects.requireNonNull(event, "event");
@@ -199,7 +199,7 @@ public final class ScenePageSession implements AutoCloseable {
                                         }));
     }
 
-    /** 宿主绘制/resize均从同一入口驱动；已结束的迟到绘制不访问资源。 */
+    /** 宿主绘制与 resize 共用此入口，仅在会话有效时递交。 */
     public void frame() {
         dispatch(() -> pipeline().frame());
     }
@@ -224,7 +224,7 @@ public final class ScenePageSession implements AutoCloseable {
         } catch (RuntimeException | Error next) {
             if (failure == null) failure = next; else if (next != failure) failure.addSuppressed(next);
         }
-        // 即使取消/Effect失败也尝试其余释放；保留最先失败，不在Error后留下页面资源。
+        // 取消或 Effect 失败后仍尝试其余释放，首错保留，清理错误追加为 suppressed。
         final Throwable first = failure;
         try {
             domain.deferCleanup(this::release);
@@ -238,7 +238,7 @@ public final class ScenePageSession implements AutoCloseable {
     }
 
     private void retireInput() {
-        // 先取走以防退休动作重入close；退休后旧session不再通过回调持有宿主与原生输入。
+        // 调用前取走退休回调，使重入 close 只退休一次并释放对宿主输入的引用。
         Consumer<ScenePageSession> retiring = retireInput;
         retireInput = null;
         if (retiring != null) retiring.accept(this);

@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.input;
 
 import java.util.Objects;
 
-/** 宿主物理门接受的命名键事实；文本仍经编辑入口递交，不从按键合成字符。 */
+/** 宿主物理门接受的命名键事实，文本由独立编辑入口递交。 */
 public final class SceneKeyEvent {
     public enum Phase { DOWN, UP }
     public final SceneKey key;

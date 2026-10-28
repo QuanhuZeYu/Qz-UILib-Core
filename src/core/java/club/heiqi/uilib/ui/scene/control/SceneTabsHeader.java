@@ -51,7 +51,7 @@ final class SceneTabsHeader implements SceneControl {
                         ? theme.get().spatialMotion : options.get().indicatorMotion;
         SceneNode graphic = new SceneNode().size(Size.fill(1), Size.fill(1))
                 .control(new Indicator(colors, radius)).bind(SceneMotion.layoutSize(motion));
-        // 位置槽不声明尺寸轨迹；宽度在其子图形内变化，避免尺寸参与排版时抵消底片的位移轨迹。
+        // 位置槽沿正式分配，尺寸变化放在子图形内，以保留底片位移轨迹。
         SceneNode slot = new SceneNode().size(Size.natural(), Size.natural()).control(new IndicatorSlot(graphic)).add(graphic)
                 .bind(NodeBinding.semantics(() -> SceneSemantics.builder().excluded(true).build()));
         return new SceneNode().axis(SceneNode.Axis.ROW).size(Size.natural(), Size.natural())

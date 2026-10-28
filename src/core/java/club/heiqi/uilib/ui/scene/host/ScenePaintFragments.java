@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 本次正式几何的局部值片段；只复用绘制结果，不保存另一份布局或推进控件。 */
+/** 缓存本批正式几何对应的局部绘制片段。 */
 final class ScenePaintFragments {
     static final class Fragment {
         PaintPlan content, childOverlay, after, overlay, tooltip;
@@ -68,8 +68,8 @@ final class ScenePaintFragments {
         SceneGeometryView local = world.asControl(node);
         SceneGeometryView.Entry entry = world.get(node);
         SceneGeometryView.Entry own = entry.projected(entry.transform, ownClip(entry)).in(entry.inverse, true);
-        // 控件只捕获原始局部画面；外层clip在组合主绘/退场时施加，不能烘焙进片段。
-        // ordered/world仍是当批完整输入事实，不能用备用或内在裁剪重判hover。
+        // 捕获原始局部画面，组合主绘与退场时再施加外层 clip。
+        // ordered/world 保留当批完整输入事实，hover 沿用原投影。
         SceneGeometryView result = new SceneGeometryView() {
             public Entry get(SceneNode candidate) { return candidate == node ? own : local.get(candidate); }
             public SceneGeometryView world() { return world; }

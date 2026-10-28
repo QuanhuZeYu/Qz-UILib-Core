@@ -21,7 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 正式行视图与共同几何检验数据表头体对齐，不复制列分配算法。 */
+/** 通过正式行视图与共同几何核验表头、表体对齐。 */
 public final class DataTableScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("固定表头与有限行共享列宽及横向位置", this::alignment);

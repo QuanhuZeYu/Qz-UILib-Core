@@ -15,7 +15,7 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.TreeSet;
 
-/** 控制可视化与 Unicode 分段；所有范围回到 TextInput，显示串不成为新的 source。 */
+/** 可视化控制符并执行 Unicode 分段，所有范围映射回 TextInput。 */
 final class UnicodeText {
     final TextInput input;
     final String display;
@@ -86,7 +86,7 @@ final class UnicodeText {
     List<Unit> units(int start, int end, UnicodeGraphemes.Profile profile) {
         EmojiData emojiData = profile.emoji;
         String text = display.substring(start, end);
-        // 在逻辑源文分段，再投影到显示坐标；可见控制标记不能与后继 Extend 误合。
+        // 先按逻辑源文分段，再独立投影控制标记与后续字素。
         TreeSet<Integer> logicalBoundaries = new TreeSet<>();
         for (int b : profile.boundaries(input.text.substring(logical[start], logical[end])))
             logicalBoundaries.add(logical[start] + b);
@@ -95,7 +95,7 @@ final class UnicodeText {
             if ((d == start || logical[d] != logical[d - 1])
                     && logicalBoundaries.contains(logical[d])) boundaries.add(d - start);
 
-        // 对象边界不与后继 Extend/ZWJ 合成文字字素；普通文字仍使用共同 Unicode 规则。
+        // 对象占独立字素边界，普通文字沿共同 Unicode 规则分段。
         for (int d = start; d < end; d++)
             if (boxes.containsKey(logical[d])) {
                 boundaries.add(d - start);
@@ -119,7 +119,7 @@ final class UnicodeText {
                 vs15 |= cp == 0xfe0e;
                 vs16 |= cp == 0xfe0f;
             }
-            // 独立标记的 inherited script 沿前一实际 script；普通空格/标点不变成连接范围。
+            // 独立 inherited 标记沿前一实际 script，空格与标点保留原范围边界。
             int first = text.codePointAt(a);
             if (script == UScript.COMMON
                     && (UCharacter.getType(first) == UCharacter.NON_SPACING_MARK

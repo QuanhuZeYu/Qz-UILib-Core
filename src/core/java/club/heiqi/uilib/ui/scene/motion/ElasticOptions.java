@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.motion;
 
 import java.util.Objects;
 
-/** 显式弹性边界：合法值不越界，越界距离仅产生逐渐加重的阻力和有限呈现形变。 */
+/** 合法值保持范围内，越界距离投影为逐渐加重的阻力与有限呈现形变。 */
 public final class ElasticOptions {
     private static final double RESISTANCE = .55;
     public final double maximumDisplacement;
@@ -16,14 +16,14 @@ public final class ElasticOptions {
         this.maximumDisplacement = maximumDisplacement;
     }
 
-    /** 输入为距最近合法边缘的有符号距离；反向输入直接作用于当前指针，不积存越界量。 */
+    /** 将距最近合法边缘的有符号距离映射为阻力位移，反向输入从当前指针直接换算。 */
     public double displacement(double overshoot, MotionPolicy policy) {
         if (!Double.isFinite(overshoot)) throw new IllegalArgumentException("弹性输入必须有限");
         if (policy == MotionPolicy.OFF) return 0;
         double limit = limit(policy);
         if (limit == 0) return 0;
         double input = Math.abs(overshoot);
-        // 分别按较小的一侧缩放，避免零点相消、比例溢出及大数相乘。
+        // 分别按较小一侧缩放，在零点与大比例下保持数值精度。
         double amount = input <= limit ? input / (1 / RESISTANCE + input / limit)
                 : limit / (1 + limit / input / RESISTANCE);
         return Math.copySign(amount, overshoot);

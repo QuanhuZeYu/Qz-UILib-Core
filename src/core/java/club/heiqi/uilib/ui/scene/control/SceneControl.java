@@ -14,9 +14,9 @@ import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import java.util.Collections;
 import java.util.List;
 
-/** 自定义控件声明内容与区域；测量/排列/绘制不能写业务状态或回写布局。 */
+/** 声明控件内容与区域；测量、排列和绘制使用框架只读阶段，业务写入归输入与命令阶段。 */
 public interface SceneControl {
-    /** 现有有限集合的只读计数；-1表示不提供逻辑集合。检查不得为此实例化内容。 */
+    /** 读取现有有限集合计数；-1 表示普通内容，检查复用当前实例。 */
     default int inspectionLogicalItemCount(SceneNode node) { return -1; }
     default int inspectionInstantiatedItemCount(SceneNode node) { return -1; }
     /** 实际图形可声明自己的新命中轮廓；null继续普通分配盒。由共同几何按本批尺寸和像素精度解析。 */
@@ -28,7 +28,7 @@ public interface SceneControl {
     /** 定向语义动作只交给已解析的当前控件；激活/焦点由原runtime统一处理。 */
     default boolean semanticAction(SceneNode node, club.heiqi.uilib.ui.scene.semantics.SceneSemanticRequest request) { return false; }
 
-    /** 按需复合内容的逻辑遍历；null保留普通声明树前序，不建立第二焦点。 */
+    /** 为按需复合内容提供逻辑遍历，null 使用普通声明树前序。 */
     default club.heiqi.uilib.ui.scene.input.SceneFocusTraversal focusTraversal(SceneNode node) { return null; }
     /** null 表示普通流；所属层策略不得返回 null。 */
     default SceneLayer.Policy layerPolicy(SceneNode node) { return null; }
@@ -42,23 +42,23 @@ public interface SceneControl {
         return placeLayer(node, source.box, viewport, size);
     }
 
-    /** 主键释放前可更新位置意图；仅当前有效 owner 收到，框架结算变化并重新准备正式几何后才派 UP。
-     * 默认无操作，不合成 MOVE；此阶段不发布放下或激活动作。 */
+    /** 当前有效 owner 在主键释放前更新位置意图，框架结算并准备新几何后再派 UP。
+     * 默认保留原位置；放下与激活由随后 UP 处理。 */
     default void preparePointerRelease(SceneNode node,
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event, SceneGeometryView geometry) {}
 
-    /** 只读输入时间需求；MAX 表示静止。实际读取的 Signal 随挂载订阅，不逐帧扫描控件树。 */
+    /** 声明只读输入时间需求，MAX 表示静止；挂载订阅跟踪实际读取的 Signal。 */
     default long nextInputNanos(SceneNode node) { return Long.MAX_VALUE; }
 
-    /** 有效几何后、绘制前每宿主批次至多一次；可发布交互呈现状态，不在 measure/paint 推进。 */
+    /** 在有效几何后、绘制前推进交互呈现，每宿主批次至多一次。 */
     default void inputFrame(SceneNode node, SceneGeometryView geometry, long now) {}
 
     /** 本批活动输入使共同几何改变后同步交互呈现；可随重排结算多次。
-     * 与 inputFrame 分离：只消费新几何，不推进时间、激活等待或再次滚动。 */
+     * 仅同步新几何，时间推进、激活等待与滚动由 inputFrame 负责。 */
     default void inputGeometryChanged(SceneNode node, SceneGeometryView geometry) {}
 
     /** 本批活动输入或后续 Effect 失败时，只结束本批实际参与控件的临时输入状态。
-     * 与指针捕获丢失分别通知，不能补发业务提交或重复 captureLost。 */
+     * 此处清理活动输入临态，指针捕获由 captureLost 单独清理，业务提交仅归正常结束路径。 */
     default void inputFrameCancelled(SceneNode node) {}
 
     /** 捕获起手控件可明确把本段延续到自己打开的所属模态；null保持普通当前范围资格。 */
@@ -72,7 +72,7 @@ public interface SceneControl {
     /** 当前范围的显式NEXT/PREVIOUS可被消费；默认与返回选焦不调用，旧范围保持原导航。 */
     default boolean navigateScope(SceneNode node, boolean backward) { return false; }
 
-    /** 显式子 activator 的键盘委派，不建立通用编辑冒泡。 */
+    /** 将键盘命令委派给明确声明的子 activator。 */
     default boolean editActivator(SceneNode node, SceneNode focused,
             club.heiqi.uilib.ui.scene.input.SceneEditEvent event) { return false; }
     /** 声明测量使用的响应来源；框架在挂载期订阅，变更重新测量。 */
@@ -85,28 +85,28 @@ public interface SceneControl {
         return Collections.emptyList();
     }
 
-    /** 仅绘制状态变化，不使内容度量或几何失效。 */
+    /** 声明仅影响绘制的来源，内容度量与几何继续复用。 */
     default List<ReadableSignal<?>> paintDependencies(SceneNode node) {
         return Collections.emptyList();
     }
 
     /** 只读的下一次绘制时刻（System.nanoTime同一时基）；有限过渡结束返回MAX_VALUE。
-     * 不请求测量/布局，不创建线程或在绘制阶段写业务状态；未声明的控件继续复用静态计划。 */
+     * 绘制阶段只读呈现，时刻到达仅触发绘制失效；默认复用静态计划。 */
     default long nextPaintNanos(SceneNode node) { return Long.MAX_VALUE; }
 
-    /** 唯一 scene 布局的文本入口，属性内容不另建排版树。 */
+    /** 将控件文本请求交给共同字体服务。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(
             SceneNode node, SceneTextMeasurer text, int width) {
         return text.layout(node.text(), node.style(), width, node.textPolicy());
     }
 
-    /** 复合内容显式接收同批直属子测量能力；文字服务本身不持scene节点。 */
+    /** 为复合文本提供同批直属子测量，文字服务继续处理纯文字请求。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout layoutText(
             SceneNode node, SceneTextMeasurer text, int width, SceneChildMeasurer children) {
         return layoutText(node, text, width);
     }
 
-    /** 内部目标身份与资格；几何仅来自当前 Entry，输入阶段不解析或重排。 */
+    /** 基于当前 Entry 查询内部目标身份，输入阶段消费已准备几何。 */
     default Object pointerTarget(SceneNode node, SceneGeometryView geometry, int x, int y) {
         return null;
     }
@@ -132,23 +132,23 @@ public interface SceneControl {
 
     /**
      * allocated 是本次分配的外层盒，包含 node.padding；子盒位置相对此盒原点。
-     * children 只测量直属逻辑子项，复用本批布局事实，不能保留到后续批次。
-     * 普通容器在这里按实际正文空间测量、排列，不借文字呈现准备结果。
+     * children 只测量直属逻辑子项，限本次调用使用。
+     * 普通容器在实际正文空间中完成测量与排列。
      */
     ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children);
 
     /** 框架同批父分配与根视口，供明确的空间约束使用；既有控件沿原排列入口。
-     * 这些值仅在本次调用有效，不能成为跨批布局或输入权威。 */
+     * 分配、视口与 children 均限本次调用使用。 */
     default ChildPlacements arrange(SceneNode node, LayoutBox allocated, SceneChildMeasurer children,
             LayoutBox parentAllocation, LayoutBox viewport) { return arrange(node, allocated, children); }
 
     /** 本批分配盒原点处的只读呈现变换，与作者变换同序组合并进入共同几何。
-     * 不回写节点、尺寸或业务状态；动态来源沿 measure/arrangementDependencies 失效。 */
+     * 只读消费当前分配盒，动态来源沿 measure/arrangementDependencies 失效。 */
     default club.heiqi.uilib.ui.scene.geometry.SceneTransform presentationTransform(SceneNode node, LayoutBox allocated) {
         return club.heiqi.uilib.ui.scene.geometry.SceneTransform.IDENTITY;
     }
 
-    /** 内容受实际文字区域限制后的不可变定位；不回写文本或几何。 */
+    /** 将完整内容投影为实际文字区域内的不可变定位，原文本与几何保持。 */
     default club.heiqi.uilib.ui.scene.text.TextLayout presentText(
             SceneNode node,
             club.heiqi.uilib.ui.scene.text.TextLayout full,
@@ -185,12 +185,13 @@ public interface SceneControl {
             SceneTextMeasurer text,
             long metricsRevision) {}
 
-    /** 返回已挂载的直属逻辑占位子树。框架捕获同代paint，不创建挂载或修改hidden声明。 主输入几何仍依显隐事实；捕获计划仅作本次资源不可用时的呈现分支。 */
+    /** 返回已挂载的直属占位子树，框架沿当前挂载捕获同代 paint 作为资源备用分支。
+     * 主输入几何继续服从原显隐声明。 */
     default SceneNode paintFallbackChild(SceneNode node) {
         return null;
     }
 
-    /** fallbackPaint是框架沿同一布局/paint能力捕获的不可变子片段，不可回访活节点。 */
+    /** fallbackPaint 为同一布局与 paint 能力捕获的不可变子片段，绘制仅消费其中值载荷。 */
     default void paint(
             SceneNode node,
             SceneGeometryView geometry,
@@ -199,7 +200,7 @@ public interface SceneControl {
         paint(node, geometry, target);
     }
 
-    /** 唯一当前焦点接收编辑事件；返回消费，不处理宿主原生队列。 */
+    /** 当前焦点接收中性编辑事件，返回本次消费结果。 */
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event) {
         return false;
     }
@@ -208,7 +209,7 @@ public interface SceneControl {
     default boolean edit(SceneNode node, club.heiqi.uilib.ui.scene.input.SceneEditEvent event,
             SceneGeometryView geometry) { return edit(node, event); }
 
-    /** 原目标与既有激活器未消费命令后，所属复合行为可接续；默认不参与，不接管组字来源。 */
+    /** 原目标与 activator 让渡普通命令后，由所属复合行为接续；带来源组字仍交原联系。 */
     default boolean editFallback(SceneNode node, SceneNode focused, club.heiqi.uilib.ui.scene.input.SceneEditEvent event,
             SceneGeometryView geometry) { return false; }
 
@@ -225,7 +226,7 @@ public interface SceneControl {
      * 像素滚动、导航显露及范围计算不受影响，未消费事件仍由唯一路由交给祖先。 */
     default boolean scrollsWithWheel(SceneNode node) { return true; }
 
-    /** 内部内容视口参与正式滚轮命中，不要求外层布局盒成为滚动容器。 */
+    /** 声明内部内容视口参与滚轮命中，外层布局盒保留原容器语义。 */
     default boolean scrollableContent() {
         return false;
     }
@@ -233,7 +234,7 @@ public interface SceneControl {
     /** 专用内容公开的滚动轴；标准视口默认包含条，页面无需另加节点。 */
     default SceneScrollArea.Axes scrollbarAxes(SceneNode node) { return SceneScrollArea.Axes.NONE; }
 
-    /** 框架装饰在完整内容几何后定位，不参与宿主内容测量或范围。 */
+    /** 在完整内容几何后定位框架装饰，宿主测量与范围沿用原内容。 */
     default LayoutBox placeScrollDecoration(SceneNode node, SceneGeometryView geometry) { return null; }
 
     /** 专用内容视口的同批事实；缺省null由普通Node滚动适配。位置仍归控件。 */
@@ -243,7 +244,7 @@ public interface SceneControl {
     default int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels, SceneGeometryView geometry) { return 0; }
 
     /** 绝对像素请求在原所有者生效后的通知；估算内容可保留本次末端显露意图。
-     * 默认无操作，不改普通像素移动含义，不获取新的输入或位置所有权。 */
+     * 位置与输入仍由原所有者维护，默认保持原像素移动结果。 */
     default void scrollPositionRequested(SceneNode node, SceneNode.Axis axis, int requested, SceneScrollViewport.Snapshot previous) {}
 
     /** 代理滚动控件明确其实际视口，用于显式释放运动；输入所有权仍留原消费者。 */
@@ -255,7 +256,7 @@ public interface SceneControl {
         return scroll(node, event, geometry) ? SceneScrollResult.CHANGED : SceneScrollResult.IGNORED;
     }
 
-    /** 同一受控输入分发；消费后不同时滚动外层容器。 */
+    /** 在同一受控输入中处理滚轮，消费后结束向外层传播。 */
     default boolean scroll(
             SceneNode node,
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,
@@ -264,8 +265,8 @@ public interface SceneControl {
     }
 
     /**
-     * 主动Tab导航在查询几何前请求控件内部必要显露；只调整内部呈现，不请求编辑提交。
-     * 返回true时框架使排列失效并重排，再查询navigationRegion；缺省不改变内部视口。
+     * 主动 Tab 导航先调整控件内部显露，编辑提交由编辑合同处理。
+     * 返回 true 时框架重新排列后查询 navigationRegion；默认保留内部视口。
      */
     default boolean prepareNavigation(SceneNode node, SceneGeometryView geometry) {
         return false;
@@ -273,8 +274,8 @@ public interface SceneControl {
 
     /**
      * Tab显露的内部焦点/编辑区域，使用当前Entry对应的scene坐标；缺省null沿节点整盒。
-     * 仅在节点大于祖先视口的轴优先使用，查询不能重排、写状态或自行滚动祖先。
-     * 区域应表达已由控件内部视口协调的当前事实，不预先套祖先clip。
+     * 仅在节点大于祖先视口的轴优先使用，只读返回内部视口已协调的区域。
+     * 祖先裁剪与必要滚动由框架统一处理。
      */
     default LayoutBox navigationRegion(SceneNode node, SceneGeometryView geometry) {
         return null;
@@ -287,7 +288,7 @@ public interface SceneControl {
 
     /**
      * 唯一 router 取消原 owner 时的内部清理；目标可能已经隐藏、禁用或卸载。
-     * 不依赖几何，不激活、提交或执行业务 handler；正常 UP 仍由 pointer 处理。
+     * 按原联系独立于几何清理内部状态，业务激活与提交归各自正常输入路径。
      */
     default void captureLost(SceneNode node) {}
 
@@ -300,10 +301,10 @@ public interface SceneControl {
             club.heiqi.uilib.ui.scene.input.ScenePointerEvent event,
             SceneGeometryView geometry) {}
 
-    /** 正常焦点离开与失活原因分开；失活/关闭不得隐含提交。 */
+    /** 区分正常焦点离开与失活，提交策略仅在合法离开路径处理。 */
     default void focusChanged(SceneNode node, boolean focused, boolean eligible) {}
 
-    /** 无激活动作的控件可参与被动悬停，不建立 click/capture/focus。 */
+    /** 声明仅供被动提示使用的悬停资格。 */
     default boolean passiveHover() {
         return false;
     }
@@ -311,7 +312,7 @@ public interface SceneControl {
     /** 自动提示只声明当前事实；显式绑定优先，由页面协调统一触发与呈现。 */
     default SceneTooltip.Hint tooltip(SceneNode node,SceneGeometryView geometry){return null;}
 
-    /** 被动提示在内容末端绘制，不创建命中/布局节点。 */
+    /** 在内容末端输出被动提示绘制值。 */
     default void paintOverlay(
             SceneNode node,
             SceneGeometryView geometry,

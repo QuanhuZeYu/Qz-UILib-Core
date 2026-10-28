@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.control.SceneControl;
 import club.heiqi.uilib.ui.scene.input.ScenePointerEvent;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 
-/** 防住真实长列表绘制时每个文字都重新命中整页；不设置机器时间阈值。 */
+/** 以真实长列表绘制的命中次数核验共享 hover 投影。 */
 public final class HoverProjectionScenario extends TestApplication {
     @Override protected void runTests() throws Exception {
         scenario("重复读取、交互换代与移动", () -> {
@@ -41,7 +41,7 @@ public final class HoverProjectionScenario extends TestApplication {
                     require(session.runtime().pointerRouter().passiveHovered(view) == button[0], "passive与click投影串用");
                 }
                 require(queries[0] == once, "每个消费者重复扫描了整页");
-                // 相同几何也必须立即服从交互声明换代，不能只按几何身份缓存。
+                // 几何复用时仍核验当前交互修订。
             });
             domain.execute(() -> enabled[0].set(false)); session.frame();
             domain.execute(() -> {

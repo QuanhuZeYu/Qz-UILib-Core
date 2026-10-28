@@ -29,7 +29,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/** 呈现与挂载生命周期；业务状态不归属于运行时。 */
+/** 协调呈现与挂载生命周期，独立业务状态由其持有者管理。 */
 public final class SceneRuntime implements AutoCloseable {
     private static final class Mount {
         final Object token = new Object();
@@ -68,7 +68,7 @@ public final class SceneRuntime implements AutoCloseable {
     BindingActivation bindEntrance(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.motion.EntranceOptions> source, Owner owner) {
         return entrances.bind(node, source, owner);
     }
-    /** 共同几何与绘制消费的挂载入场层，不回写 SceneNode 的普通属性。 */
+    /** 挂载入场层独立保存呈现值，供共同几何与绘制组合。 */
     public club.heiqi.uilib.ui.scene.geometry.SceneTransform entranceTransform(SceneNode node) { return entrances.transform(node); }
     public float entranceOpacity(SceneNode node) { return entrances.opacity(node); }
     private final SceneScrollMotions scrollMotions = new SceneScrollMotions(this);
@@ -79,7 +79,7 @@ public final class SceneRuntime implements AutoCloseable {
     private SceneNode scrollMotionViewport(SceneNode node) { return node.control() == null ? node : domain.readOnly(() -> node.control().scrollMotionViewport(node)); }
     void endScrollMotionSequence(SceneNode node) { scrollMotions.endSequence(scrollMotionViewport(node)); }
     void cancelScrollMotion(SceneNode node) { cancelScrollPresentation(scrollMotionViewport(node)); }
-    /** 两类所属呈现均尝试取消，保留原失败为主异常；通知失败不能跳过旧滚动资源。 */
+    /** 逐项取消两类所属呈现，保留首错并继续释放滚动资源。 */
     private void cancelScrollPresentation(SceneNode viewport) {
         Throwable failure = null;
         try { if (viewport == null) scrollMotions.cancelAll(); else scrollMotions.cancel(viewport, true); }
@@ -118,7 +118,7 @@ public final class SceneRuntime implements AutoCloseable {
     private volatile int scrollStep = club.heiqi.uilib.ui.scene.control.ScrollConfiguration.KEY.defaultValue();
     private Owner scrollStepBinding;
 
-    /** 已发布的输入偏好可供只读几何快照消费者读取，不访问其他域或使布局失效。 */
+    /** 为只读几何消费者提供本域已发布的输入偏好。 */
     public int scrollStep() { return scrollStep; }
 
     public void scrollStep(ReadableSignal<Integer> source) {
@@ -141,7 +141,7 @@ public final class SceneRuntime implements AutoCloseable {
     private final Map<SceneNode, Map<Object, Object>> motionChannels = new IdentityHashMap<>();
 
     public ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> motionPolicy() { return motionPolicy; }
-    /** 来源归页面挂载域；宿主偏好通过同一声明接入，不查询平台 API。 */
+    /** 页面挂载域持有动效策略来源，宿主偏好通过同一声明接入。 */
     public void motionPolicy(ReadableSignal<club.heiqi.uilib.ui.scene.motion.MotionPolicy> source) {
         command(); Objects.requireNonNull(source, "动效限制来源");
         if (motionPolicySource != null) motionPolicySource.close();
@@ -156,7 +156,7 @@ public final class SceneRuntime implements AutoCloseable {
             throw new IllegalArgumentException("重复运动通道: node=" + node.id() + " channel=" + channel);
         return () -> { channels.remove(channel, driver); if (channels.isEmpty()) motionChannels.remove(node); };
     }
-    /** 框架扩展的有限轨迹仍使用页面唯一时钟，停止后不再参与帧推进。 */
+    /** 框架扩展轨迹使用页面统一时钟，停止时移出推进集合。 */
     public AutoCloseable animate(java.util.function.LongPredicate step) {
         domain.checkWrite();
         SceneTransitions.Step active = step::test;
@@ -220,10 +220,10 @@ public final class SceneRuntime implements AutoCloseable {
         tooltips=new SceneTooltipCoordinator(this);
     }
 
-    /** 宿主根可用空间的响应事实，不表示任意子节点的最终分配盒。 */
+    /** 发布宿主根可用空间，子节点最终分配盒由布局维护。 */
     public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportWidth() { return viewportWidth; }
     public club.heiqi.uilib.ui.reactive.ReadableSignal<Integer> viewportHeight() { return viewportHeight; }
-    /** 当前度量资源事实；缓存和按需内容可追踪，不触发平台初始化。 */
+    /** 发布当前度量资源修订，供缓存与按需内容追踪失效。 */
     public ReadableSignal<Long> metricsRevision() { return metricsGeneration::get; }
     public void prepareMetricsRevision(long revision) {
         command();
@@ -233,7 +233,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** 仅由宿主帧管线发布；声明结算前更新，不从只读布局回写。 */
+    /** 宿主帧管线在声明结算前发布根可用空间。 */
     public void prepareViewport(int width, int height) {
         checkAlive();
         domain.checkWrite();
@@ -245,7 +245,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     SceneTooltipCoordinator tooltips(){return tooltips;}
-    /** 正式几何与文本准备齐备后更新被动提示，绘制不推进状态。 */
+    /** 正式几何与文本齐备后准备被动提示，绘制消费已准备结果。 */
     public void prepareTooltips(SceneGeometryView geometry,club.heiqi.uilib.ui.scene.text.SceneTextMeasurer text,long metrics){tooltips.prepare(geometry,text,metrics);}
     public void paintTooltip(SceneNode source,club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder target){tooltips.paint(source,target);}
 
@@ -253,13 +253,13 @@ public final class SceneRuntime implements AutoCloseable {
         return domain;
     }
 
-    /** 迟到输入与宿主结果只读检查生命周期，不推进声明。 */
+    /** 供迟到输入与宿主结果只读检查运行时生命周期。 */
     public boolean alive() {
         domain.checkAccess();
         return !disposed;
     }
 
-    /** 同runtime的帧管线共享唯一pointer owner；不在宿主建立另一套手势权威。 */
+    /** 同一 runtime 的帧管线共用此指针路由器与手势 owner。 */
     public ScenePointerRouter pointerRouter() {
         domain.checkAccess();
         return pointerRouter;
@@ -271,7 +271,7 @@ public final class SceneRuntime implements AutoCloseable {
         return focusRouter;
     }
 
-    /** 焦点资格声明变化不改变几何，仍立即释放已经失活的焦点。 */
+    /** 焦点资格变化沿交互修订立即释放失活焦点，几何单独维护。 */
     public void invalidateInteraction() {
         domain.checkAccess();
         interactionRevision.set(++interactionClock);
@@ -349,7 +349,7 @@ public final class SceneRuntime implements AutoCloseable {
         return wholeMeasureRevision;
     }
 
-    /** 同节点卸载后重挂也不能复用上一次挂载的文字请求。 */
+    /** 文字请求归当前挂载代际，重挂时重新建立。 */
     public long nodeMeasureRevision(SceneNode node) {
         domain.checkAccess();
         Mount mount = mounts.get(node);
@@ -530,7 +530,7 @@ public final class SceneRuntime implements AutoCloseable {
     public BindingActivation bindDefaultSemantics(SceneNode node, ReadableSignal<club.heiqi.uilib.ui.scene.semantics.SceneSemantics> source) {
         domain.checkWrite(); return semantics.bind(node, source, true);
     }
-    /** 绘制只读正式语义准备的焦点目标；不会刷新语义或创建额外输入权威。 */
+    /** 绘制读取正式语义阶段已准备并核验挂载的焦点目标。 */
     public SceneNode semanticFocusTarget(SceneNode node) {
         domain.checkAccess(); return semantics.preparedFocusTarget(node);
     }
@@ -600,13 +600,13 @@ public final class SceneRuntime implements AutoCloseable {
     /** 与过渡和物理输入共享的帧采样时刻。 */
     public long inputNanos() { domain.checkAccess(); return transitions.now(); }
 
-    /** 宿主批次拥有的有限参与记录；成功批次随自身释放，不在 runtime 留存旧手势。 */
+    /** 宿主批次持有有限参与记录，批次结束时一并释放。 */
     public static final class InputFrame {
         private final List<MountHandle> participants = new ArrayList<>();
         private boolean cancelled;
     }
 
-    /** 唯一宿主批次推进活动输入；current/prepare 只结算，不在同批重复计时或滚动。 */
+    /** 宿主批次统一推进活动输入，current/prepare 复用该批时间与滚动结果。 */
     public void advanceInputFrame(SceneGeometryView geometry, long now, InputFrame frame) {
         command();
         if (inputSampled && now - inputNanos <= 0) return;
@@ -640,7 +640,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** 原失败边界只通知本批仍同挂载的参与者；错误清理不能把取消变成全局重置。 */
+    /** 在原失败边界取消本批仍同挂载的参与者。 */
     public void cancelInputFrame(InputFrame frame) {
         domain.checkWrite();
         focusRouter.cancelScopeExit();
@@ -666,7 +666,7 @@ public final class SceneRuntime implements AutoCloseable {
         preparePresentation(System.nanoTime());
     }
 
-    /** 帧协调传入本批唯一单调时刻；重复结算不重复推进有限呈现值。 */
+    /** 帧协调传入本批单调时刻，重复结算复用该时刻的有限呈现值。 */
     public void preparePresentation(long frameNanos) {
         command();
         mutation = true;
@@ -687,7 +687,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** 同批转移先于旧声明退出，不让订阅注册顺序决定条目生死。 */
+    /** 同批先完成转移，再结算原声明退出，条目生命周期按最终归属处理。 */
     private void settleBindingDeclarations() {
         while(!dirtyBindings.isEmpty() || scrollDecorations.pending()) {
             List<SceneNode> batch=new ArrayList<>(dirtyBindings);
@@ -772,7 +772,7 @@ public final class SceneRuntime implements AutoCloseable {
 
     void destroy(SceneNode node, Object token) {
         // 核心规格第 5 节：有效的永久删除即使释放失败也必须终止子树。
-        // 先核验句柄，旧句柄不能借 finally 销毁后来重新挂载的同一实例。
+        // 先核验原挂载句柄，再进入永久删除与清理边界。
         requireMount(node, token);
         Throwable failure = null;
         try {
@@ -795,7 +795,7 @@ public final class SceneRuntime implements AutoCloseable {
         node.frameworkDestroy(this);
     }
 
-    /** 状态驱动的同页连续移动，不重建绑定或挂载身份。 */
+    /** 状态驱动同页移动，延续原绑定与挂载身份。 */
     public void relocate(SceneNode node, SceneNode next) {
         checkMutation();
         Mount mount = mounts.get(node);
@@ -820,7 +820,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (formerParent != null && next != null) invalidate(next);
     }
 
-    /** 声明子序列更新；保留节点不卸载，移除节点结束挂载，新增节点激活当前来源。 */
+    /** 更新声明子序列：延续保留节点，结束移除节点挂载，激活新增节点的当前来源。 */
     public void reconcile(SceneNode parent, List<SceneNode> declared) {
         reconcile(parent, declared, null);
     }
@@ -1000,7 +1000,7 @@ public final class SceneRuntime implements AutoCloseable {
         return layersDeclared;
     }
 
-    /** 方向游标只读取已完成排列的当前代几何，不以挂载或旧帧当作准备完成。 */
+    /** 为方向游标提供排列完成且修订匹配的当前几何。 */
     SceneGeometryView navigationGeometry() {
         return inputGeometryReady && inputGeometryRevision == geometryRevision ? inputGeometry : null;
     }
@@ -1129,7 +1129,7 @@ public final class SceneRuntime implements AutoCloseable {
         return shortcuts.bind(anchor, scope, entries);
     }
 
-    /** Space按压的呈现事实；与指针共同消费，不拥有第二焦点或原生键状态。 */
+    /** 提供 Space 按压呈现，与指针按压共同驱动控件外观。 */
     public ReadableSignal<SceneNode> keyboardPressedTarget() { return keyboardPressed::get; }
     public boolean pressed(SceneNode node) {
         domain.checkAccess(); return pointerRouter.pressed(node) || keyboardPressed.get() == node;
@@ -1212,7 +1212,7 @@ public final class SceneRuntime implements AutoCloseable {
         return dispatchTargetEdit(node, focused, event, range, continuation);
     }
 
-    /** 普通命令可由复合控件接管；组字来源始终使用原联系，不遍历新的激活目标。 */
+    /** 普通命令沿复合控件选择消费目标；带来源组字直接使用原编辑联系。 */
     private SceneNode editTarget(SceneNode focused, SceneEditEvent event) {
         if (focused == null || !interactive(focused)) return null;
         for (SceneNode ancestor = focused.parent(); ancestor != null; ancestor = ancestor.parent()) {
@@ -1289,7 +1289,7 @@ public final class SceneRuntime implements AutoCloseable {
         finally { routing = previous; }
     }
 
-    /** 焦点离开及已生效只读资格变化只结束组字，不提交或取消独立草稿。 */
+    /** 焦点离开或只读资格生效时结束组字联系，独立草稿仍归业务持有。 */
     public void invalidateComposition(SceneNode target) { composition.invalidate(target); }
 
     /** 核验已有联系；同范围合法移动不改变挂载或基线身份。 */
@@ -1331,7 +1331,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** 取消清理不要求旧目标仍有交互资格；仍保护输入扩展不能直接改挂载声明。 */
+    /** 对原目标执行捕获取消清理，并沿 routing 边界保护挂载声明。 */
     void dispatchControlCaptureLost(SceneNode node) {
         domain.checkWrite();
         if (node.control() == null) return;
@@ -1364,7 +1364,7 @@ public final class SceneRuntime implements AutoCloseable {
         return result;
     }
 
-    /** 已知逻辑目标的业务激活入口；物理输入应经帧管线的typed事件。 有物理按钮占位时吞掉，不能绕过已有手势；仍按当前挂载与输入范围检查目标。 */
+    /** 激活已知逻辑目标，要求指针空闲且目标属于当前有效挂载与输入范围；物理输入经帧管线递交。 */
     public void dispatchClick(SceneNode node) {
         command();
         if (!pointerRouter.idle()) return;
@@ -1401,7 +1401,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    // 业务激活不改变焦点；clickFocus仅属于物理UP，synthetic与键盘命令保留owner。
+    // 此处执行目标业务动作，焦点策略由各输入入口协调。
     private void invokeClick(SceneNode node) {
         if (!interactive(node) || node.clickAction() == null) return;
         routing = true;
@@ -1412,7 +1412,7 @@ public final class SceneRuntime implements AutoCloseable {
         }
     }
 
-    /** 只读布局取得本次目标；不在测量期间修改状态。 */
+    /** 为只读布局提供当前滚动偏移。 */
     public int scrollOffset(SceneNode node) {
         checkAlive();
         ScrollPosition position = scrolling.get(node);
@@ -1428,8 +1428,8 @@ public final class SceneRuntime implements AutoCloseable {
         return position == null ? 0 : position.intentRevision;
     }
 
-    /** 呈现扩展落实同一位置所有者的几何校正；新输入意图已生效时拒绝旧校正。
-     * 不获取输入或焦点，不要求后台内容停止呈现，不产生额外滚动意图。 */
+    /** 呈现扩展按原位置意图代际校正几何，新输入生效后旧校正失效。
+     * 校正仅更新呈现位置，输入与焦点继续由原路由管理。 */
     public boolean correctScrollPosition(SceneNode node, long expectedIntent, int pixels) {
         domain.checkWrite(); checkAlive();
         ScrollPosition position = scrolling.get(node);
@@ -1439,7 +1439,7 @@ public final class SceneRuntime implements AutoCloseable {
         return true;
     }
 
-    /** 从最终几何发布边界；内容/窗口变小会立即丢弃越界偏移，不积攒不可见滚动债务。 */
+    /** 从最终几何发布滚动范围，内容或窗口变化后立即将偏移限制到合法范围。 */
     public void prepareScrollPositions(
             club.heiqi.uilib.ui.scene.layout.SceneGeometryView geometry) {
         command();
@@ -1456,7 +1456,7 @@ public final class SceneRuntime implements AutoCloseable {
     }
 
     /** 挂载扩展观察已发布的滚动事实；回调仅更新呈现，释放责任归观察者的挂载 Owner。
-     * null 表示视口当前不可呈现或不再滚动；不创建第二份位置权威，不在静止帧轮询几何。 */
+     * null 表示视口当前缺少可交互几何或滚动声明，后续变化由共同几何发布。 */
     public AutoCloseable observeScroll(SceneNode viewport, java.util.function.Consumer<SceneGeometryView.Entry> changed) {
         domain.checkWrite(); checkAlive();
         Objects.requireNonNull(viewport, "viewport"); Objects.requireNonNull(changed, "changed");
@@ -1531,7 +1531,7 @@ public final class SceneRuntime implements AutoCloseable {
         return () -> { domain.checkWrite(); observation.close(); };
     }
 
-    /** 绝对位置在原位置所有者处求差；一批内多个来源不重复消费旧Entry偏移。 */
+    /** 按原位置所有者的当前偏移计算绝对位置差值。 */
     public int scrollToPixels(SceneNode node, SceneNode.Axis axis, int offset) {
         domain.checkWrite(); checkAlive();
         SceneScrollViewport.Snapshot view = scrollSnapshot(node, axis, inputGeometry);
@@ -1547,7 +1547,7 @@ public final class SceneRuntime implements AutoCloseable {
         return applied;
     }
 
-    /** 同一像素移动入口适配专用视口；变化只失效一次，不调用业务wheel动作。 */
+    /** 通过专用视口的像素移动能力更新位置，实际变化使排列失效。 */
     public int scrollByPixels(SceneNode node, SceneNode.Axis axis, int pixels) {
         domain.checkWrite(); checkAlive();
         if (!interactive(node) || inputGeometry == null) return 0;
@@ -1568,7 +1568,7 @@ public final class SceneRuntime implements AutoCloseable {
         if (interactive(node)) navigationReveal.request(captureMount(node));
     }
 
-    /** 按像素改变唯一视图位置；不是 wheel，不调用业务 onScroll。返回实际生效量。 */
+    /** 按像素更新当前视图位置并返回实际生效量；业务 wheel 回调由滚轮入口负责。 */
     public int scrollByPixels(SceneNode node, int pixels) {
         domain.checkWrite(); checkAlive();
         if (!node.scrollable() || !interactive(node)) return 0;
@@ -1675,7 +1675,7 @@ public final class SceneRuntime implements AutoCloseable {
         domain.checkAccess();
         if (disposed) return;
         command();
-        // 扩展失焦回调也属于关闭错误边界，不能阻断挂载与Owner资源的完整收尾。
+        // 扩展失焦失败归关闭错误边界，其余挂载与 Owner 资源继续逐项释放。
         Throwable failure = null;
         tooltips.close();
         try {

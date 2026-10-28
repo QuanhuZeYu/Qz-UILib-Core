@@ -3,7 +3,7 @@ package club.heiqi.uilib.testing.gallery;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 
-/** 结果在测量窗口结束后序列化；进程堆差值不冒充本负载分配量。 */
+/** 测量窗口结束后序列化结果，进程堆变化与本线程分配量分别报告。 */
 public final class PerformanceReport {
     private PerformanceReport() {}
     public static final class Snapshot {

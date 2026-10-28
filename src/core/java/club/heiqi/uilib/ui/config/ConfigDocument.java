@@ -13,9 +13,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 
-/** 一份完整、已校验的配置文档，不持有状态域或 Signal。
- * 值沿 codec 的深层不可变合同冻结；文档表示只读，读写和解析可由宿主放入后台。
- * 编解码、对象工厂和校验只处理值，不访问 UI 或其他有线程亲和的状态。 */
+/** 完整且已校验的配置值与只读文档表示，按 codec 合同深层冻结。
+ * 编解码、对象工厂和校验处理纯值，宿主可在后台执行读写与解析。 */
 public final class ConfigDocument {
     private final ConfigSchema schema;
     private final YamlDocument document;
@@ -40,7 +39,7 @@ public final class ConfigDocument {
         }
     }
 
-    /** Reader 归调用者；先全量解析和校验，结果不触发配置通知。 */
+    /** Reader 归调用者，全量解析和校验后返回独立文档，发布由配置会话负责。 */
     public static ConfigDocument read(ConfigSchema schema, Reader reader, String source) throws IOException {
         return decode(schema, YamlDocument.read(Objects.requireNonNull(reader, "reader"), Objects.requireNonNull(source, "source")));
     }
@@ -92,7 +91,7 @@ public final class ConfigDocument {
         return (T) values.get(key);
     }
 
-    /** 显式迁移或后台准备的多键新值；全部校验成功后返回独立文档，不改变原文档。 */
+    /** 校验多键新值并返回独立文档，原文档保持当前值与表示。 */
     public ConfigDocument withAll(Map<ConfigKey<?>, ?> updates) {
         Objects.requireNonNull(updates, "updates");
         Map<ConfigKey<?>, Object> next = new LinkedHashMap<>(values);
@@ -112,12 +111,12 @@ public final class ConfigDocument {
     Map<ConfigKey<?>, Object> values() { return values; }
 
     public void write(Path path) throws IOException {
-        // 完整编码成功后才打开目标，codec 错误不会截断现有文件。
+        // 完整编码成功后再打开目标，使编码失败时原文件保持完整。
         String text = encode();
         try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) { writer.write(text); }
     }
 
-    /** Writer 归调用者；多次或并发写同一快照不修改其值及注释表示。 */
+    /** Writer 归调用者，每次写入使用独立表示副本，同一快照可并发写出。 */
     public void write(Writer writer) throws IOException { Objects.requireNonNull(writer, "writer").write(encode()); }
 
     String encode() {

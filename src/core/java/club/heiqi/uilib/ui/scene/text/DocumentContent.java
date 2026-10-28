@@ -8,7 +8,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
-/** 共同文档的不可变块声明；结构与来源不持有节点、资源或测量。 */
+/** 保存共同文档的不可变块结构与来源，呈现节点、资源和测量由运行时管理。 */
 public final class DocumentContent {
     public static final class Block {
         public enum Kind {

@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-/** 旧 Properties 的单次读取边界。保持旧 boolean/string/count 索引列表语义，无写入口。 */
+/** 读取旧 Properties 作为单次迁移输入，保持 boolean/string/count 索引列表语义。 */
 final class LegacyProperties {
     private LegacyProperties() {}
     static Map<ConfigKey<?>, Object> read(ConfigSchema schema, Properties input) {

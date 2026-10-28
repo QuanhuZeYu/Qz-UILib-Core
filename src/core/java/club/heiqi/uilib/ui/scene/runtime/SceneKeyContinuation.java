@@ -52,7 +52,7 @@ public final class SceneKeyContinuation implements AutoCloseable {
         }
     }
     void focusChanged(SceneNode actual) {
-        // Signal/Effect可合并离组再返回；这里消费setOwner的实际转换，不能等观察最终值。
+        // 逐次消费 setOwner 的实际转换，使离组立即结束续段。
         if (!closed && !valid(actual)) close();
     }
     public void repeat(SceneKeyEvent key) {
@@ -60,7 +60,7 @@ public final class SceneKeyContinuation implements AutoCloseable {
         refresh();
         if (closed) return;
         if (!valid(runtime.focusRouter().focused().get())) { close(); return; }
-        if (release != null) return; // Space只维持原按压，repeat不产生动作。
+        if (release != null) return; // Space 续段只维持原按压，激活归合法 UP。
         SceneEditEvent event = SceneKeyInterpreter.edit(key);
         if (event == null || event.command != command || !runtime.continueKeyEdit(action, event)) close();
     }

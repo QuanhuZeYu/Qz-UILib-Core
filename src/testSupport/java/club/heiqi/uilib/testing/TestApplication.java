@@ -39,7 +39,7 @@ public abstract class TestApplication {
 
     protected abstract void runTests() throws Exception;
 
-    /** 初始化中途失败也清理已交付资源；失败保持原Throwable身份，不被close覆盖。 */
+    /** 结束时统一清理已交付资源，初始化失败同样执行；原 Throwable 为首错，清理错误作为 suppressed。 */
     public final void run(String... args) throws Exception {
         if (arguments != null) throw new IllegalStateException("测试应用正在运行");
         arguments = args.clone();

@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.motion;
 
 import java.util.Objects;
 
-/** 显式视口运动；普通滚轮仍只有宿主提供的位移，不额外合成惯性。 */
+/** 显式视口运动策略，普通滚轮继续采用宿主提供的位移。 */
 public final class ScrollMotionOptions {
     public final MotionSpec rebound, inertia;
     public final int maximumDisplacement;

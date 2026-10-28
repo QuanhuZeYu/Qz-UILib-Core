@@ -12,11 +12,11 @@ plugins {
 apply plugin: 'com.gradleup.shadow'
 apply plugin: 'signing'
 
-// 项目属性同时接收原 -P、工程声明和工作站按提交记录的本地开发组合。
+// 版本与坐标优先采用项目属性，再使用系列默认值。
 version = findProperty('uilibVersion') ?: '5.0.0-beta1'
-// 旧版调用仍使用历史坐标；新系列默认使用已验证的 Central namespace。
+// 5 及以上系列默认使用 Central namespace，早期系列沿用原坐标。
 group = findProperty('uilibGroup') ?: (version.toString().tokenize('.')[0].toInteger() >= 5 ? 'asia.quanhuzeyu.uilib' : 'club.heiqi.uilib')
-// 原RFG从此公共镜像取得ICU；保留相同坐标和缓存来源，仓库本身不引入MC依赖。
+// 从公共镜像解析固定 ICU 坐标。
 repositories {
     maven { url = uri('https://libraries.minecraft.net'); content { includeModule('com.ibm.icu', 'icu4j') } }
     mavenCentral()
@@ -98,14 +98,14 @@ def galleryJar = tasks.register('galleryJar', Jar) {
     group = 'verification'; archiveClassifier = 'gallery'; from sourceSets.gallery.output
     from('LICENSE')
 }
-// 验证附件可被独立取用；许可复用生产资源原文，不依赖 Core Jar 恰好同时交付。
+// 验证附件独立携带所用资源的许可原文。
 def verificationNotices = copySpec {
     from('src/core/resources') {
         include 'assets/qz_uilib/unicode/emoji17/LICENSE.txt', 'assets/qz_uilib/math/catalog/LICENSE-KaTeX.txt'
     }
     from('src/galleryVerification/THIRD-PARTY-NOTICES.md') { into 'META-INF' }
 }
-// 其他仓只消费测试消费者，不能把它加入正式运行时或正式发行。
+// 独立打包测试消费者，供其他仓的验证任务使用。
 def verificationJar = tasks.register('verificationJar', Jar) {
     group = 'verification'; archiveClassifier = 'verification'
     from sourceSets.testSupport.output, sourceSets.testHost.output, sourceSets.galleryVerification.output
@@ -151,10 +151,10 @@ def javadocJar = { String taskName, String baseName, javadocTask ->
 def coreJavadocJar = javadocJar('coreJavadocJar', 'Qz-UILib-Core', coreJavadoc)
 def galleryJavadocJar = javadocJar('galleryJavadocJar', 'gallery', galleryJavadoc)
 def verificationJavadocJar = javadocJar('verificationJavadocJar', 'core-verification', verificationJavadoc)
-// 核心断言归广场应用；Gradle 的空 JUnit 入口不参与 check。
+// check 统一运行广场验证应用，空 JUnit 任务关闭。
 tasks.named('test', Test) { enabled = false; group = null }
 
-// Windows Java8 launcher不能可靠接收含中文的绝对-cp；相对路径仍消费原编译输出。
+// 同盘 classpath 转为相对路径，以适配 Windows Java8 launcher 的中文路径解析。
 tasks.withType(JavaExec).configureEach {
     doFirst {
         def base = workingDir.toPath()
@@ -181,7 +181,7 @@ def galleryChecks = [8, 21].collect { target ->
         systemProperty 'java.awt.headless', 'true'
         doFirst {
             def reportDirectory = layout.buildDirectory.dir('reports/gallery-java' + target).get().asFile
-            // Windows Java8 的 -D 参数同样会误解中文绝对路径，报告相对任务工作目录传入。
+            // Java8 报告路径相对任务目录传入，以适配 Windows 中文路径解析。
             systemProperty 'uilib.verification.report', target == 8
                     ? workingDir.toPath().relativize(reportDirectory.toPath()).toString() : reportDirectory.absolutePath
             systemProperty 'uilib.verification.core', project.relativePath(artifact.get().archiveFile.get().asFile)
@@ -272,7 +272,7 @@ tasks.register('publishWorkspace') {
     group = 'publishing'; description = '把明确版本的核心、开发与测试消费者写入本地Maven仓'
     dependsOn tasks.withType(PublishToMavenRepository).matching { it.repository?.name == 'Workspace' }
 }
-// 发布资产只取本次发布阶段目录，避免 build/libs 的旧版本残留混入。
+// 从本次发布阶段目录收集资产，保持版本与本次构建一致。
 def prepareReleaseStage = tasks.register('prepareReleaseStage', Delete) {
     delete releaseStage
 }

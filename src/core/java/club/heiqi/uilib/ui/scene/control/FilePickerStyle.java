@@ -48,14 +48,14 @@ final class FilePickerStyle extends SceneAppearance {
                 SceneTextPolicy.ELLIPSIS_SINGLE_LINE, false,
                 () -> entry.get().directory ? SceneIconButton.Symbol.FOLDER : SceneIconButton.Symbol.FILE)
                 .size(Size.fill(3), Size.natural());
-        // 次信息保持单行省略，不让窄窗每个文件都变成双行；完整信息由同一动作的提示提供。
+        // 次信息单行省略以保持条目紧凑，完整信息由同一动作的提示提供。
         SceneNode content = row(0).bind(spacing(0, 8))
                 .add(name)
                 .add(ellipsis(() -> metadata(entry.get()), .76f, true)
                         .size(Size.fill(2), Size.natural()));
         SceneNode row = action(() -> entry.get().name(), content, activate, Role.ENTRY, selected)
                 .size(Size.fill(1), Size.natural());
-        // 名称、图标和元数据共用一个动作根；提示只补充可读信息，不建立第二焦点。
+        // 名称、图标与元数据共用动作根，提示补充完整可读信息。
         return SceneTooltip.attach(page, row,
                 () -> SceneTooltip.Content.text(entry.get().name() + "\n" + metadata(entry.get())),
                 () -> new SceneTooltip.Options(), () -> colors.get().source);

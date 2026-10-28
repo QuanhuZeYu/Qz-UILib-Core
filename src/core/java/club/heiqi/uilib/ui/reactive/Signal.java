@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.reactive;
 
 import java.util.Objects;
 
-/** 写入立即生效；不保留帧末待提交值。 */
+/** 直接持有当前状态，写入后立即可读并使依赖失效。 */
 public final class Signal<T> extends Dependency implements ReadableSignal<T> {
     private T value;
 

@@ -35,7 +35,7 @@ public final class SceneGrid {
 
     private SceneGrid() {}
 
-    /** 默认填充宽、自然高且不裁剪、不滚动；外部策略来源仍归调用方。 */
+    /** 默认填充宽、自然高并允许溢出，外部策略来源归调用方。 */
     public static SceneNode create(ScenePageContext context, ReadableSignal<Policy> policy) {
         Objects.requireNonNull(context, "context").domain().checkWrite();
         return new SceneNode().axis(SceneNode.Axis.COLUMN).size(Size.fill(1), Size.natural())
@@ -82,7 +82,7 @@ public final class SceneGrid {
                             / ((long) current.minimumColumnWidth + current.columnGap))));
             int gaps = (columns - 1) * current.columnGap;
             int naturalWidth = columns * current.minimumColumnWidth + gaps;
-            // NATURAL 在测量和排列都使用最小列槽，不能先用父满宽测矮了再收窄。
+            // NATURAL 测量与排列统一使用最小列槽，保持折行高度一致。
             int width = node.width().mode == Size.Mode.NATURAL
                     ? naturalWidth : Math.max(availableWidth, naturalWidth);
             int baseWidth = (width - gaps) / columns, remainder = (width - gaps) % columns;
@@ -97,7 +97,7 @@ public final class SceneGrid {
                             new Constraints(slot, Integer.MAX_VALUE));
                     widths[column] = children.sizeIntent(child, SceneNode.Axis.ROW).mode == Size.Mode.FILL
                             ? children.sizeIntent(child, SceneNode.Axis.ROW).constrain(slot) : intrinsic.width;
-                    // 未确定行高时不给 FILL 高度分配父剩余空间；真实高度按最终合法宽度求解。
+                    // 行高未确定时使用无界高度，按最终合法宽度求正文高度。
                     MeasuredSize actual = children.measureChild(child,
                             new Constraints(widths[column], Integer.MAX_VALUE));
                     heights[column] = actual.height;

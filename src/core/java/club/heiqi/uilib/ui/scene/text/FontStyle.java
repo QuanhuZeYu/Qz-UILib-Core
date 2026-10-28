@@ -2,7 +2,7 @@ package club.heiqi.uilib.ui.scene.text;
 
 import java.util.Objects;
 
-/** 字体选择意图；不包含光栅合成量。 */
+/** 声明字体字重与字姿，供真实 face 匹配使用。 */
 public final class FontStyle {
     public enum Posture {
         NORMAL,

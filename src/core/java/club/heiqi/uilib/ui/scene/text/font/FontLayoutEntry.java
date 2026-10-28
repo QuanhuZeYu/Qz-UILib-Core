@@ -4,7 +4,7 @@ import club.heiqi.uilib.ui.scene.text.AttributedText;
 import club.heiqi.uilib.ui.scene.text.StyleSpan;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
 
-/** 同一布局 LRU 条目共用几何与最近一次颜色投影，不按颜色增加缓存条目。
+/** 同一布局 LRU 条目复用几何并保存最近一次颜色投影。
  * 只保留不可变声明/布局；条目逐出、字体换代或关闭同时释放。 */
 final class FontLayoutEntry {
     final TextLayout geometry;

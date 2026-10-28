@@ -107,7 +107,7 @@ final class VirtualCollectionPosition<K> {
     }
 
     boolean advanceReveal(SceneGeometryView geometry, SceneNode row, boolean omitted, boolean prepared) {
-        // 折叠行已有正式的“不参与布局”事实，不会再产生可等待的目标几何。
+        // 折叠行已结束布局资格，本次显露在此完成。
         if (omitted) { reveal = null; return true; }
         if (row == null || geometry.get(row) == null) return false;
         Reveal<K> request = reveal;
@@ -138,7 +138,7 @@ final class VirtualCollectionPosition<K> {
         request.target = runtime.captureMount(target);
         if (request.focus) runtime.focusRouter().navigateTo(request.target);
         else runtime.requestInputReveal(target);
-        // 选择器和同步失焦通知都可替换请求；旧推进不能读取或取消新请求。
+        // 选择器与同步失焦通知可替换请求，推进出口核验仍属原请求。
         return reveal == request;
     }
 

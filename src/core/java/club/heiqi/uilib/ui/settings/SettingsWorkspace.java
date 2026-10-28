@@ -10,7 +10,7 @@ import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
 
 import java.util.*;
 
-/** 工作区只组合分类、共同操作和关闭意图；不复制模型或字体编辑器状态。 */
+/** 组合分类、共同操作与关闭意图，业务状态由共享模型及字体编辑器维护。 */
 final class SettingsWorkspace {
     private enum Section {
         APPEARANCE("外观", "设置工作区主题、字体回退顺序与文字样本。", SceneIconButton.Symbol.SLIDERS),
@@ -182,7 +182,7 @@ final class SettingsWorkspace {
                                         (n, value) ->
                                                 transientMessage.set(
                                                         value == null ? "" : value.text)));
-        // 成功提示短暂显示；失败沿原反馈保留，低高度也不隐藏错误，滚动保证可达。
+        // 成功提示按期限呈现，失败沿原反馈持续显示，低窗通过正式滚动保持可达。
         return ui.stack(5)
                 .add(
                         SceneNotice.create(
