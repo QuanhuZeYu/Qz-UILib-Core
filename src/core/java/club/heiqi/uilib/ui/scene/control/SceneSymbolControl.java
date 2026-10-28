@@ -112,7 +112,7 @@ abstract class SceneSymbolControl implements SceneControl {
         boolean pressed = enabled && node.runtime().pressed(node);
         if (node.clickAction() != null) club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.rounded(target, e.box, e.clip,
                 motion.color(!enabled ? style.disabled : pressed ? style.pressed : hover ? style.hover : style.button), Math.min(e.box.width, e.box.height) / 2);
-        if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.border(target, e.box, e.clip, style.focus);
+        if (enabled && node.runtime().focusRouter().focusVisible(node)) SceneControlPaint.focus(target, e.box, e.clip, style.focus, style.metrics(SceneControlMetrics.Kind.MODERN_BUTTON).radius);
         LayoutBox inner = SceneControlPaint.inner(e.box, node.padding());
         int side = Math.min(symbolSize(node), Math.min(inner.width, inner.height));
         int markWidth = Math.min(inner.width, Math.max(0, Math.round((float) side * symbolWidth(node) / symbolSize(node))));

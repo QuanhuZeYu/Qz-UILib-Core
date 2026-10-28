@@ -53,7 +53,8 @@ public final class SceneFocusRouter {
         value = runtime.domain().signal(null);
         retained = runtime.domain().signal(java.util.Collections.emptyList());
         retainedView = retained::get;
-        keyboardCue=runtime.domain().signal(true);
+        // 初始自动逻辑焦点保持安静；真实键盘或辅助导航再显示线索，见主题规格。
+        keyboardCue=runtime.domain().signal(false);
         view = value::get; // 只读包装保留依赖追踪，不暴露可强转的写端。
         ranges.add(new Range(null));
     }

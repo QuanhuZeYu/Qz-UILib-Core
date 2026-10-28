@@ -52,12 +52,12 @@ public final class SceneTheme {
     }
     public static SceneTheme light() {
         return defaults(new TextStyle("default", 18, 0xFF20252B).withDefaultHighlightColor(0x88FFD54F),
-                0xFFF4F6F8, 0xFFE2E8EF, 0xFFD1E1F2, 0xFFB9D1EB, 0xFF246DB5, 0xFFE4E6E9, 0xFF777D85,
+                0xFFF4F6F8, 0xFFE2E8EF, 0xFFD1E1F2, 0xFFB9D1EB, 0xFF71717A, 0xFFE4E6E9, 0xFF777D85,
                 0xFF20252B, 0xFFFFFFFF, 8, 8);
     }
     public static SceneTheme dark() {
         return defaults(new TextStyle("default", 18, 0xFFF1F4F8).withDefaultHighlightColor(0x887A5A16),
-                0xFF20252B, 0xFF37414D, 0xFF465C74, 0xFF294866, 0xFF80BFFF, 0xFF30353D, 0xFF8C949F,
+                0xFF20252B, 0xFF37414D, 0xFF465C74, 0xFF294866, 0xFFA1A1AA, 0xFF30353D, 0xFF8C949F,
                 0xFFF1F4F8, 0xFF20252B, 8, 8);
     }
     public SceneTheme withDensity(SceneDensity value) {

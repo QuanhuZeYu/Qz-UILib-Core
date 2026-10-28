@@ -1,7 +1,7 @@
 package club.heiqi.uilib.ui.scene.control;
 
 import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.inner;
-import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.border;
+import static club.heiqi.uilib.ui.scene.control.SceneControlPaint.focus;
 
 import java.util.Collections;
 import java.util.Objects;
@@ -211,7 +211,7 @@ final class SceneTextControl implements SceneControl {
                             ? style.disabled
                             : pressed ? style.pressed : hovered ? style.hover : style.button;
             target.add(PaintCommand.rect(entry.box, entry.clip, motion.color(color)));
-            if (focused) border(target, entry.box, entry.clip, style.focus);
+            if (focused) focus(target, entry.box, entry.clip, style.focus, style.metrics(SceneControlMetrics.Kind.MODERN_BUTTON).radius);
         }
         if (composed) return;
         LayoutBox inner = inner(entry.box, node.padding());

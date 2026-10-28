@@ -16,6 +16,11 @@ final class SceneControlPaint {
                 Math.max(0, box.height - padding * 2));
     }
 
+    /** 共同动作的焦点只覆盖细轮廓，不以背景色遮盖内部，透明表面亦成立。 */
+    static void focus(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color, int radius) {
+        club.heiqi.uilib.ui.scene.paint.ScenePaintShapes.roundedOutline(target, box, clip, color, radius);
+    }
+
     static void border(PaintPlanBuilder target, LayoutBox box, LayoutBox clip, int color) {
         if (box.width == 0 || box.height == 0) return;
         target.add(PaintCommand.rect(new LayoutBox(box.x, box.y, box.width, 1), clip, color));

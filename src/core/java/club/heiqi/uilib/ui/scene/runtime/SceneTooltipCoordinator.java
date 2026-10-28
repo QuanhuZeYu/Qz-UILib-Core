@@ -148,7 +148,12 @@ final class SceneTooltipCoordinator implements SceneTransitions.Step,AutoCloseab
     }
     boolean dismiss(){
         if(closed||current==null&&pending==null)return false;
-        suppressed=current==null?pending:current;hide();runtime.transitions().stop(this);return true;
+        suppressed=current==null?pending:current;
+        // ESC可在关闭前启用键盘线索；吸收同来源的本次变化，避免下一帧当成新进入而重开。
+        SceneNode focused=runtime.focusRouter().focused().get();
+        if(focused!=null&&runtime.focusRouter().focusVisible(focused)
+                &&(focused==suppressed.node||explicit(focused)==suppressed)) previousFocus=suppressed;
+        hide();runtime.transitions().stop(this);return true;
     }
     void pointerPressed(){dismiss();}
     void paint(SceneNode source,PaintPlanBuilder target){if(frame!=null&&current!=null&&current.node==source)frame.paint(target);}

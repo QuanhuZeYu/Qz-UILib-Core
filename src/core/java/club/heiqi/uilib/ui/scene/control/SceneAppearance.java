@@ -602,15 +602,8 @@ public class SceneAppearance {
             Palette p = colors.get();
             boolean focused = focused();
             int fill = animatedFill;
-            int edge =
-                    focused
-                            ? p.muted
-                            : role == Role.OUTLINE
-                                            || role == Role.FIELD
-                                            || role == Role.PANEL
-                                            || role == Role.CARD
-                                    ? p.border
-                                    : fill;
+            int edge = role == Role.OUTLINE || role == Role.FIELD || role == Role.PANEL || role == Role.CARD
+                    ? p.border : fill;
             if (role == Role.PANEL) {
                 for (int spread = 6; spread >= 2; spread -= 2)
                     ScenePaintShapes.rounded(
@@ -643,6 +636,7 @@ public class SceneAppearance {
                     e.clip,
                     fill,
                     radius - 1);
+            if (focused) SceneControlPaint.focus(paint, e.box, e.clip, p.source.focus, radius);
         }
     }
 }
