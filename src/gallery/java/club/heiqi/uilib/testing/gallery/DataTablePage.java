@@ -6,6 +6,7 @@ import club.heiqi.uilib.ui.reactive.Signal;
 import club.heiqi.uilib.ui.scene.control.SceneCommand;
 import club.heiqi.uilib.ui.scene.control.SceneDataTable;
 import club.heiqi.uilib.ui.scene.control.SceneLabel;
+import club.heiqi.uilib.ui.scene.control.SceneTableAppearance;
 import club.heiqi.uilib.ui.scene.control.SceneTextField;
 import club.heiqi.uilib.ui.scene.control.SceneTheme;
 import club.heiqi.uilib.ui.scene.edit.SceneEditState;
@@ -46,17 +47,18 @@ public final class DataTablePage {
             rows.sort(ascending.get() ? order : order.reversed()); return rows;
         });
         SceneCommand sort = SceneCommand.of(() -> source.get().size() > 1, () -> ascending.set(!ascending.get()));
+        SceneTableAppearance<Task> appearance = new SceneTableAppearance<>(page, sorted, theme);
         SceneDataTable.Column<Task, String> title = new SceneDataTable.Column<>("title",
                 () -> Size.fill(2).bounds(wider.get() ? 320 : 220, 700),
-                () -> GalleryStyle.button(page, () -> "任务名称 " + (ascending.get() ? "↑" : "↓"), theme, sort)
-                        .size(Size.fill(1), Size.natural()),
-                row -> GalleryStyle.button(page, () -> row.get().title, theme,
-                        () -> feedback.set("已打开：" + row.get().title)).size(Size.fill(1), Size.natural()));
-        SceneDataTable.Column<Task, String> status = new SceneDataTable.Column<>("status", () -> Size.fixed(100),
-                () -> GalleryStyle.label(page, () -> "状态", theme, 14, true),
+                () -> appearance.header(GalleryStyle.button(page, () -> "任务名称 " + (ascending.get() ? "↑" : "↓"), theme, sort)
+                        .size(Size.fill(1), Size.natural())),
+                row -> appearance.cell(row, GalleryStyle.button(page, () -> row.get().title, theme,
+                        () -> feedback.set("已打开：" + row.get().title)).size(Size.fill(1), Size.natural())));
+        SceneDataTable.Column<Task, String> status = appearance.column("status", () -> Size.fixed(100),
+                () -> "状态",
                 row -> GalleryStyle.label(page, () -> row.get().done ? "已完成" : "进行中", theme, 14, false));
-        SceneDataTable.Column<Task, String> note = new SceneDataTable.Column<>("note", () -> Size.fill(1).bounds(200, 500),
-                () -> GalleryStyle.label(page, () -> "我的备注", theme, 14, true), row -> {
+        SceneDataTable.Column<Task, String> note = appearance.column("note", () -> Size.fill(1).bounds(200, 500),
+                () -> "我的备注", row -> {
                     int id = row.get().id;
                     SceneEditState draft = drafts.computeIfAbsent(id, ignored -> new SceneEditState(page.domain(), notes.get().getOrDefault(id, "")));
                     return SceneTextField.create(page, draft, theme, () -> false, request -> {
@@ -68,8 +70,8 @@ public final class DataTablePage {
                     }, SceneTextField.SubmitPolicy.BLUR).bind(NodeBinding.semantics(() ->
                             SceneSemantics.builder().name("我的备注：" + row.get().title).build()));
                 });
-        SceneDataTable.Column<Task, String> action = new SceneDataTable.Column<>("action", () -> Size.fixed(120),
-                () -> GalleryStyle.label(page, () -> "操作", theme, 14, true), row -> {
+        SceneDataTable.Column<Task, String> action = appearance.column("action", () -> Size.fixed(120),
+                () -> "操作", row -> {
                     SceneCommand toggle = SceneCommand.of(() -> source.get().stream().anyMatch(task -> task.id == row.get().id), () -> {
                         List<Task> next = new ArrayList<>();
                         for (Task task : source.get()) next.add(task.id == row.get().id ? new Task(task.id, task.title, !task.done) : task);
@@ -80,8 +82,7 @@ public final class DataTablePage {
                 });
         ReadableSignal<List<SceneDataTable.Column<Task, String>>> columns = page.domain().computed(owner,
                 () -> notesShown.get() ? Arrays.asList(title, status, note, action) : Arrays.asList(title, status, action));
-        SceneDataTable<Task, Integer, String> table = SceneDataTable.create(page, sorted, task -> task.id, columns,
-                () -> new SceneDataTable.Options().columnGap(theme.get().gap), theme);
+        SceneDataTable<Task, Integer, String> table = appearance.create(task -> task.id, columns);
         SceneNode root = new SceneNode().size(Size.fill(1), Size.fill(1)).padding(28).gap(18).own(owner);
         root.add(GalleryStyle.header(page, theme, "团队任务", "按标题排序，按 Tab 编辑备注，离开字段后记录。", back));
         SceneNode tools = GalleryStyle.centeredRow().size(Size.fill(1), Size.natural()).gap(12);

@@ -29,9 +29,11 @@ final class VirtualCollectionPosition<K> {
         final boolean focus;
         final Function<SceneNode, SceneNode> select;
         final RangeHandle range;
+        final club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent;
         MountHandle target;
-        Reveal(K key, boolean focus, Function<SceneNode, SceneNode> select, RangeHandle range) {
-            this.key = key; this.focus = focus; this.select = select; this.range = range;
+        Reveal(K key, boolean focus, Function<SceneNode, SceneNode> select, RangeHandle range,
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent) {
+            this.key = key; this.focus = focus; this.select = select; this.range = range; this.intent = intent;
         }
     }
 
@@ -63,7 +65,8 @@ final class VirtualCollectionPosition<K> {
 
     void validate() {
         boolean interactive = runtime.interactive(root);
-        if (reveal != null && (heights.position(reveal.key) < 0 || !interactive || !reveal.range.active())) reveal = null;
+        if (reveal != null && (heights.position(reveal.key) < 0 || !interactive || !reveal.range.active()
+                || reveal.focus && !reveal.intent.getAsBoolean())) reveal = null;
         if (end != null && (heights.size() == 0 || !Objects.equals(end.key, heights.key(heights.size() - 1))
                 || !interactive || !end.range.active())) end = null;
     }
@@ -79,9 +82,11 @@ final class VirtualCollectionPosition<K> {
         if (reveal != null) needed.add(reveal.key);
     }
 
-    void request(K key, boolean focus, Function<SceneNode, SceneNode> select) {
+    void request(K key, boolean focus, Function<SceneNode, SceneNode> select,
+            club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent) {
         end = null;
-        reveal = new Reveal<>(key, focus, Objects.requireNonNull(select, "焦点目标准备"), runtime.focusRouter().captureRange());
+        reveal = new Reveal<>(key, focus, Objects.requireNonNull(select, "焦点目标准备"), runtime.focusRouter().captureRange(),
+                focus ? (intent == null ? runtime.focusRouter().beginIntent() : intent) : null);
     }
 
     void scrollRequested(int requested, SceneScrollViewport.Snapshot previous) {
@@ -130,14 +135,18 @@ final class VirtualCollectionPosition<K> {
     private boolean issueReveal(Reveal<K> request, SceneNode row) {
         SceneNode target = request.focus ? request.select.apply(row) : row;
         if (reveal != request) return false;
-        if (target == null || request.focus && (!target.focusable() || !contains(row, target)
+        if (target == null || request.focus && (!request.intent.getAsBoolean() || !target.focusable() || !contains(row, target)
                 || target.runtime() != runtime || !runtime.interactive(target))) {
             reveal = null;
             return false;
         }
         request.target = runtime.captureMount(target);
-        if (request.focus) runtime.focusRouter().navigateTo(request.target);
-        else runtime.requestInputReveal(target);
+        if (request.focus) {
+            if (!request.intent.navigateTo(request.target) || reveal != request) {
+                if (reveal == request) reveal = null;
+                return false;
+            }
+        } else runtime.requestInputReveal(target);
         // 选择器与同步失焦通知可替换请求，推进出口核验仍属原请求。
         return reveal == request;
     }

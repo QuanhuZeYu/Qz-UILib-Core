@@ -58,9 +58,13 @@ public final class SceneDataTable<T, K, C> {
     private final SceneNode node;
     private final SceneVirtualList<T, K> rows;
     private final SceneScrollViewport horizontal;
+    private final ScenePageContext page;
+    private K pendingFocus;
+    private club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle focusCurrent;
 
     private SceneDataTable(ScenePageContext page, ReadableSignal<List<T>> items, Function<T, K> key,
             ReadableSignal<List<Column<T, C>>> columnSource, ReadableSignal<Options> options, ReadableSignal<SceneTheme> theme) {
+        this.page = page;
         Owner owner = page.scope().child();
         ReadableSignal<SceneControlMetrics> metrics = page.domain().computed(owner, () -> theme.get().metrics(SceneControlMetrics.Kind.TABLE));
         ReadableSignal<List<Column<T, C>>> columns = page.domain().computed(owner, () -> {
@@ -112,8 +116,15 @@ public final class SceneDataTable<T, K, C> {
                 SceneGeometryView.Entry entry = geometry == null ? null : geometry.get(header);
                 int height = entry == null ? 0 : entry.box.height;
                 if (headerHeight.get() != height) headerHeight.set(height);
+                if (pendingFocus == null) return;
+                if (!focusCurrent.getAsBoolean()) { clearFocusRequest(); return; }
+                if (!runtime.interactive(self)) return;
+                K target = pendingFocus;
+                club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent = focusCurrent;
+                clearFocusRequest();
+                rows.continueFocus(target, intent);
             }));
-            return new BindingActivation() { public void refresh() { } public void close() { } };
+            return new BindingActivation() { public void refresh() { } public void close() { clearFocusRequest(); } };
         });
         frame.bind(NodeBinding.semantics(() -> SceneSemantics.builder(SceneSemantics.Role.TABLE).count(dataCount.get())
                 .tableSize(columns.get().isEmpty() ? 0 : dataCount.get() + 1, columns.get().size()).build()));
@@ -140,8 +151,8 @@ public final class SceneDataTable<T, K, C> {
                             .tableSize(dataCount.get() + 1, columns.get().size()).build();
         }));
         row.bind(NodeBinding.repeat(columns, column -> column.key, column -> {
-            // 列盒始终占位；同键新定义只结束内部工厂产物，纯重排和宽度变化保留原挂载。
-            SceneNode box = new SceneNode().size(Size.fill(1), Size.natural());
+            // FILL 沿跨轴按自然内容测高，排列时铺满本行；同键重排和宽度变化保留原挂载。
+            SceneNode box = new SceneNode().size(Size.fill(1), Size.fill(1));
             C identity = column.get().key;
             if (dataPosition == null) { headers.put(identity, box); box.own(() -> headers.remove(identity, box)); }
             box.bind(NodeBinding.semantics(() -> {
@@ -155,7 +166,7 @@ public final class SceneDataTable<T, K, C> {
                 else { SceneNode header = headers.get(identity); if (header != null) description.labelledBy(header); }
                 return description.build();
             }));
-            box.bind(NodeBinding.value(() -> width(column.get()), (self, size) -> self.size(size, Size.natural())));
+            box.bind(NodeBinding.value(() -> width(column.get()), (self, size) -> self.size(size, Size.fill(1))));
             box.bind(NodeBinding.repeat(() -> Collections.singletonList(column.get()), definition -> definition,
                     definition -> Objects.requireNonNull(factory.apply(definition.get()), "列工厂产物")));
             return box;
@@ -173,6 +184,17 @@ public final class SceneDataTable<T, K, C> {
         return new SceneDataTable<>(page, Objects.requireNonNull(items, "rows"), Objects.requireNonNull(key, "row key"),
                 Objects.requireNonNull(columns, "columns"), Objects.requireNonNull(options, "options"), Objects.requireNonNull(theme, "theme"));
     }
+    /** 返回刚显示的表格时，待正式几何提交后准备稳定键行；范围切换或卸载结束请求。 */
+    public void focus(K key) {
+        page.domain().checkWrite();
+        Objects.requireNonNull(key, "行键");
+        if (page.runtime().interactive(node)) { clearFocusRequest(); rows.focus(key); return; }
+        pendingFocus = key;
+        focusCurrent = page.runtime().focusRouter().beginIntent();
+    }
+
+    private void clearFocusRequest() { pendingFocus = null; focusCurrent = null; }
+
     public SceneNode node() { return node; }
     public SceneVirtualList<T, K> rows() { return rows; }
     public SceneScrollViewport horizontalViewport() { return horizontal; }

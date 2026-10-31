@@ -37,6 +37,7 @@ public final class SceneFocusRouter {
     }
     private final java.util.ArrayDeque<FocusLoss> pendingFocusLosses = new java.util.ArrayDeque<>();
     private boolean closed, rangesDirty = true;
+    private long intentRevision;
     private club.heiqi.uilib.ui.scene.input.SceneFocusTraversal.Cursor navigation;
     private Range navigationRange;
     private boolean navigationReveal, navigationDirectional;
@@ -84,6 +85,35 @@ public final class SceneFocusRouter {
         return new RangeHandle(top());
     }
 
+    /** 待完成焦点意图的单向许可；完成自身导航沿用此意图，同步回调中的新意图优先。 */
+    public final class IntentHandle implements java.util.function.BooleanSupplier {
+        private final Range range;
+        private final long revision;
+        private IntentHandle(Range range, long revision) { this.range = range; this.revision = revision; }
+        @Override public boolean getAsBoolean() {
+            runtime.domain().checkAccess();
+            return !closed && revision == intentRevision && top() == range
+                    && (range.modal == null || alive(range));
+        }
+        public boolean navigateTo(MountHandle target) {
+            runtime.domain().checkWrite();
+            if (!getAsBoolean()) return false;
+            keyboardInput();
+            if (!request(target, this)) return false;
+            pendingReveal = owner;
+            return true;
+        }
+    }
+
+    /** 开始一次待完成焦点请求；新请求、导航或真实范围切换永久结束旧意图，自动失焦保留它。 */
+    public IntentHandle beginIntent() {
+        runtime.domain().checkWrite();
+        revalidate();
+        cancelPending();
+        pendingReveal = null;
+        return new IntentHandle(top(), ++intentRevision);
+    }
+
     /** 投影当前 owner 与被覆盖范围的合法恢复目标，供按需视图有限保留。 */
     public ReadableSignal<List<SceneNode>> retainedFocus() {
         runtime.domain().checkAccess(); return retainedView;
@@ -112,16 +142,19 @@ public final class SceneFocusRouter {
     }
 
     /** 在域内请求合法挂载焦点，核验失败返回 false；业务激活由单独入口处理。 */
-    public boolean request(MountHandle target) {
+    public boolean request(MountHandle target) { return request(target, null); }
+
+    private boolean request(MountHandle target, IntentHandle intent) {
         runtime.domain().checkWrite();
         Objects.requireNonNull(target, "target");
         if (closed) return false;
         revalidate();
-        if (!local(target) || !runtime.interactive(target.node())) return false;
+        if (!local(target) || !runtime.interactive(target.node()) || intent != null && !intent.getAsBoolean()) return false;
+        if (intent == null) intentRevision++;
         cancelPending();
         pendingReveal = null;
         setOwner(target);
-        return true;
+        return intent == null || intent.getAsBoolean() && owner == target;
     }
 
     /** 按显式键盘导航意图切焦点并请求一次必要显露，普通 request 只切焦点。 */
@@ -143,6 +176,7 @@ public final class SceneFocusRouter {
         keyboardInput();
         if (closed) return false;
         revalidate();
+        intentRevision++;
         SceneNode scope = top().modal == null ? pagePolicy() : top().modal.node();
         if (runtime.dispatchScopeNavigation(scope, backward)) { cancelNavigation(); return true; }
         SceneNode from = owner == null ? null : owner.node();
@@ -157,6 +191,7 @@ public final class SceneFocusRouter {
         runtime.domain().checkWrite(); revalidate();
         if (closed || ranges.size() < 2 || !modal.active() || top().modal == null
                 || top().modal.node() != modal.node() || !local(anchor)) return false;
+        intentRevision++;
         cancelNavigation();
         scopeExit = new ScopeExit(top(), ranges.get(ranges.size() - 2), anchor, backward);
         return true;
@@ -170,6 +205,7 @@ public final class SceneFocusRouter {
         keyboardInput();
         if (closed) return false;
         revalidate();
+        intentRevision++;
         MountHandle from = owner;
         cancelPending(); navigationRange = top();
         List<SceneNode> roots = navigationRange.modal == null ? runtime.roots()
@@ -230,7 +266,7 @@ public final class SceneFocusRouter {
     /** 清除当前焦点与待进入选择，被覆盖外层的合法恢复记录继续保留。 */
     public void clear() {
         runtime.domain().checkWrite();
-        if (!closed) cancelPending();
+        if (!closed) { intentRevision++; cancelPending(); }
         pendingReveal = null;
         setOwner(null);
     }
@@ -390,6 +426,7 @@ public final class SceneFocusRouter {
         // 仅在栈顶范围实际变化时启动进入或返回选择。
         // modal属性关闭后目标可能仍是非模态可交互节点，但真正返回仍释放旧owner。
         if (top() != previousTop) {
+            intentRevision++;
             cancelNavigation();
             top().pending = true;
             top().returning = !entering;

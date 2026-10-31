@@ -463,10 +463,20 @@ final class VirtualCollectionController<T, K> implements SceneControl {
     boolean request(K identity, boolean focus) { return request(identity, focus, this::firstFocusable); }
 
     boolean request(K identity, boolean focus, Function<SceneNode, SceneNode> focusTarget) {
+        return request(identity, focus, focusTarget, null);
+    }
+
+    boolean continueFocus(K identity, club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent) {
+        return request(identity, true, this::firstFocusable, intent);
+    }
+
+    private boolean request(K identity, boolean focus, Function<SceneNode, SceneNode> focusTarget,
+            club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent) {
         page.domain().checkWrite();
         Objects.requireNonNull(identity, "key");
-        if (!active || !runtime.interactive(root) || !values.containsKey(identity)) return false;
-        positioning.request(identity, focus, focusTarget);
+        if (!active || !runtime.interactive(root) || !values.containsKey(identity)
+                || intent != null && !intent.getAsBoolean()) return false;
+        positioning.request(identity, focus, focusTarget, intent);
         viewRevision.set(++revision);
         return true;
     }

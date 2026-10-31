@@ -82,6 +82,11 @@ public final class SceneVirtualList<T, K> {
     /** 准备该行并请求其首个合法焦点，最终选择仍归唯一焦点路由。 */
     public boolean focus(K key) { return controller.request(key, true); }
 
+    /** 所属表格在显示后交接原焦点意图，保持请求先后顺序。 */
+    boolean continueFocus(K key, club.heiqi.uilib.ui.scene.runtime.SceneFocusRouter.IntentHandle intent) {
+        return controller.continueFocus(key, intent);
+    }
+
     /** 所属复合视图从目标行选择主目标，公开 focus 继续选择首个合法后代。 */
     boolean focus(K key, Function<SceneNode, SceneNode> target) { return controller.request(key, true, target); }
 
