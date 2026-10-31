@@ -37,6 +37,20 @@ public final class Size {
         return new Size(mode, value, min, max);
     }
 
+    @Override public boolean equals(Object other) {
+        if (this == other) return true;
+        if (!(other instanceof Size)) return false;
+        Size size = (Size) other;
+        return mode == size.mode && value == size.value && min == size.min && max == size.max;
+    }
+
+    @Override public int hashCode() {
+        int hash = mode.hashCode();
+        hash = 31 * hash + value;
+        hash = 31 * hash + min;
+        return 31 * hash + max;
+    }
+
     public int constrain(int requested) {
         return Math.max(min, Math.min(max, requested));
     }

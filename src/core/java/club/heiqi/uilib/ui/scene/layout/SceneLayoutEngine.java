@@ -30,8 +30,6 @@ public final class SceneLayoutEngine {
     private final Map<SceneNode, club.heiqi.uilib.ui.scene.text.TextStyle> presentedStyles = new IdentityHashMap<>();
     // 子测量入口仅在当批保持身份，文字缓存的代际和生命周期独立。
     private final Map<SceneNode, SceneChildMeasurer> batchChildren = new IdentityHashMap<>();
-    private final Set<BatchTextMeasurer> activeText =
-            Collections.newSetFromMap(new IdentityHashMap<BatchTextMeasurer, Boolean>());
     private boolean metricsKnown;
     private long metricsRevision, measureRevision;
     private int measuredWidth, measuredHeight;
@@ -43,7 +41,6 @@ public final class SceneLayoutEngine {
         BatchTextMeasurer batch =
                 batchText.computeIfAbsent(node, key -> new BatchTextMeasurer(text));
         batch.prepareRevision(nodeMeasureRevision == null ? 0 : nodeMeasureRevision.applyAsLong(node));
-        if (activeText.add(batch)) batch.beginRequests();
         return batch;
     }
 
@@ -97,7 +94,6 @@ public final class SceneLayoutEngine {
         textCache.clear();
         textCacheStyles.clear();
         batchChildren.clear();
-        activeText.clear();
         metricsKnown = false;
     }
 
@@ -107,8 +103,7 @@ public final class SceneLayoutEngine {
         for (SceneNode root : roots) collectMounted(root, mounted);
         // 子测量依赖同样按完整挂载树维护。
         if (nodeMeasureRevision == null) measureDependencies.clear();
-        else if (measureDependencies.update(mounted, presentation, nodeMeasureRevision))
-            measureDependencies.resetMeasurements();
+        else measureDependencies.update(mounted, presentation, nodeMeasureRevision);
         batchText.keySet().retainAll(mounted);
         presentedStyles.keySet().retainAll(mounted);
         // 隐藏节点可能本批不访问；代际结束也要及时丢弃其旧内容及inline载荷。
@@ -161,7 +156,6 @@ public final class SceneLayoutEngine {
     private SceneGeometry arrangeRoots(List<SceneNode> roots, int width, int height) {
         allocatedBoxes.clear();
         arrangementViewport = new LayoutBox(0, 0, width, height);
-        activeText.clear();
         try {
             // 纯位置/滚动/层锚定只重新排列；内容、尺寸、字体与视口代际在入口结束旧度量。
             textCache.clear();
@@ -185,7 +179,7 @@ public final class SceneLayoutEngine {
             for (SceneGeometryView.Entry entry : geometry.ordered()) presentedStyles.put(entry.node, entry.node.style());
             return geometry;
         } finally {
-            endTextRequests();
+            batchChildren.clear();
             measureDependencies.endRequests();
         }
     }
@@ -230,7 +224,7 @@ public final class SceneLayoutEngine {
             for (SceneNode node : updated.keySet()) presentedStyles.put(node, node.style());
             return refreshed;
         } finally {
-            endTextRequests();
+            batchChildren.clear();
             measureDependencies.endRequests();
         }
     }
@@ -278,12 +272,6 @@ public final class SceneLayoutEngine {
         if (layerPolicy(content) != null)
             throw new IllegalArgumentException("内容分支不支持所属层: boundary=" + boundary.id() + " kind=" + kind + " layer=" + content.id());
         for (SceneNode child : content.children()) rejectContentLayers(boundary, child, kind);
-    }
-
-    private void endTextRequests() {
-        for (BatchTextMeasurer batch : activeText) batch.endRequests();
-        activeText.clear();
-        batchChildren.clear();
     }
 
     private int cross(Size size, int desired, int available) {
@@ -400,14 +388,13 @@ public final class SceneLayoutEngine {
         allocatedBoxes.clear();
         arrangementViewport = viewport;
         // 晚期备用捕获只结算实际访问的节点，其余主树度量继续保留。
-        activeText.clear();
         try {
             List<SceneGeometryView.Entry> entries = new ArrayList<>();
             arrange(root, allocated, ancestorClip, entries, true);
             entries = SceneGeometryProjection.project(entries, worldViewport, inherited, externalWorldClip, presentation);
             return new SceneGeometry(SceneScrollDecorationLayout.project(entries, worldViewport), worldViewport);
         } finally {
-            endTextRequests();
+            batchChildren.clear();
             measureDependencies.endRequests();
         }
     }

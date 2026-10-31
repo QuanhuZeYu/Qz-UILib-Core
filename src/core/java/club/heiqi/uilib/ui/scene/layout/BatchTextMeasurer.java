@@ -7,10 +7,8 @@ import club.heiqi.uilib.ui.scene.text.TextPolicy;
 import club.heiqi.uilib.ui.scene.text.TextStyle;
 
 import java.util.LinkedHashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /** 在节点有效测量代际内缓存精确文字请求，子测量联系仅供当批使用。 */
 final class BatchTextMeasurer implements SceneTextMeasurer {
@@ -19,7 +17,6 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     private final Map<Request, PaintEntry> layouts = new LinkedHashMap<>(16, 0.75f, true);
     private boolean revisionKnown;
     private long measureRevision;
-    private final Set<Request> activeRequests = new HashSet<>();
 
     BatchTextMeasurer(SceneTextMeasurer delegate) {
         this.delegate = delegate;
@@ -33,27 +30,15 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
 
     private void remember(Request request, TextLayout layout, Object paintDeclaration) {
         layouts.put(request, new PaintEntry(layout, paintDeclaration));
-        // 缓存淘汰时同步收缩活跃集合，使同批多约束请求同受容量限制。
+        // 同一有效测量代际保留有限的定位与省略请求，缓存命中可跳过再次声明。
         while (layouts.size() > MAX_REQUESTS) {
             Request eldest = layouts.keySet().iterator().next();
             layouts.remove(eldest);
-            activeRequests.remove(eldest);
         }
     }
 
     void resetRequests() {
         layouts.clear();
-        activeRequests.clear();
-    }
-
-    void beginRequests() {
-        activeRequests.clear();
-    }
-
-    void endRequests() {
-        // 自定义控件可每次创建新的属性文本，保留本次实际请求而非整代历史。
-        layouts.keySet().retainAll(activeRequests);
-        activeRequests.clear();
     }
 
     @Override
@@ -67,7 +52,6 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     @Override
     public TextLayout layout(String text, TextStyle style, int width) {
         Request request = new Request(text, style, width, null);
-        activeRequests.add(request);
         PaintEntry cached = layouts.get(request);
         if (cached != null) return cached.plain(style);
         TextLayout layout = delegate.layout(text, style, width);
@@ -78,7 +62,6 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     @Override
     public TextLayout layout(String text, TextStyle style, int width, TextPolicy policy) {
         Request request = new Request(text, style, width, policy);
-        activeRequests.add(request);
         PaintEntry cached = layouts.get(request);
         if (cached != null) return cached.plain(style);
         TextLayout layout = delegate.layout(text, style, width, policy);
@@ -89,7 +72,6 @@ final class BatchTextMeasurer implements SceneTextMeasurer {
     @Override
     public TextLayout layout(AttributedText text, float width, TextPolicy policy) {
         Request request = new Request(text, null, width, policy);
-        activeRequests.add(request);
         PaintEntry cached = layouts.get(request);
         if (cached != null) return cached.attributed(text);
         TextLayout layout = delegate.layout(text, width, policy);

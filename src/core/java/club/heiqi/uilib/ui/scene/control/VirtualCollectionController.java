@@ -133,6 +133,7 @@ final class VirtualCollectionController<T, K> implements SceneControl {
         Object nextCondition = Arrays.asList(measurementCondition.get(), currentMetrics.layoutKey());
         boolean conditionChanged = !Objects.equals(measuredCondition, nextCondition);
         boolean reset = nextMetrics != metrics || estimate != nextEstimate || measuredWidth != width || conditionChanged;
+        boolean spacingChanged = gap != root.gap(), contentChanged = false, orderChanged = false;
         if (changed) {
             List<K> next = new ArrayList<>(current.size());
             Map<K, T> nextValues = new HashMap<>();
@@ -142,20 +143,24 @@ final class VirtualCollectionController<T, K> implements SceneControl {
                     throw new IllegalArgumentException("集合业务键重复: " + root.id() + " / " + identity);
                 nextValues.put(identity, value); next.add(identity);
                 T before = values.get(identity);
-                if (!Objects.equals(before, value)) { positioning.beginAnchor(offset); heights.invalidate(identity); }
+                if (!Objects.equals(before, value)) { heights.stale(identity); contentChanged = true; }
             }
-            dataChanged = !order.equals(next);
-            if (dataChanged) positioning.dataReordered();
+            orderChanged = !order.equals(next);
+            dataChanged |= orderChanged;
+            if (orderChanged) positioning.dataReordered();
+            else if (contentChanged && !dataChanged) positioning.beginAnchor(offset);
             values.clear(); values.putAll(nextValues); order = next;
             published = current;
         }
-        if (changed || reset || gap != root.gap()) {
-            if (!dataChanged && (reset || gap != root.gap())) positioning.beginAnchor(offset);
+        // 同键值更新只结束受影响高度的精确资格；前缀索引仅随结构或全局度量条件重建。
+        if (orderChanged || reset || spacingChanged) {
+            if (!dataChanged && (reset || spacingChanged)) positioning.beginAnchor(offset);
             heights.reconcile(order, nextEstimate, root.gap(), reset);
             metrics = nextMetrics; estimate = nextEstimate; gap = root.gap(); measuredWidth = width; measuredCondition = nextCondition;
-            if (conditionChanged) viewRevision.set(++revision);
-            if (changed) logicalRevision.set(++logicalClock);
         }
+        // 内部高度资格变化也须通过正式排列取得本批度量，不能只依赖单元格恰好改了节点属性。
+        if (contentChanged || orderChanged || reset || spacingChanged) viewRevision.set(++revision);
+        if (orderChanged) logicalRevision.set(++logicalClock);
         positioning.validate();
         Set<K> needed = new LinkedHashSet<>();
         int prefetch = policy.overscan >= 0 ? policy.overscan : height;

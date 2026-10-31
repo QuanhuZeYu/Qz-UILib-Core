@@ -364,8 +364,12 @@ public final class SceneNode {
 
     public SceneNode size(Size width, Size height) {
         writable();
-        this.width = Objects.requireNonNull(width, "width");
-        this.height = Objects.requireNonNull(height, "height");
+        Objects.requireNonNull(width, "width");
+        Objects.requireNonNull(height, "height");
+        // 声明值相同即无尺寸变化；刷新派生值不应使整条祖先测量链失效。
+        if (this.width.equals(width) && this.height.equals(height)) return this;
+        this.width = width;
+        this.height = height;
         changed();
         return this;
     }

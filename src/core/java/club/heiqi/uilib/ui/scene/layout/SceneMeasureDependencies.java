@@ -17,7 +17,7 @@ final class SceneMeasureDependencies {
         final Map<Long, int[]> measurements = new HashMap<>();
         final Set<Long> activeRequests = new HashSet<>();
         Stamp(long revision, Size width, Size height) { this.revision = revision; this.width = width; this.height = height; }
-        boolean matches(long next, Size w, Size h) { return revision == next && same(width, w) && same(height, h); }
+        boolean matches(long next, Size w, Size h) { return revision == next && width.equals(w) && height.equals(h); }
     }
     private final Map<SceneNode, Stamp> stamps = new IdentityHashMap<>();
     private final Set<Stamp> active = Collections.newSetFromMap(new IdentityHashMap<Stamp, Boolean>());
@@ -29,19 +29,31 @@ final class SceneMeasureDependencies {
         }
         active.clear();
     }
-    boolean update(Set<SceneNode> mounted, SceneLayoutPresentation presentation, ToLongFunction<SceneNode> revisions) {
-        boolean changed = stamps.keySet().retainAll(mounted);
+    void update(Set<SceneNode> mounted, SceneLayoutPresentation presentation, ToLongFunction<SceneNode> revisions) {
+        stamps.keySet().retainAll(mounted);
+        Set<SceneNode> changed = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
         for (SceneNode node : mounted) {
             long revision = revisions.applyAsLong(node);
             Size width = presentation == null ? node.width() : presentation.size(node, SceneNode.Axis.ROW);
             Size height = presentation == null ? node.height() : presentation.size(node, SceneNode.Axis.COLUMN);
             Stamp previous = stamps.get(node);
             if (previous == null || !previous.matches(revision, width, height)) {
-                changed = true;
+                changed.add(node);
                 stamps.put(node, new Stamp(revision, width, height));
             }
         }
-        return changed;
+        // 呈现尺寸可在尺寸动效中变化而不改逻辑测量代际，祖先的自然测量仍依赖它。
+        // 同批只结束这些祖先的请求，其他分支继续按原约束复用。
+        Set<SceneNode> invalidated = Collections.newSetFromMap(new IdentityHashMap<SceneNode, Boolean>());
+        for (SceneNode source : changed) {
+            for (SceneNode node = source; node != null && invalidated.add(node); node = node.parent()) {
+                Stamp stamp = stamps.get(node);
+                if (stamp == null) break;
+                stamp.measurements.clear();
+                stamp.activeRequests.clear();
+                active.remove(stamp);
+            }
+        }
     }
     int[] request(SceneNode node, int width, int height) {
         Stamp stamp = stamps.computeIfAbsent(node, key -> new Stamp(0, node.width(), node.height()));
@@ -68,8 +80,5 @@ final class SceneMeasureDependencies {
     }
     private static long constraintKey(int width, int height) {
         return ((long) width << 32) | (height & 0xffffffffL);
-    }
-    private static boolean same(Size a, Size b) {
-        return a == b || a.mode == b.mode && a.value == b.value && a.min == b.min && a.max == b.max;
     }
 }

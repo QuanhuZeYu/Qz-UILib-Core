@@ -23,6 +23,7 @@ import club.heiqi.uilib.ui.scene.node.SceneNode;
 import club.heiqi.uilib.ui.scene.paint.PaintCommand;
 import club.heiqi.uilib.ui.scene.paint.PaintPlanBuilder;
 import club.heiqi.uilib.ui.scene.runtime.NodeBinding;
+import club.heiqi.uilib.ui.scene.runtime.SceneRuntime;
 import club.heiqi.uilib.ui.scene.runtime.BindingActivation;
 import club.heiqi.uilib.ui.scene.text.SceneTextMeasurer;
 import club.heiqi.uilib.ui.scene.text.TextLayout;
@@ -123,17 +124,8 @@ public final class SceneImage implements SceneControl {
             target.defaultStyle(value.textStyle);
         }));
         if (placeholder != null) node.add(placeholder);
-        node.bind(
-                NodeBinding.value(
-                        options,
-                        (target, value) -> {
-                            control.options =
-                                    control.documentPolicy
-                                            ? Objects.requireNonNull(value, "options").document()
-                                            : Objects.requireNonNull(value, "options");
-                            target.size(value.width, value.height);
-                            control.describe(target);
-                        }));
+        node.bind((runtime, target, owner) -> NodeBinding.value(options,
+                (self, value) -> control.configure(runtime, self, value)).activate(runtime, target, owner));
         node.bind(
                 (runtime, target, owner) -> {
                     final ImageService.Lease[] lease = {null};
@@ -186,6 +178,19 @@ public final class SceneImage implements SceneControl {
         SceneNode node = create(service, source, options);
         ((SceneImage) node.control()).documentPolicy = true;
         return node;
+    }
+
+    private void configure(SceneRuntime runtime, SceneNode node, ImageOptions value) {
+        ImageOptions previous = options;
+        options = documentPolicy ? Objects.requireNonNull(value, "options").document()
+                : Objects.requireNonNull(value, "options");
+        node.size(options.width, options.height);
+        describe(node);
+        // 同尺寸也可改变覆盖层和被动命中；占位及文档比例政策另有真实测量依赖。
+        if (previous.placeholderWidth != options.placeholderWidth
+                || previous.placeholderHeight != options.placeholderHeight || previous.document != options.document)
+            runtime.invalidate(node);
+        else runtime.invalidatePaint(node);
     }
 
     private void describe(SceneNode node) {

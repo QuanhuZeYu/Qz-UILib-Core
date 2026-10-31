@@ -14,6 +14,7 @@ final class VirtualHeightIndex<K> {
     private List<K> keys = Collections.emptyList();
     private final Map<K, Integer> positions = new HashMap<>();
     private final Map<K, Integer> measured = new HashMap<>();
+    private final Set<K> stale = new HashSet<>();
     private final Set<K> omitted = new HashSet<>();
     private long[] sums = new long[1];
     private int estimate = 1, gap;
@@ -26,8 +27,8 @@ final class VirtualHeightIndex<K> {
         for (K key : next)
             if (!unique.add(Objects.requireNonNull(key, "集合键")))
                 throw new IllegalArgumentException("集合业务键重复: " + key);
-        if (invalidate || estimate != estimatedHeight) { measured.clear(); omitted.clear(); }
-        else { measured.keySet().retainAll(unique); omitted.retainAll(unique); }
+        if (invalidate || estimate != estimatedHeight) { measured.clear(); stale.clear(); omitted.clear(); }
+        else { measured.keySet().retainAll(unique); stale.retainAll(unique); omitted.retainAll(unique); }
         estimate = estimatedHeight;
         gap = spacing;
         keys = Collections.unmodifiableList(next);
@@ -45,14 +46,14 @@ final class VirtualHeightIndex<K> {
     int height(int index) { K key = keys.get(index); if (omitted.contains(key)) return 0;
         Integer value = measured.get(key); return value == null ? estimate : value; }
     private long weight(int index) { return omitted.contains(keys.get(index)) ? 0 : (long)height(index) + gap; }
-    boolean known(K key) { return measured.containsKey(key) || omitted.contains(key); }
+    boolean known(K key) { return !stale.contains(key) && (measured.containsKey(key) || omitted.contains(key)); }
 
     boolean measure(K key, int height) {
         if (height < 0) throw new IllegalArgumentException("集合行高不能为负: " + key);
         int index = position(key);
         if (index < 0) return false;
         long previous = weight(index);
-        omitted.remove(key); measured.put(key, height);
+        stale.remove(key); omitted.remove(key); measured.put(key, height);
         long next = (long)height + gap;
         if (previous == next) return false;
         add(index, next - previous);
@@ -62,14 +63,22 @@ final class VirtualHeightIndex<K> {
     boolean omit(K key) {
         int index = position(key);
         if (index < 0 || omitted.contains(key)) return false;
-        long previous = weight(index); omitted.add(key); measured.remove(key); add(index, -previous);
+        long previous = weight(index); stale.remove(key); omitted.add(key); measured.remove(key); add(index, -previous);
         return previous != 0;
+    }
+
+    /** 同键新内容结束精确资格，旧正高度只作重测前的估算，避免整段前缀退回统一初值。 */
+    void stale(K key) {
+        Integer previous = measured.get(key);
+        if (previous != null && previous > 0) stale.add(key);
+        else invalidate(key); // 零高与省略须重新提供准备区段，才能观察恢复后的当前内容。
     }
 
     void invalidate(K key) {
         int index = position(key);
         if (index < 0) return;
         long previous = weight(index);
+        stale.remove(key);
         boolean changed = omitted.remove(key) | (measured.remove(key) != null);
         if (changed) add(index, (long)estimate + gap - previous);
     }
@@ -109,6 +118,6 @@ final class VirtualHeightIndex<K> {
     }
 
     void clear() {
-        keys = Collections.emptyList(); positions.clear(); measured.clear(); omitted.clear(); sums = new long[1];
+        keys = Collections.emptyList(); positions.clear(); measured.clear(); stale.clear(); omitted.clear(); sums = new long[1];
     }
 }
